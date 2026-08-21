@@ -1,48 +1,59 @@
-# Design QA — International Situation Room / Open Situation Map
+# Design QA — Politics and Physics Workspace Extension
 
-## Reference boundary
+## Comparison target
 
-- Visual direction: the previously selected white-hat intelligence workspace reference, normalized to `1440 × 1024` at `outputs/frontend-qa/whitehat-source-normalized-1440x1024.png`.
-- Interaction reference: SBH News was used only for map-workspace patterns such as direct pan/zoom, URL-saved viewport, event clustering, and overlaid controls. Its layout, branding, data, and implementation were not copied.
-- Current desktop capture: `outputs/frontend-qa/maplibre-final-desktop.png`.
-- Current mobile captures: `outputs/frontend-qa/maplibre-final-mobile.png` and `outputs/frontend-qa/maplibre-final-mobile-signal.png`.
-- Current side-by-side comparison: `outputs/frontend-qa/maplibre-final-comparison.png`, `2880 × 1024`.
-- Intentional difference: the signal panel stays compact so the situation map remains the dominant workspace. This follows the user's explicit direction that “오늘의 변화” must not take over the page.
+- Source visual truth: `outputs/frontend-qa/whitehat-source-normalized-1440x1024.png`, `1440 × 1024`, normalized from the selected Atlas Canvas reference.
+- Existing verified implementation reference: `outputs/frontend-qa/maplibre-final-desktop.png`, `1440 × 1024`, desktop situation-room state.
+- New implementation routes:
+  - `http://127.0.0.1:5173/politics/desk`
+  - `http://127.0.0.1:5173/politics/institutions`
+  - `http://127.0.0.1:5173/physics/learn`
+  - `http://127.0.0.1:5173/physics/library`
+  - `http://127.0.0.1:5173/physics/find`
+  - `http://127.0.0.1:5173/physics/ipho`
+- Intended QA viewports: `1440 × 1024` desktop and `390 × 844` mobile, device scale factor 1.
+- Intended states: politics first agenda selected; politics institution reader; physics mode 01; saved-resource library; unfiltered resource finder; KPhO→IPhO path.
 
-## Current implementation
+## Evidence available
 
-- The hand-drawn/static world canvas has been replaced with a MapLibre GL JS map using the OpenFreeMap dark style.
-- The map supports mouse drag, wheel zoom, touch pinch, zoom buttons, Korea focus, world overview, cluster expansion, and a `#map=zoom/lat/lon` URL state.
-- Map state is restored when navigating between the situation map, briefing, and issue tracking views.
-- Korea-first labels are requested from the vector style where available, with multilingual fallback.
-- Signal categories and relationship routes can be toggled independently. Hidden categories also hide their marker, selection halo, related routes, and detail popover.
-- The mobile world overview deliberately uses a centered square viewport. A full-height portrait Web Mercator view crops too much east-west geography to represent the worldwide signal set honestly.
-- The AI workspace remains an explicit on-demand action rather than a permanently open rail.
+- The existing international-affairs implementation and reference were previously captured and compared at equal `1440 × 1024` pixels.
+- The six new routes returned HTTP 200 from the local Vite server.
+- Static server-render route-contract tests confirmed the expected political and physics content for all six paths.
+- Focused data and interaction-contract tests passed for politics scope/search, political institutions, all seven physics modes, official-resource links, and physics filters.
+- Production build and Sites packaging passed.
 
-## Final visual findings
+## Blocker
 
-- P0: none.
-- P1: none.
-- P2: none after the final mobile world-overview pass.
-- P3: attribution is necessarily compact on a 390px viewport; remote style layer identifiers may require maintenance if OpenFreeMap changes its schema; the production bundle still emits a size warning and should later be split or optimized.
-- No placeholder image, fake terminal, Matrix text, neon glow, large right briefing rail, bottom event-detail strip, or oversized timeline remains.
-- The visible metadata is operational: signal count, relationship count, base-map status, coordinates, sources, source agreement, verification state, dataset status, and projection.
+- The required in-app Browser control transport returned `Transport closed` during setup and remained unavailable after retry.
+- Because the new routes could not be captured in a controlled browser viewport, there is no browser-rendered implementation screenshot for politics or physics in this QA run.
+- HTTP 200, server-rendered markup, tests, and a production build do not prove visual layout, responsive behavior, pointer interactions, keyboard focus, or console cleanliness.
 
-## Browser evidence
+## Required fidelity surfaces
 
-- Desktop Chrome: world and Korea views rendered with one copy of the United States and Korea; map controls, category filters, relationship filter, marker selection, cluster expansion, and viewport restoration were exercised.
-- Desktop Chrome: Korean-first labels and complete OpenFreeMap/OpenMapTiles/OpenStreetMap attribution were visible.
-- Mobile Chrome responsive viewport at `390 × 844`: the world overview rendered as a `390 × 388` map, all six demo events were represented through markers or clusters, `MAP READY` and attribution were visible, and no horizontal overflow was found.
-- Mobile Chrome responsive viewport: the eastern cluster expanded into separate signals and the first signal selection opened its detail card after zooming to Korea.
-- Browser console warnings/errors from the final inspected path: 0.
+- Fonts and typography: implemented with the existing Noto Sans KR and IBM Plex Mono system, but the rendered new pages are **Not verified / 미검증**.
+- Spacing and layout rhythm: existing shell tokens and border rhythm were reused, but the rendered desktop/mobile layouts are **Not verified / 미검증**.
+- Colors and visual tokens: existing navy, cyan, cobalt, green, and amber tokens were reused; rendered contrast and hierarchy are **Not verified / 미검증**.
+- Image quality and assets: the new workspaces require no raster imagery; icons use the project's existing Phosphor family. Rendered alignment is **Not verified / 미검증**.
+- Copy and content: demo/live boundaries and backend-unavailable notices exist in code and server-rendered output; wrapping and truncation are **Not verified / 미검증**.
+
+## Findings
+
+- P0: none established from the available non-visual evidence.
+- P1/P2: cannot be cleared without browser captures and side-by-side comparison.
+- P3: the production JavaScript bundle remains above Vite's 500 kB chunk warning threshold; code splitting is a later performance task.
+
+## Comparison history
+
+1. International-affairs comparison passed previously after mobile overview and map-control fixes.
+2. Politics/physics extension: implementation and contract tests exist, but first visual comparison is blocked before findings can be classified or fixed.
 
 ## Verification boundary
 
-- **Implemented**: the zoomable open-source map, clustering, filters, route overlays, viewport persistence, responsive states, and this QA record exist in `apps/web`.
-- **Unit-verified**: 13 focused application tests and 4 static-hosting tests passed. These tests do not prove live data, authentication, uploads, persistence, AI, or external services.
-- **Browser-verified**: the user paths above were exercised in desktop Chrome and Chrome's responsive viewport.
-- **Simulator-verified**: **Not verified / 미검증** — no browser/device simulator or emulator was used.
-- **Physical-device-verified**: **Not verified / 미검증** — no real phone or separate physical device was used.
-- **Not verified / 미검증**: live AI, live data ingestion, Cloudflare resources, Firebase, authentication, screenshot uploads, persistence, malware scanning, DNS, and deployment were not connected or exercised.
+- **Implemented**: politics and physics routes, interactions, responsive CSS, mock data, official resource links, and documentation exist.
+- **Unit-verified**: 25 application/contract/worker tests passed.
+- **Browser-verified**: **Not verified / 미검증** for the new politics and physics routes because the browser-control transport was unavailable.
+- **Simulator-verified**: **Not verified / 미검증**.
+- **Physical-device-verified**: **Not verified / 미검증**.
+- **Live-service-verified**: **Not verified / 미검증** — backend, authentication, persistence, uploads, and AI remain intentionally disconnected.
 
-final result: browser QA passed; live-service and device verification remain open
+final result: blocked

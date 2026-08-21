@@ -13,12 +13,50 @@ import {
 } from "@phosphor-icons/react";
 import { EVENTS } from "./events.js";
 import { CATEGORY_META, STATUS_META, getTopSignals } from "./mapLayers.js";
+import { PhysicsWorkspace } from "./PhysicsWorkspace.jsx";
+import { PoliticsWorkspace } from "./PoliticsWorkspace.jsx";
 import { WorldSituationMap } from "./WorldSituationMap.jsx";
 
 const ROUTES = {
   map: "/international/map",
   briefing: "/international/briefing",
   issues: "/international/issues",
+  politics: "/politics/desk",
+  institutions: "/politics/institutions",
+  physics: "/physics/learn",
+  library: "/physics/library",
+  finder: "/physics/find",
+  ipho: "/physics/ipho",
+};
+
+const DOMAIN_ROUTES = {
+  international: ["map", "briefing", "issues"],
+  politics: ["politics", "institutions"],
+  physics: ["physics", "library", "finder", "ipho"],
+};
+
+const DOMAIN_META = {
+  international: { label: "국제정세", title: "국제정세 분석 워크스페이스", entry: "map" },
+  politics: { label: "정치", title: "정치 이해 워크스페이스", entry: "politics" },
+  physics: { label: "물리", title: "물리 학습 워크스페이스", entry: "physics" },
+};
+
+const SUBNAV_ITEMS = {
+  international: [
+    { id: "map", label: "상황지도" },
+    { id: "briefing", label: "오늘 브리핑" },
+    { id: "issues", label: "이슈 추적" },
+  ],
+  politics: [
+    { id: "politics", label: "정치 데스크" },
+    { id: "institutions", label: "제도 이해" },
+  ],
+  physics: [
+    { id: "physics", label: "학습 허브" },
+    { id: "library", label: "자료 보관소" },
+    { id: "finder", label: "자료 찾기" },
+    { id: "ipho", label: "KPhO · IPhO" },
+  ],
 };
 
 const TRACKED_ISSUES = [
@@ -56,29 +94,41 @@ function routeFromPath(pathname) {
   return Object.entries(ROUTES).find(([, path]) => pathname === path)?.[0] ?? "map";
 }
 
-function DomainNavigation({ onUnavailable }) {
+function domainFromRoute(route) {
+  return Object.entries(DOMAIN_ROUTES).find(([, routes]) => routes.includes(route))?.[0] ?? "international";
+}
+
+function DomainNavigation({ domain, onNavigate }) {
   return (
     <nav className="domain-navigation" aria-label="분야 이동">
-      <button className="domain-tab is-active" type="button" aria-current="page">국제정세</button>
-      <button className="domain-tab" type="button" onClick={() => onUnavailable("정치")}>정치</button>
-      <button className="domain-tab" type="button" onClick={() => onUnavailable("물리")}>물리</button>
+      {Object.entries(DOMAIN_META).map(([id, metadata]) => (
+        <button
+          className={`domain-tab${domain === id ? " is-active" : ""}`}
+          type="button"
+          key={id}
+          aria-current={domain === id ? "page" : undefined}
+          onClick={() => onNavigate(metadata.entry)}
+        >
+          {metadata.label}
+        </button>
+      ))}
     </nav>
   );
 }
 
-function Header({ onOpenAi, onUnavailable, aiOpen, aiTriggerRef }) {
+function Header({ domain, onOpenAi, onNavigate, aiOpen, aiTriggerRef }) {
   return (
     <header className="app-header">
       <button
         className="brand-lockup"
         type="button"
-        onClick={() => onUnavailable("프로젝트 홈")}
-        aria-label="프로젝트 홈 — 이름 미정"
+        onClick={() => onNavigate("map")}
+        aria-label="국제정세 상황지도 홈"
       >
         <span>INTEL WORKSPACE</span>
       </button>
-      <h1 className="sr-only">국제정세 분석 워크스페이스</h1>
-      <DomainNavigation onUnavailable={onUnavailable} />
+      <h1 className="sr-only">{DOMAIN_META[domain].title}</h1>
+      <DomainNavigation domain={domain} onNavigate={onNavigate} />
       <div className="header-utilities">
         <span className="as-of">기준 시각 <strong>20:04 KST</strong></span>
         <span className="demo-stamp">NON-LIVE DEMO</span>
@@ -99,16 +149,10 @@ function Header({ onOpenAi, onUnavailable, aiOpen, aiTriggerRef }) {
   );
 }
 
-function InternationalSubnav({ route, onNavigate }) {
-  const items = [
-    { id: "map", label: "상황지도" },
-    { id: "briefing", label: "오늘 브리핑" },
-    { id: "issues", label: "이슈 추적" },
-  ];
-
+function WorkspaceSubnav({ domain, route, onNavigate }) {
   return (
-    <nav className="international-subnav" aria-label="국제정세 작업 화면">
-      {items.map((item) => (
+    <nav className="international-subnav" aria-label={`${DOMAIN_META[domain].label} 작업 화면`}>
+      {SUBNAV_ITEMS[domain].map((item) => (
         <a
           className={route === item.id ? "is-active" : ""}
           href={ROUTES[item.id]}
@@ -298,7 +342,25 @@ function IssuesPage({ selectedEvent, onSelect, onOpenAi }) {
   );
 }
 
-function PassiveStatusBar() {
+function PassiveStatusBar({ domain }) {
+  if (domain === "politics") {
+    return (
+      <footer className="system-status" aria-label="정치 데모 상태">
+        <span>DATASET <strong>DEMO</strong></span><span>PRIMARY <strong>KOREA</strong></span>
+        <span>CONTEXT <strong>UNITED STATES</strong></span><span>DEFAULT LEVEL <strong>C2</strong></span>
+        <span className="system-health">백엔드 미연결 <i aria-hidden="true" /> 프론트엔드 데모</span>
+      </footer>
+    );
+  }
+  if (domain === "physics") {
+    return (
+      <footer className="system-status" aria-label="물리 데모 상태">
+        <span>LIBRARY <strong>DEMO</strong></span><span>DEFAULT LEVEL <strong>P4</strong></span>
+        <span>TRACK <strong>KPHO → IPHO</strong></span><span>OPEN LINKS <strong>6</strong></span>
+        <span className="system-health">백엔드 미연결 <i aria-hidden="true" /> 프론트엔드 데모</span>
+      </footer>
+    );
+  }
   return (
     <footer className="system-status" aria-label="데이터 상태">
       <span>DATASET <strong>DEMO</strong></span><span>VISIBLE SIGNALS <strong>6</strong></span>
@@ -308,8 +370,8 @@ function PassiveStatusBar() {
   );
 }
 
-function AiDrawer({ event, onClose }) {
-  const [context, setContext] = useState("현재 사건");
+function AiDrawer({ analysisContext, onClose }) {
+  const [context, setContext] = useState("현재 화면");
   const [prompt, setPrompt] = useState("");
   const [notice, setNotice] = useState("");
   const drawerRef = useRef(null);
@@ -348,11 +410,11 @@ function AiDrawer({ event, onClose }) {
         </div>
         <div className="connection-note" id="ai-connection-status"><span />AI 연결 전 · 상호작용 구조 확인용</div>
         <section className="selected-context">
-          <p className="system-kicker">SELECTED CONTEXT</p><strong>{event.title}</strong>
-          <small>{event.region} · {event.time} KST · 데모 자료</small>
+          <p className="system-kicker">SELECTED CONTEXT</p><strong>{analysisContext.title}</strong>
+          <small>{analysisContext.meta}</small>
         </section>
         <div className="context-actions" aria-label="분석 컨텍스트 선택">
-          {[{ label: "현재 사건", icon: MapTrifold }, { label: "영역 선택", icon: Selection }].map(({ label, icon: Icon }) => (
+          {[{ label: "현재 화면", icon: MapTrifold }, { label: "영역 선택", icon: Selection }].map(({ label, icon: Icon }) => (
             <button className={context === label ? "is-selected" : ""} type="button" key={label}
               onClick={() => setContext(label)} aria-pressed={context === label}><Icon size={18} />{label}</button>
           ))}
@@ -360,7 +422,7 @@ function AiDrawer({ event, onClose }) {
         <form className="analysis-form" onSubmit={submit}>
           <label htmlFor="analysis-prompt">무엇을 분석할까요?</label>
           <textarea id="analysis-prompt" value={prompt} onChange={(eventObject) => setPrompt(eventObject.target.value)}
-            maxLength={4000} placeholder="확인된 사실과 추론을 구분해서, 한국에 미칠 영향을 분석해줘." />
+            maxLength={4000} placeholder={analysisContext.placeholder} />
           <button type="submit" className="analysis-submit">분석 요청<PaperPlaneTilt size={17} /></button>
         </form>
         {notice && <p className="prototype-notice" role="status">{notice}</p>}
@@ -375,11 +437,35 @@ export function App() {
     routeFromPath(window.location.pathname) === "map" && !window.matchMedia("(max-width: 600px)").matches ? 1 : null
   ));
   const [aiOpen, setAiOpen] = useState(false);
+  const [analysisContext, setAnalysisContext] = useState(null);
   const [notice, setNotice] = useState("");
   const noticeTimerRef = useRef(null);
   const aiTriggerRef = useRef(null);
   const topSignals = useMemo(() => getTopSignals(EVENTS, 3), []);
   const selectedEvent = EVENTS.find((event) => event.id === selectedId) ?? EVENTS[0];
+  const domain = domainFromRoute(route);
+
+  const defaultAnalysisContext = useMemo(() => {
+    if (domain === "politics") {
+      return {
+        title: "대한민국 정치 구조",
+        meta: "정치 워크스페이스 · 설명 수준 C2 · 프론트엔드 데모",
+        placeholder: "현재 선택한 정치 의제를 결정 주체와 절차 중심으로 설명해줘.",
+      };
+    }
+    if (domain === "physics") {
+      return {
+        title: "물리 학습 워크스페이스",
+        meta: "물리 워크스페이스 · 데모 설명 수준 P4",
+        placeholder: "개념과 수학적 구조를 분리해서 단계적으로 설명해줘.",
+      };
+    }
+    return {
+      title: selectedEvent.title,
+      meta: `${selectedEvent.region} · ${selectedEvent.time} KST · 데모 자료`,
+      placeholder: "확인된 사실과 추론을 구분해서, 한국에 미칠 영향을 분석해줘.",
+    };
+  }, [domain, selectedEvent]);
 
   useEffect(() => {
     const handlePopState = () => setRoute(routeFromPath(window.location.pathname));
@@ -396,10 +482,15 @@ export function App() {
 
   function openIssues(id = selectedId) { setSelectedId(id); navigate("issues"); }
 
-  function showUnavailable(label) {
+  function showNotice(message) {
     window.clearTimeout(noticeTimerRef.current);
-    setNotice(`${label} 화면은 국제정세와 다른 작업 방식으로 별도 설계합니다.`);
+    setNotice(message);
     noticeTimerRef.current = window.setTimeout(() => setNotice(""), 2800);
+  }
+
+  function openAi(context = defaultAnalysisContext) {
+    setAnalysisContext(context);
+    setAiOpen(true);
   }
 
   function closeAi() {
@@ -410,13 +501,13 @@ export function App() {
   return (
     <div className="application-shell">
       <div className="app-surface" inert={aiOpen ? true : undefined}>
-        <Header onOpenAi={() => setAiOpen(true)} onUnavailable={showUnavailable} aiOpen={aiOpen} aiTriggerRef={aiTriggerRef} />
-        <InternationalSubnav route={route} onNavigate={navigate} />
+        <Header domain={domain} onOpenAi={() => openAi()} onNavigate={navigate} aiOpen={aiOpen} aiTriggerRef={aiTriggerRef} />
+        <WorkspaceSubnav domain={domain} route={route} onNavigate={navigate} />
 
         {route === "map" && (
           <main className="situation-map-page">
             <WorldSituationMap events={EVENTS} selectedEvent={selectedEvent} selectionActive={selectedId !== null} onSelect={setSelectedId}
-              onOpenIssues={() => openIssues(selectedEvent.id)} onOpenAi={() => setAiOpen(true)} />
+              onOpenIssues={() => openIssues(selectedEvent.id)} onOpenAi={() => openAi()} />
             <TodaySignalsPanel events={topSignals} selectedId={selectedId} onSelect={setSelectedId}
               onOpenBriefing={() => navigate("briefing")} />
           </main>
@@ -427,14 +518,26 @@ export function App() {
         )}
 
         {route === "issues" && (
-          <IssuesPage selectedEvent={selectedEvent} onSelect={setSelectedId} onOpenAi={() => setAiOpen(true)} />
+          <IssuesPage selectedEvent={selectedEvent} onSelect={setSelectedId} onOpenAi={() => openAi()} />
         )}
 
-        <PassiveStatusBar />
+        {domain === "politics" && (
+          <PoliticsWorkspace view={route === "institutions" ? "institutions" : "desk"} onOpenAi={openAi} />
+        )}
+
+        {domain === "physics" && (
+          <PhysicsWorkspace
+            view={{ library: "library", finder: "finder", ipho: "ipho" }[route] ?? "learn"}
+            onOpenAi={openAi}
+            onNotice={showNotice}
+          />
+        )}
+
+        <PassiveStatusBar domain={domain} />
       </div>
       <p className="sr-only" role="status" aria-live="polite">선택 사건: {selectedEvent.title}</p>
       {notice && <div className="domain-notice" role="status">{notice}</div>}
-      {aiOpen && <AiDrawer event={selectedEvent} onClose={closeAi} />}
+      {aiOpen && <AiDrawer analysisContext={analysisContext ?? defaultAnalysisContext} onClose={closeAi} />}
     </div>
   );
 }
