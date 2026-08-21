@@ -4,10 +4,12 @@ import { EVENTS } from "../src/events.js";
 import {
   CATEGORY_META,
   STATUS_META,
+  eventsToFeatureCollection,
   getCategoryMeta,
   getEventRelations,
   getStatusMeta,
   getTopSignals,
+  relationsToFeatureCollection,
 } from "../src/mapLayers.js";
 
 test("category and status metadata expose Korean labels and hex colors", () => {
@@ -75,4 +77,37 @@ test("getEventRelations returns independent projected relation records", () => {
   assert.equal(event.coordinates[0], 126.98);
   assert.deepEqual(getEventRelations(null), []);
   assert.deepEqual(getEventRelations({ relatedCoordinates: null }), []);
+});
+
+test("map data adapters emit independent GeoJSON for MapLibre", () => {
+  const eventCollection = eventsToFeatureCollection(EVENTS.slice(0, 2));
+  assert.equal(eventCollection.type, "FeatureCollection");
+  assert.equal(eventCollection.features.length, 2);
+  assert.deepEqual(eventCollection.features[0], {
+    type: "Feature",
+    id: 1,
+    geometry: { type: "Point", coordinates: [126.98, 37.56] },
+    properties: {
+      id: 1,
+      shortId: "01",
+      category: "korea-core",
+      region: "대한민국",
+      title: "한미 공급망 실무 협의 종료",
+      status: "verified",
+    },
+  });
+
+  const relations = getEventRelations(EVENTS[0]);
+  const relationCollection = relationsToFeatureCollection(relations);
+  assert.equal(relationCollection.features.length, 2);
+  assert.deepEqual(relationCollection.features[0].geometry, {
+    type: "LineString",
+    coordinates: [[126.98, 37.56], [262, 39]],
+  });
+  assert.equal(relationCollection.features[0].properties.toLabel, "미국");
+
+  eventCollection.features[0].geometry.coordinates[0] = 0;
+  relationCollection.features[0].geometry.coordinates[0][0] = 0;
+  assert.equal(EVENTS[0].coordinates[0], 126.98);
+  assert.equal(relations[0].from.coordinates[0], 126.98);
 });

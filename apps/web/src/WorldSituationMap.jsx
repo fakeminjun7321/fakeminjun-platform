@@ -12,186 +12,42 @@ import {
   Stack,
   X,
 } from "@phosphor-icons/react";
-import { geoGraticule10, geoNaturalEarth1, geoPath, geoTransform } from "d3-geo";
-import { feature } from "topojson-client";
-import atlas from "world-atlas/countries-110m.json";
-import { CATEGORY_META, STATUS_META, getEventRelations } from "./mapLayers.js";
+import { AttributionControl, Map as MapLibreMap, setWorkerUrl } from "maplibre-gl";
+import mapWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
+import {
+  CATEGORY_META,
+  STATUS_META,
+  eventsToFeatureCollection,
+  getEventRelations,
+  relationsToFeatureCollection,
+} from "./mapLayers.js";
 
-const COUNTRIES = feature(atlas, atlas.objects.countries).features.filter(
-  (country) => String(country.id).padStart(3, "0") !== "010",
-);
-const MAP_GEOMETRY = { type: "FeatureCollection", features: COUNTRIES };
-const GRATICULE = geoGraticule10();
-const LONGITUDES = [-150, -120, -90, -60, -30, 0, 30, 60, 90, 120, 150, 180];
-const LATITUDES = [80, 60, 40, 20, 0, -20, -40, -60, -80];
-
-const MAP_LABELS = [
-  { label: "캐나다", coordinates: [-108, 57] },
-  { label: "미국", coordinates: [-104, 38] },
-  { label: "멕시코", coordinates: [-102, 23] },
-  { label: "남아메리카", coordinates: [-61, -20] },
-  { label: "유럽", coordinates: [12, 52] },
-  { label: "아프리카", coordinates: [18, 4] },
-  { label: "러시아", coordinates: [82, 59] },
-  { label: "인도", coordinates: [79, 21] },
-  { label: "중국", coordinates: [103, 35] },
-  { label: "대한민국", coordinates: [127.6, 36.4], offset: [43, -2] },
-  { label: "호주", coordinates: [135, -27] },
-  { label: "북극해", coordinates: [0, 74], kind: "ocean" },
-  { label: "태평양", coordinates: [-148, 3], kind: "ocean", offset: [36, 0] },
-  { label: "대서양", coordinates: [-35, 17], kind: "ocean" },
-  { label: "인도양", coordinates: [73, -17], kind: "ocean" },
-  { label: "태평양", coordinates: [154, 3], kind: "ocean" },
-];
+const MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/dark";
+const KOREA_VIEW = Object.freeze({ center: [126.98, 37.56], zoom: 4.8 });
+const MAP_VIEW_STORAGE_KEY = "intel-workspace:international-map-view";
+const KOREAN_LABEL_LAYERS = Object.freeze([
+  "water_name",
+  "highway_name_other",
+  "place_other",
+  "place_suburb",
+  "place_village",
+  "place_town",
+  "place_city",
+  "place_city_large",
+  "place_state",
+  "place_country_other",
+  "place_country_minor",
+  "place_country_major",
+]);
 
 const LAYERS = [
-  { id: "diplomacy", label: "외교", icon: GlobeHemisphereWest },
-  { id: "security", label: "안보", icon: ShieldCheck },
-  { id: "economy", label: "경제", icon: ChartLineUp },
-  { id: "supply", label: "공급망", icon: LinkSimple },
+  { id: "korea-core", label: "한국 핵심", icon: Crosshair },
+  { id: "us-impact", label: "미국 영향", icon: GlobeHemisphereWest },
+  { id: "rapid-change", label: "기타 급변", icon: ChartLineUp },
+  { id: "supply", label: "관계선", icon: LinkSimple },
 ];
 
-function clamp(value, minimum, maximum) {
-  return Math.min(maximum, Math.max(minimum, value));
-}
-
-function createDisplayProjection(size, zoom) {
-  const padding = size.width < 620 ? 26 : 52;
-  const base = geoNaturalEarth1().fitExtent(
-    [[padding, 34], [Math.max(padding + 1, size.width - padding), Math.max(35, size.height - 40)]],
-    MAP_GEOMETRY,
-  );
-  const centerX = size.width / 2;
-  const centerY = size.height / 2;
-  const baseBounds = geoPath(base).bounds(MAP_GEOMETRY);
-  const baseHeight = Math.max(1, baseBounds[1][1] - baseBounds[0][1]);
-  const shapeX = size.width < 620 ? 1 : 0.9;
-  const shapeY = size.width < 620 ? 1 : Math.min(1.18, Math.max(1, (size.height - 16) / baseHeight));
-
-  function transformPoint([x, y]) {
-    return [centerX + (x - centerX) * zoom * shapeX, centerY + (y - centerY) * zoom * shapeY];
-  }
-
-  const affine = geoTransform({
-    point(x, y) {
-      const [nextX, nextY] = transformPoint([x, y]);
-      this.stream.point(nextX, nextY);
-    },
-  });
-
-  const projection = (coordinates) => {
-    const point = base(coordinates);
-    return point ? transformPoint(point) : null;
-  };
-  projection.invert = ([x, y]) => base.invert([
-    centerX + (x - centerX) / (zoom * shapeX),
-    centerY + (y - centerY) / (zoom * shapeY),
-  ]);
-  projection.stream = (sink) => base.stream(affine.stream(sink));
-  return projection;
-}
-
-function drawArrow(context, from, to, color) {
-  const angle = Math.atan2(to[1] - from[1], to[0] - from[0]);
-  const size = 7;
-  context.save();
-  context.translate(to[0], to[1]);
-  context.rotate(angle);
-  context.fillStyle = color;
-  context.beginPath();
-  context.moveTo(0, 0);
-  context.lineTo(-size, size * 0.55);
-  context.lineTo(-size, -size * 0.55);
-  context.closePath();
-  context.fill();
-  context.restore();
-}
-
-function drawProjectedRelation(context, projection, relation, color, dashed = false) {
-  const from = projection(relation.from.coordinates);
-  const to = projection(relation.to.coordinates);
-  if (!from || !to) return;
-
-  const control = [
-    (from[0] + to[0]) / 2,
-    Math.min(from[1], to[1]) - Math.min(90, Math.abs(to[0] - from[0]) * 0.12),
-  ];
-  context.save();
-  context.beginPath();
-  context.moveTo(from[0], from[1]);
-  context.quadraticCurveTo(control[0], control[1], to[0], to[1]);
-  context.strokeStyle = color;
-  context.lineWidth = dashed ? 1.1 : 1.55;
-  if (dashed) context.setLineDash([5, 5]);
-  context.stroke();
-  drawArrow(context, control, to, color);
-  context.restore();
-}
-
-function drawMap(canvas, size, projection, selectedEvent, activeLayers) {
-  const density = Math.min(window.devicePixelRatio || 1, 2);
-  canvas.width = Math.max(1, Math.round(size.width * density));
-  canvas.height = Math.max(1, Math.round(size.height * density));
-  canvas.style.width = `${size.width}px`;
-  canvas.style.height = `${size.height}px`;
-
-  const context = canvas.getContext("2d");
-  context.setTransform(density, 0, 0, density, 0, 0);
-  context.clearRect(0, 0, size.width, size.height);
-  context.fillStyle = "#071923";
-  context.fillRect(0, 0, size.width, size.height);
-  const path = geoPath(projection, context);
-
-  context.save();
-  context.beginPath();
-  path(GRATICULE);
-  context.setLineDash([2, 4]);
-  context.strokeStyle = "rgba(56, 93, 113, 0.48)";
-  context.lineWidth = 0.65;
-  context.stroke();
-  context.restore();
-
-  COUNTRIES.forEach((country) => {
-    context.beginPath();
-    path(country);
-    const id = String(country.id).padStart(3, "0");
-    context.fillStyle = id === "410" ? "#28546b" : id === "840" ? "#214657" : "#1b3745";
-    context.fill();
-    context.strokeStyle = id === "410" ? "#6a9ab2" : "#416372";
-    context.lineWidth = id === "410" ? 1.25 : 0.65;
-    context.stroke();
-  });
-
-  if (activeLayers.has("supply")) {
-    const relations = getEventRelations(selectedEvent);
-    relations.forEach((relation, index) => {
-      const color = index === 0 ? "#4386d1" : "#c58a35";
-      drawProjectedRelation(context, projection, relation, color, index > 0);
-    });
-  }
-
-  context.textAlign = "center";
-  context.textBaseline = "middle";
-  MAP_LABELS.forEach(({ label, coordinates, kind, offset = [0, 0] }) => {
-    const point = projection(coordinates);
-    if (!point) return;
-    context.font = kind === "ocean"
-      ? "12px 'IBM Plex Mono', monospace"
-      : "500 13px 'Noto Sans KR Variable', 'Apple SD Gothic Neo', sans-serif";
-    context.fillStyle = kind === "ocean" ? "#648899" : "#b3c3ca";
-    context.fillText(label, point[0] + offset[0], point[1] + offset[1]);
-  });
-}
-
-function formatLongitude(value) {
-  if (value === 0) return "0°";
-  return `${Math.abs(value)}°${value < 0 ? "W" : "E"}`;
-}
-
-function formatLatitude(value) {
-  if (value === 0) return "0°";
-  return `${Math.abs(value)}°${value < 0 ? "S" : "N"}`;
-}
+setWorkerUrl(mapWorkerUrl);
 
 function formatCoordinate(value, positive, negative) {
   const absolute = Math.abs(value);
@@ -202,72 +58,332 @@ function formatCoordinate(value, positive, negative) {
   return `${degrees}° ${String(minutes).padStart(2, "0")}′ ${String(seconds).padStart(2, "0")}″ ${value >= 0 ? positive : negative}`;
 }
 
-function CoordinateAxes() {
-  return (
-    <div className="coordinate-axes" aria-hidden="true">
-      <div className="longitude-axis is-top">{LONGITUDES.map((value) => <span key={value}>{formatLongitude(value)}</span>)}</div>
-      <div className="longitude-axis is-bottom">{LONGITUDES.map((value) => <span key={value}>{formatLongitude(value)}</span>)}</div>
-      <div className="latitude-axis is-left">{LATITUDES.map((value) => <span key={value}>{formatLatitude(value)}</span>)}</div>
-      <div className="latitude-axis is-right">{LATITUDES.map((value) => <span key={value}>{formatLatitude(value)}</span>)}</div>
-    </div>
-  );
+function getVisibleEvents(events, activeLayers) {
+  return events.filter((event) => activeLayers.has(event.category));
 }
 
-export function WorldSituationMap({ events, selectedEvent, onSelect, onOpenIssues, onOpenAi }) {
-  const frameRef = useRef(null);
-  const canvasRef = useRef(null);
-  const resizeFrameRef = useRef(null);
+function getStoredMapView() {
+  try {
+    const stored = JSON.parse(window.sessionStorage.getItem(MAP_VIEW_STORAGE_KEY));
+    const validCenter = Array.isArray(stored?.center)
+      && stored.center.length === 2
+      && Number.isFinite(stored.center[0])
+      && Number.isFinite(stored.center[1])
+      && stored.center[0] >= -180
+      && stored.center[0] <= 180
+      && stored.center[1] >= -85
+      && stored.center[1] <= 85;
+    const validZoom = Number.isFinite(stored?.zoom) && stored.zoom >= -1 && stored.zoom <= 13;
+    if (!validCenter || !validZoom) return KOREA_VIEW;
+    return {
+      center: stored.center,
+      zoom: stored.zoom,
+      bearing: Number.isFinite(stored.bearing) ? stored.bearing : 0,
+      pitch: Number.isFinite(stored.pitch) ? stored.pitch : 0,
+      overview: stored.overview === true,
+    };
+  } catch {
+    return KOREA_VIEW;
+  }
+}
+
+function saveMapView(map, overview) {
+  const center = map.getCenter();
+  try {
+    window.sessionStorage.setItem(MAP_VIEW_STORAGE_KEY, JSON.stringify({
+      center: [center.lng, center.lat],
+      zoom: map.getZoom(),
+      bearing: map.getBearing(),
+      pitch: map.getPitch(),
+      overview,
+    }));
+  } catch {
+    // URL hash still preserves the view when session storage is unavailable.
+  }
+}
+
+function localizeBasemapLabels(map) {
+  const textField = [
+    "coalesce",
+    ["get", "name_ko"],
+    ["get", "name:ko"],
+    ["get", "name"],
+    ["get", "name_en"],
+    ["get", "name:latin"],
+  ];
+  KOREAN_LABEL_LAYERS.forEach((layerId) => {
+    if (!map.getLayer(layerId)) return;
+    map.setLayoutProperty(layerId, "text-field", textField);
+    if (["place_town", "place_city", "place_city_large"].includes(layerId)) {
+      map.setLayoutProperty(layerId, "icon-image", "");
+    }
+  });
+}
+
+function addIntelligenceLayers(map, events) {
+  map.addSource("events", {
+    type: "geojson",
+    data: eventsToFeatureCollection(events),
+    cluster: true,
+    clusterMaxZoom: 5,
+    clusterRadius: 52,
+  });
+
+  map.addSource("selected-event", {
+    type: "geojson",
+    data: { type: "FeatureCollection", features: [] },
+  });
+
+  map.addSource("event-relations", {
+    type: "geojson",
+    data: { type: "FeatureCollection", features: [] },
+  });
+
+  map.addLayer({
+    id: "event-relations",
+    type: "line",
+    source: "event-relations",
+    paint: {
+      "line-color": ["match", ["get", "index"], 0, "#4386d1", "#c58a35"],
+      "line-width": ["interpolate", ["linear"], ["zoom"], 1, 1, 6, 2.2],
+      "line-opacity": 0.82,
+      "line-dasharray": [2, 2],
+    },
+  });
+
+  map.addLayer({
+    id: "event-clusters",
+    type: "circle",
+    source: "events",
+    filter: ["has", "point_count"],
+    paint: {
+      "circle-color": "#16384a",
+      "circle-stroke-color": "#75a9c0",
+      "circle-stroke-width": 1.5,
+      "circle-radius": ["step", ["get", "point_count"], 18, 4, 23, 10, 28],
+      "circle-opacity": 0.96,
+    },
+  });
+
+  map.addLayer({
+    id: "event-cluster-count",
+    type: "symbol",
+    source: "events",
+    filter: ["has", "point_count"],
+    layout: {
+      "text-field": ["get", "point_count_abbreviated"],
+      "text-size": 11,
+    },
+    paint: { "text-color": "#edf6f8" },
+  });
+
+  map.addLayer({
+    id: "selected-event-halo",
+    type: "circle",
+    source: "selected-event",
+    paint: {
+      "circle-radius": ["interpolate", ["linear"], ["zoom"], 1, 14, 8, 20],
+      "circle-color": "rgba(0,0,0,0)",
+      "circle-stroke-color": [
+        "match", ["get", "category"],
+        "korea-core", CATEGORY_META["korea-core"].color,
+        "us-impact", CATEGORY_META["us-impact"].color,
+        CATEGORY_META["rapid-change"].color,
+      ],
+      "circle-stroke-width": 2,
+      "circle-opacity": 0.95,
+    },
+  });
+
+  map.addLayer({
+    id: "event-points",
+    type: "circle",
+    source: "events",
+    filter: ["!", ["has", "point_count"]],
+    paint: {
+      "circle-radius": ["interpolate", ["linear"], ["zoom"], 1, 8, 8, 12],
+      "circle-color": [
+        "match", ["get", "category"],
+        "korea-core", CATEGORY_META["korea-core"].color,
+        "us-impact", CATEGORY_META["us-impact"].color,
+        CATEGORY_META["rapid-change"].color,
+      ],
+      "circle-stroke-color": "#071923",
+      "circle-stroke-width": 3,
+      "circle-opacity": 0.96,
+    },
+  });
+
+  map.addLayer({
+    id: "event-point-labels",
+    type: "symbol",
+    source: "events",
+    filter: ["!", ["has", "point_count"]],
+    layout: {
+      "text-field": ["get", "shortId"],
+      "text-size": 9,
+      "text-allow-overlap": true,
+      "text-ignore-placement": true,
+    },
+    paint: { "text-color": "#f3f8fa" },
+  });
+}
+
+export function WorldSituationMap({ events, selectedEvent, selectionActive, onSelect, onOpenIssues, onOpenAi }) {
+  const mapContainerRef = useRef(null);
+  const mapRef = useRef(null);
+  const eventsRef = useRef(events);
+  const onSelectRef = useRef(onSelect);
   const previousEventIdRef = useRef(selectedEvent.id);
-  const [size, setSize] = useState({ width: 1440, height: 820 });
-  const [zoom, setZoom] = useState(1);
+  const previousSelectionActiveRef = useRef(selectionActive);
+  const [worldOverview, setWorldOverview] = useState(() => getStoredMapView().overview === true);
+  const worldOverviewRef = useRef(worldOverview);
+  const [mapReady, setMapReady] = useState(false);
+  const [mapStatus, setMapStatus] = useState("loading");
   const [activeLayers, setActiveLayers] = useState(() => new Set(LAYERS.map(({ id }) => id)));
   const [cursorCoordinate, setCursorCoordinate] = useState(selectedEvent.coordinates);
+  const [camera, setCamera] = useState({ ...KOREA_VIEW, bearing: 0 });
   const [popoverOpen, setPopoverOpen] = useState(() => !window.matchMedia("(max-width: 600px)").matches);
-  const [fontRevision, setFontRevision] = useState(0);
+
+  eventsRef.current = events;
+  useEffect(() => { onSelectRef.current = onSelect; }, [onSelect]);
 
   useEffect(() => {
-    const frame = frameRef.current;
-    if (!frame) return undefined;
-    const update = () => {
-      window.cancelAnimationFrame(resizeFrameRef.current);
-      resizeFrameRef.current = window.requestAnimationFrame(() => {
-        const bounds = frame.getBoundingClientRect();
-        setSize({ width: bounds.width, height: bounds.height });
-      });
+    if (!mapContainerRef.current || mapRef.current) return undefined;
+
+    const initialView = getStoredMapView();
+    const map = new MapLibreMap({
+      container: mapContainerRef.current,
+      style: MAP_STYLE_URL,
+      center: initialView.center,
+      zoom: initialView.zoom,
+      bearing: initialView.bearing ?? 0,
+      pitch: initialView.pitch ?? 0,
+      minZoom: -1,
+      maxZoom: 13,
+      hash: "map",
+      renderWorldCopies: false,
+      attributionControl: false,
+      localIdeographFontFamily: "'Noto Sans KR Variable', 'Apple SD Gothic Neo', sans-serif",
+    });
+    let styleBooted = false;
+    let mapLoaded = false;
+    let hadResourceError = false;
+    let pointerFrame = 0;
+    let resourceTimeout = 0;
+    mapRef.current = map;
+    map.addControl(new AttributionControl({ compact: false }), "bottom-right");
+    const styleTimeout = window.setTimeout(() => {
+      if (!styleBooted) setMapStatus("error");
+    }, 12_000);
+
+    const updateCamera = () => {
+      const center = map.getCenter();
+      setCamera({ center: [center.lng, center.lat], zoom: map.getZoom(), bearing: map.getBearing() });
+      saveMapView(map, worldOverviewRef.current);
     };
-    update();
-    const observer = new ResizeObserver(update);
-    observer.observe(frame);
+
+    const handleMouseMove = (event) => {
+      const coordinate = [event.lngLat.lng, event.lngLat.lat];
+      window.cancelAnimationFrame(pointerFrame);
+      pointerFrame = window.requestAnimationFrame(() => setCursorCoordinate(coordinate));
+    };
+    const handleClusterClick = async (event) => {
+      const feature = map.queryRenderedFeatures(event.point, { layers: ["event-clusters"] })[0];
+      if (!feature) return;
+      try {
+        const source = map.getSource("events");
+        const zoom = await source.getClusterExpansionZoom(feature.properties.cluster_id);
+        map.easeTo({ center: feature.geometry.coordinates, zoom });
+      } catch {
+        setMapStatus("degraded");
+      }
+    };
+    const handleEventClick = (event) => {
+      const feature = event.features?.[0];
+      if (!feature) return;
+      onSelectRef.current(Number(feature.properties.id));
+      setPopoverOpen(true);
+    };
+    const showPointer = () => { map.getCanvas().style.cursor = "pointer"; };
+    const restorePointer = () => { map.getCanvas().style.cursor = ""; };
+
+    map.once("style.load", () => {
+      styleBooted = true;
+      window.clearTimeout(styleTimeout);
+      localizeBasemapLabels(map);
+      addIntelligenceLayers(map, eventsRef.current);
+      setMapReady(true);
+      setMapStatus("loading");
+      resourceTimeout = window.setTimeout(() => {
+        if (!mapLoaded) setMapStatus("degraded");
+      }, 15_000);
+      updateCamera();
+    });
+    map.once("load", () => {
+      mapLoaded = true;
+      window.clearTimeout(resourceTimeout);
+      setMapStatus(hadResourceError ? "degraded" : "ready");
+    });
+    map.on("error", (event) => {
+      if (!event?.error) return;
+      if (!styleBooted) setMapStatus("error");
+      else {
+        hadResourceError = true;
+        setMapStatus("degraded");
+      }
+    });
+    map.on("mousemove", handleMouseMove);
+    map.on("moveend", updateCamera);
+    map.on("click", "event-clusters", handleClusterClick);
+    map.on("click", "event-points", handleEventClick);
+    map.on("mouseenter", "event-clusters", showPointer);
+    map.on("mouseleave", "event-clusters", restorePointer);
+    map.on("mouseenter", "event-points", showPointer);
+    map.on("mouseleave", "event-points", restorePointer);
+
     return () => {
-      observer.disconnect();
-      window.cancelAnimationFrame(resizeFrameRef.current);
+      window.clearTimeout(styleTimeout);
+      window.clearTimeout(resourceTimeout);
+      window.cancelAnimationFrame(pointerFrame);
+      map.remove();
+      mapRef.current = null;
     };
   }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    document.fonts?.ready.then(() => { if (!cancelled) setFontRevision((value) => value + 1); });
-    return () => { cancelled = true; };
-  }, []);
+    if (!mapReady) return;
+    const visibleEvents = getVisibleEvents(events, activeLayers);
+    mapRef.current?.getSource("events")?.setData(eventsToFeatureCollection(visibleEvents));
+  }, [activeLayers, events, mapReady]);
 
   useEffect(() => {
-    if (previousEventIdRef.current !== selectedEvent.id) setPopoverOpen(true);
+    if (!mapReady) return;
+    const map = mapRef.current;
+    const selectedVisible = selectionActive && activeLayers.has(selectedEvent.category);
+    map?.getSource("selected-event")?.setData(eventsToFeatureCollection(selectedVisible ? [selectedEvent] : []));
+    map?.getSource("event-relations")?.setData(relationsToFeatureCollection(
+      selectedVisible && activeLayers.has("supply") ? getEventRelations(selectedEvent) : [],
+    ));
+    if (map?.getLayer("event-relations")) {
+      map.setLayoutProperty("event-relations", "visibility", activeLayers.has("supply") ? "visible" : "none");
+    }
+    if (selectedVisible) setCursorCoordinate(selectedEvent.coordinates);
+    const selectionJustActivated = selectionActive && !previousSelectionActiveRef.current;
+    if (selectedVisible && (selectionJustActivated || previousEventIdRef.current !== selectedEvent.id)) {
+      setPopoverOpen(true);
+      worldOverviewRef.current = false;
+      setWorldOverview(false);
+      window.requestAnimationFrame(() => {
+        map?.resize();
+        map?.flyTo({ center: selectedEvent.coordinates, zoom: Math.max(map.getZoom(), 4.2), essential: false });
+      });
+    }
     previousEventIdRef.current = selectedEvent.id;
-    setCursorCoordinate(selectedEvent.coordinates);
-  }, [selectedEvent.coordinates, selectedEvent.id]);
+    previousSelectionActiveRef.current = selectionActive;
+  }, [activeLayers, mapReady, selectedEvent, selectionActive]);
 
-  const projection = useMemo(() => createDisplayProjection(size, zoom), [size, zoom]);
-
-  useEffect(() => {
-    if (canvasRef.current) drawMap(canvasRef.current, size, projection, selectedEvent, activeLayers);
-  }, [activeLayers, fontRevision, projection, selectedEvent, size]);
-
-  const selectedPoint = projection(selectedEvent.coordinates);
-  const popoverPosition = selectedPoint ? {
-    left: `${clamp(selectedPoint[0] + 34, 22, Math.max(22, size.width - 302))}px`,
-    top: `${clamp(selectedPoint[1] - 36, 92, Math.max(92, size.height - 250))}px`,
-  } : undefined;
-  const relation = getEventRelations(selectedEvent)[0];
+  const relation = useMemo(() => getEventRelations(selectedEvent)[0], [selectedEvent]);
 
   function toggleLayer(id) {
     setActiveLayers((current) => {
@@ -278,20 +394,49 @@ export function WorldSituationMap({ events, selectedEvent, onSelect, onOpenIssue
     });
   }
 
-  function handlePointerMove(event) {
-    const bounds = frameRef.current?.getBoundingClientRect();
-    if (!bounds) return;
-    const coordinate = projection.invert([event.clientX - bounds.left, event.clientY - bounds.top]);
-    if (coordinate && Number.isFinite(coordinate[0]) && Number.isFinite(coordinate[1])) setCursorCoordinate(coordinate);
+  function moveTo(view) {
+    const map = mapRef.current;
+    if (!map) return;
+    worldOverviewRef.current = false;
+    setWorldOverview(false);
+    window.requestAnimationFrame(() => {
+      map.resize();
+      map.flyTo({ center: view.center, zoom: view.zoom, bearing: 0, pitch: 0, essential: false });
+    });
+  }
+
+  function showWorld() {
+    const map = mapRef.current;
+    if (!map) return;
+    const mobileOverview = map.getContainer().clientWidth < 600;
+    worldOverviewRef.current = mobileOverview;
+    setWorldOverview(mobileOverview);
+    window.requestAnimationFrame(() => {
+      map.resize();
+      const containerWidth = map.getContainer().clientWidth;
+      const horizontalPadding = containerWidth < 600 ? 18 : 48;
+      const worldZoom = Math.log2(Math.max(1, containerWidth - horizontalPadding * 2) / 512);
+      map.flyTo({
+        center: [0, 18],
+        zoom: Math.max(map.getMinZoom(), worldZoom),
+        bearing: 0,
+        pitch: 0,
+        essential: false,
+      });
+    });
   }
 
   return (
-    <section className="map-frame" ref={frameRef} aria-label="세계 사건 상황지도" onPointerMove={handlePointerMove}>
-      <canvas ref={canvasRef} aria-hidden="true" />
-      <CoordinateAxes />
+    <section className={`map-frame${worldOverview ? " is-world-overview" : ""}`} aria-label="세계 사건 상황지도">
+      <div className="maplibre-map" ref={mapContainerRef} aria-label="확대와 이동이 가능한 오픈소스 지도" />
       <div className="map-data-cluster" aria-label="지도 데이터 상태">
-        DEMO DATASET <span>·</span> 신호 {events.length} <span>·</span> 출처 33 <span>·</span> 마지막 확인 20:04 KST
+        {mapStatus === "ready" ? "OPEN MAP READY" : mapStatus === "degraded" ? "MAP DEGRADED" : mapStatus === "error" ? "BASEMAP ERROR" : "MAP LOADING"}
+        <span>·</span> 신호 {events.length} <span>·</span> 데모 자료 <span>·</span> OSM 기반
       </div>
+      <div className={`map-mobile-status is-${mapStatus}`} role="status">
+        {mapStatus === "ready" ? "MAP READY" : mapStatus === "degraded" ? "MAP DEGRADED" : mapStatus === "error" ? "MAP ERROR" : "MAP LOADING"}
+      </div>
+
       <div className="layer-controls" aria-label="지도 레이어">
         <div className="layer-heading"><Stack size={14} /> LAYERS</div>
         {LAYERS.map(({ id, label, icon: Icon }) => (
@@ -302,35 +447,30 @@ export function WorldSituationMap({ events, selectedEvent, onSelect, onOpenIssue
         ))}
       </div>
 
-      <div className="map-controls" aria-label="지도 배율">
-        <button type="button" onClick={() => setZoom((value) => clamp(value + 0.1, 0.9, 1.4))} aria-label="지도 확대"><Plus size={19} /></button>
-        <button type="button" onClick={() => setZoom((value) => clamp(value - 0.1, 0.9, 1.4))} aria-label="지도 축소"><Minus size={19} /></button>
-        <button type="button" onClick={() => setZoom(1)} aria-label="지도 배율 초기화"><Crosshair size={18} /></button>
+      <div className="map-controls" aria-label="지도 탐색">
+        <button type="button" onClick={() => mapRef.current?.zoomIn()} aria-label="지도 확대"><Plus size={19} /></button>
+        <button type="button" onClick={() => mapRef.current?.zoomOut()} aria-label="지도 축소"><Minus size={19} /></button>
+        <button type="button" onClick={() => moveTo(KOREA_VIEW)} aria-label="대한민국 중심으로 이동"><Crosshair size={18} /></button>
+        <button type="button" onClick={showWorld} aria-label="세계 전체 보기"><GlobeHemisphereWest size={18} /></button>
       </div>
-      <div className="scale-readout" aria-hidden="true"><span>1000 km</span><i /><small>PROJ. NATURAL EARTH</small></div>
+
+      <div className="map-camera-readout" aria-label="현재 지도 보기">
+        <span>ZOOM {camera.zoom.toFixed(2)}</span>
+        <span>{camera.center[1].toFixed(4)}, {camera.center[0].toFixed(4)}</span>
+        <small>DRAG · SCROLL / PINCH · URL SYNC</small>
+      </div>
       <output className="coordinate-readout" aria-label="지도 커서 좌표">
         {formatCoordinate(cursorCoordinate[1], "N", "S")} &nbsp; {formatCoordinate(cursorCoordinate[0], "E", "W")}
       </output>
 
-      {events.map((event) => {
-        const point = projection(event.coordinates);
-        if (!point) return null;
-        return (
-          <button
-            className={`map-marker category-${event.category}${event.id === selectedEvent.id ? " is-selected" : ""}`}
-            key={event.id}
-            style={{ left: `${point[0]}px`, top: `${point[1]}px` }}
-            onClick={() => { onSelect(event.id); setPopoverOpen(true); }}
-            aria-label={`${CATEGORY_META[event.category].label}, ${event.region}: ${event.title}`}
-            aria-pressed={event.id === selectedEvent.id}
-          >
-            <span>{String(event.id).padStart(2, "0")}</span>
-          </button>
-        );
-      })}
+      {mapStatus === "error" && (
+        <div className="map-error" role="status">
+          공개 지도 타일을 불러오지 못했습니다. 네트워크 연결을 확인해 주세요.
+        </div>
+      )}
 
-      {popoverOpen && popoverPosition && (
-        <section className="event-popover" style={popoverPosition} aria-label={`${selectedEvent.title} 선택 사건`}>
+      {popoverOpen && selectionActive && activeLayers.has(selectedEvent.category) && (
+        <section className="event-popover" aria-label={`${selectedEvent.title} 선택 사건`}>
           <button className="popover-close" type="button" onClick={() => setPopoverOpen(false)} aria-label="선택 사건 팝오버 닫기"><X size={18} /></button>
           <div className="popover-meta">
             <strong>{String(selectedEvent.id).padStart(2, "0")}</strong>

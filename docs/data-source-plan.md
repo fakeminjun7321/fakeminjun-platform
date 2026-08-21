@@ -48,8 +48,9 @@
 
 | 후보 | 용도 | 도입 판단 | 현재 검증 |
 |---|---|---|---|
-| [D3 Geo](https://d3js.org/d3-geo) + [Natural Earth 기반 world-atlas](https://github.com/topojson/world-atlas) | 1차 국제정세 상황실의 정적 세계 지도와 사건 좌표 렌더링 | 프로토타입 채택 | 로컬 atlas 번들·Canvas 렌더링 구현, 데모 좌표만 브라우저 확인 |
-| [MapLibre GL JS](https://maplibre.org/maplibre-gl-js/docs/) | 실제 타일·확대·레이어·시공간 탐색이 필요한 후속 지도 | 후속 후보 | 공식 문서 확인, 코드 미구현 |
+| [MapLibre GL JS](https://maplibre.org/maplibre-gl-js/docs/) + [OpenFreeMap](https://openfreemap.org/) | 확대·이동·클러스터·레이어·지도 상태 링크 | 프로토타입 채택 | 실제 Chrome에서 공개 타일·확대·이동·필터·URL 상태 확인, 분산된 데모 사건의 클러스터 동작은 미검증 |
+| [Protomaps PMTiles](https://docs.protomaps.com/pmtiles/) + Cloudflare R2/Worker | 운영 지도 자체 호스팅과 타일별 캐시 | 운영 추천 | 구조 조사 완료, 실제 R2·Worker 미연결 |
+| [OpenMapTiles](https://openmaptiles.org/) | 깊은 지도 스키마·스타일 커스터마이징 | 후속 보류 | 운영 복잡도가 높아 특수 요구 발생 시 검토 |
 | [W3C Screen Capture API](https://www.w3.org/TR/screen-capture/) / [`getDisplayMedia`](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getDisplayMedia) | 사용자가 선택한 탭·창·화면 캡처 | 1차 후보 | 사양 확인, 실제 브라우저 경로 미검증 |
 
 사이트 자체 요소는 앱 내부 영역 선택으로 처리하고, 다른 탭·창·화면은 브라우저의 공유 선택 창을 사용한다. 사용자의 명시적 동작 없이 자동 캡처하지 않는다.
@@ -96,7 +97,7 @@ AI 모델과 임베딩 공급자는 아직 확정하지 않는다. 첫 구현에
 ## 7. 1차 연결 순서
 
 1. 공급자별 응답을 저장하기 전에 원본 예시와 이용 조건을 검증한다.
-2. 국제정세 1개, 한국 정치 1개, 물리 1개 API로 작은 세로 조각을 만든다.
+2. 현재 진행 중인 국제정세 API 1개로 첫 세로 조각을 끝까지 검증한 뒤 한국 정치와 물리를 각각 다음 세로 조각으로 추가한다.
 3. 정규화 레코드와 원본 응답을 분리해 저장한다.
 4. 검색·필터·상세 화면에서 출처로 되돌아갈 수 있는지 확인한다.
 5. AI가 해당 레코드만 근거로 구조화된 분석을 만들고, 인용 위치가 맞는지 검사한다.
@@ -104,7 +105,8 @@ AI 모델과 임베딩 공급자는 아직 확정하지 않는다. 첫 구현에
 
 ## 8. 첫 연결 전에 결정할 항목
 
-- 1차 세로 조각에서 사용할 국제정세·정치·물리 API 각 1개
+- 1차 세로 조각에서 사용할 국제정세 API 1개와 갱신 주기
+- 후속 세로 조각에서 비교할 한국 정치·물리 API 후보
 - 원문 전체 저장과 메타데이터·링크만 저장하는 기준
 - 외부 API 사용량 및 월 비용 상한
 - AI 분석 결과 보관 기간과 삭제 방식

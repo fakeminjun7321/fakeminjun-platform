@@ -302,7 +302,7 @@ function PassiveStatusBar() {
   return (
     <footer className="system-status" aria-label="데이터 상태">
       <span>DATASET <strong>DEMO</strong></span><span>VISIBLE SIGNALS <strong>6</strong></span>
-      <span>SOURCES <strong>33</strong></span><span>PROJECTION <strong>NATURAL EARTH</strong></span>
+      <span>SOURCES <strong>33</strong></span><span>PROJECTION <strong>WEB MERCATOR</strong></span>
       <span className="system-health">마지막 확인 20:04 KST <i aria-hidden="true" /> 시스템 정상</span>
     </footer>
   );
@@ -415,7 +415,7 @@ export function App() {
 
         {route === "map" && (
           <main className="situation-map-page">
-            <WorldSituationMap events={EVENTS} selectedEvent={selectedEvent} onSelect={setSelectedId}
+            <WorldSituationMap events={EVENTS} selectedEvent={selectedEvent} selectionActive={selectedId !== null} onSelect={setSelectedId}
               onOpenIssues={() => openIssues(selectedEvent.id)} onOpenAi={() => setAiOpen(true)} />
             <TodaySignalsPanel events={topSignals} selectedId={selectedId} onSelect={setSelectedId}
               onOpenBriefing={() => navigate("briefing")} />

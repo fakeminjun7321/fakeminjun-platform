@@ -17,3 +17,6 @@ Build app UI in `src/`. Keep `.openai/hosting.json`, `worker/index.js`, `scripts
 - Within international affairs, keep `상황지도`, `오늘 브리핑`, and `이슈 추적` as separate workspaces. The situation map may show at most three concise current signals; long briefings, evidence lists, timelines, and ongoing analysis belong in their dedicated workspaces.
 - Keep AI closed by default and open it only from an explicit action.
 - Any prototype event content must be visibly labeled as non-live demo data.
+- Use MapLibre GL JS for real map movement and zoom. The prototype may use OpenFreeMap, while production should move to hash-verified PMTiles hosted behind Cloudflare R2/Worker caching; never depend on OpenStreetMap public tile servers for production traffic.
+- Preserve viewport state in the URL, and keep map event categories and relationship lines independently toggleable.
+- The current backend recommendation is Cloudflare-first. Do not create Cloudflare/Firebase resources, change DNS, register secrets, or claim persistence without explicit approval and live verification.

@@ -43,8 +43,9 @@
 ## 4. 현재 상태
 
 - **Implemented**: 제품 문서와 국제정세 상황실 프론트엔드 프로토타입
-- **Unit-verified**: 사건·관계 데이터 및 정적 Sites worker 테스트 12건 통과
-- **Simulator-verified**: Chrome에서 지도 선택·레이어·배율, 브리핑·이슈 이동, AI 패널 키보드 흐름 및 1440×1024, 1280×720, 700×800, 390×844 viewport 확인
+- **Unit-verified**: 사건·관계 데이터 및 정적 Sites worker 테스트 13건 통과
+- **Browser-verified**: 실제 데스크톱 Chrome에서 OpenFreeMap 타일 렌더, 지도 확대·이동·레이어·URL 상태, 마커 선택과 1440×1024 및 390×844 반응형 viewport 확인
+- **Simulator-verified**: 미검증 — 모바일 시뮬레이터는 사용하지 않음
 - **Physical-device-verified**: 미검증 — 실제 Mac·모바일 기기 실행 없음
 - **Live-service-verified**: 미검증 — 실제 API 요청, AI 호출, 업로드, 영속 저장 없음
 - **Antivirus-verified**: 미검증 — 정적 보안 검토와 npm advisory·서명 검사는 수행했으나 백신·EDR 엔진은 실행하지 않음

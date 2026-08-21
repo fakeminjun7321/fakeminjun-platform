@@ -44,3 +44,53 @@ export function getEventRelations(event) {
     },
   }));
 }
+
+export function eventsToFeatureCollection(events) {
+  return {
+    type: "FeatureCollection",
+    features: events.map((event) => ({
+      type: "Feature",
+      id: event.id,
+      geometry: {
+        type: "Point",
+        coordinates: [...event.coordinates],
+      },
+      properties: {
+        id: event.id,
+        shortId: String(event.id).padStart(2, "0"),
+        category: event.category,
+        region: event.region,
+        title: event.title,
+        status: event.status,
+      },
+    })),
+  };
+}
+
+export function relationsToFeatureCollection(relations) {
+  return {
+    type: "FeatureCollection",
+    features: relations.map((relation, index) => ({
+      type: "Feature",
+      geometry: {
+        type: "LineString",
+        coordinates: (() => {
+          const from = [...relation.from.coordinates];
+          const to = [...relation.to.coordinates];
+          const longitudeDelta = to[0] - from[0];
+          if (longitudeDelta > 180) to[0] -= 360;
+          else if (longitudeDelta < -180) to[0] += 360;
+          return [from, to];
+        })(),
+      },
+      properties: {
+        eventId: relation.eventId,
+        index,
+        label: relation.label,
+        relation: relation.relation,
+        fromLabel: relation.from.label,
+        toLabel: relation.to.label,
+      },
+    })),
+  };
+}

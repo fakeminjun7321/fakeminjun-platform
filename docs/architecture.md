@@ -2,7 +2,7 @@
 
 작성일: 2026-08-21
 
-이 문서는 특정 클라우드나 AI 공급자를 확정하지 않는 논리 구조다. 프론트엔드 프로토타입은 React 19와 Vite 6으로 시작했지만, 백엔드·저장소·AI 공급자는 작은 세로 조각을 구현하기 전에 결정한다.
+이 문서는 공급자 중립적인 논리 구조다. 프론트엔드 프로토타입은 React 19, Vite 6, MapLibre GL JS로 구성한다. 백엔드는 Cloudflare-first를 현재 추천안으로 두되 실제 외부 리소스 생성 전 사용자 승인을 받는다. 구체 계획은 [backend-cloudflare-plan.md](./backend-cloudflare-plan.md)에 기록한다.
 
 ## 1. 전체 흐름
 
@@ -112,11 +112,10 @@ AI 응답은 자유형 Markdown 한 덩어리가 아니라 다음 구조를 기�
 
 ## 8. 현재 선택과 아직 선택하지 않는 기술
 
-- 프론트엔드 프로토타입: React 19, Vite 6, D3 Geo, TopoJSON, world-atlas, Phosphor Icons
-- 프론트엔드 호스팅 공급자와 배포 방식은 아직 확정하지 않음
-- 관계형 DB, 객체 스토리지와 벡터 검색 제품
-- 인증 서비스
-- AI 모델 및 게이트웨이
-- 백그라운드 작업·큐 시스템
+- 프론트엔드 프로토타입: React 19, Vite 6, MapLibre GL JS, OpenFreeMap, Phosphor Icons
+- 지도 운영 추천: Protomaps PMTiles + Cloudflare R2/Worker 캐시
+- 백엔드 추천: Workers Static Assets + Worker BFF + D1 + R2 + Queues
+- 후속 추천: Workflows, Vectorize, AI Gateway
+- 아직 미확정: 실제 Cloudflare 리소스, 인증 공개 범위, AI 모델, 첫 실제 수집 API, 비용 상한
 
-선택 기준은 시각적 선호가 아니라 실제 데이터 수집, 캡처 업로드, 저장, 검색, 인용 검증을 가장 작은 비용으로 끝까지 실행할 수 있는지다.
+선택 기준은 시각적 선호가 아니라 실제 데이터 수집, 캡처 업로드, 저장, 검색, 인용 검증을 가장 작은 비용으로 끝까지 실행할 수 있는지다. Firebase는 공개 회원가입·소셜 로그인·모바일 오프라인 동기화가 첫 출시의 핵심이 될 때 다시 비교한다.
