@@ -48,7 +48,8 @@
 
 | 후보 | 용도 | 도입 판단 | 현재 검증 |
 |---|---|---|---|
-| [MapLibre GL JS](https://maplibre.org/maplibre-gl-js/docs/) | 국제정세 지도 렌더링 | 1차 후보 | 공식 문서 확인, 코드 미구현 |
+| [D3 Geo](https://d3js.org/d3-geo) + [Natural Earth 기반 world-atlas](https://github.com/topojson/world-atlas) | 1차 국제정세 상황실의 정적 세계 지도와 사건 좌표 렌더링 | 프로토타입 채택 | 로컬 atlas 번들·Canvas 렌더링 구현, 데모 좌표만 브라우저 확인 |
+| [MapLibre GL JS](https://maplibre.org/maplibre-gl-js/docs/) | 실제 타일·확대·레이어·시공간 탐색이 필요한 후속 지도 | 후속 후보 | 공식 문서 확인, 코드 미구현 |
 | [W3C Screen Capture API](https://www.w3.org/TR/screen-capture/) / [`getDisplayMedia`](https://developer.mozilla.org/en-US/docs/Web/API/MediaDevices/getDisplayMedia) | 사용자가 선택한 탭·창·화면 캡처 | 1차 후보 | 사양 확인, 실제 브라우저 경로 미검증 |
 
 사이트 자체 요소는 앱 내부 영역 선택으로 처리하고, 다른 탭·창·화면은 브라우저의 공유 선택 창을 사용한다. 사용자의 명시적 동작 없이 자동 캡처하지 않는다.

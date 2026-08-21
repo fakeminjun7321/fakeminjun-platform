@@ -9,8 +9,10 @@
 - 제품 범위와 정보 구조 초안 작성
 - 데이터/API 후보와 검증 조건 정리
 - 공급자 중립 아키텍처 초안 작성
-- 프론트엔드, 백엔드, 로그인, 저장소, AI 연결은 아직 구현하지 않음
-- 실제 API 요청 및 사용자 경로는 아직 검증하지 않음
+- 국제정세 상황실 프론트엔드 프로토타입 구현 (`apps/web`)
+- 세계 지도, 핵심 브리핑, 24시간 타임라인, 검색, 사건 선택, 호출형 AI 패널의 화면 흐름 구현
+- 현재 사건은 모두 `NON-LIVE DEMO` 자료이며 AI 백엔드는 연결되지 않음
+- 백엔드, 로그인, 저장소, 실제 뉴스/API, 캡처·OCR 파이프라인은 아직 구현하지 않음
 
 ## 확정된 방향
 
@@ -31,10 +33,29 @@
 - [기술 아키텍처 초안](docs/architecture.md)
 - [구현·검증 기준](docs/verification-plan.md)
 
+## 로컬 프로토타입
+
+```bash
+cd apps/web
+npm ci
+npm run dev
+```
+
+품질 확인 명령:
+
+```bash
+npm test
+npm run build
+npm run test:sites
+npm run security:check
+```
+
 ## 검증 상태
 
-- **Implemented**: 기획·아키텍처 문서만 저장소에 존재
-- **Unit-verified**: 미검증 — 실행 코드와 자동화 테스트가 없음
-- **Simulator-verified**: 미검증 — 브라우저 사용자 경로를 실행하지 않음
+- **Implemented**: 기획 문서와 국제정세 프론트엔드 프로토타입이 저장소에 존재
+- **Unit-verified**: 사건 데이터·검색 테스트 4건과 정적 Sites worker 테스트 4건 통과
+- **Rendered-browser-verified**: Chrome에서 검색·선택·AI 패널 접근성 흐름과 4개 viewport를 확인
+- **Simulator-verified**: 미검증 — 모바일 크기는 데스크톱 Chrome viewport로만 확인
 - **Physical-device-verified**: 미검증 — 실제 기기에서 실행하지 않음
-- **Live-service-verified**: 미검증 — API 키와 실제 저장소를 이용한 요청·저장·조회가 없음
+- **Live-service-verified**: 미검증 — 실제 API, AI, 인증, 저장소를 이용한 요청·저장·조회가 없음
+- **Antivirus-verified**: 미검증 — 백신·EDR 엔진은 실행하지 못했으며, 정적 검토와 npm 서명·취약점 검사만 수행
