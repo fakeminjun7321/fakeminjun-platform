@@ -10,7 +10,7 @@
 - 데이터/API 후보와 검증 조건 정리
 - 공급자 중립 아키텍처 초안 작성
 - 국제정세 상황실 프론트엔드 프로토타입 구현 (`apps/web`)
-- 세계 지도, 핵심 브리핑, 24시간 타임라인, 검색, 사건 선택, 호출형 AI 패널의 화면 흐름 구현
+- 세계 상황지도, 3개 핵심 신호, 별도 오늘 브리핑·이슈 추적 화면, 사건 선택, 호출형 AI 패널의 화면 흐름 구현
 - 현재 사건은 모두 `NON-LIVE DEMO` 자료이며 AI 백엔드는 연결되지 않음
 - 백엔드, 로그인, 저장소, 실제 뉴스/API, 캡처·OCR 파이프라인은 아직 구현하지 않음
 
@@ -53,8 +53,8 @@ npm run security:check
 ## 검증 상태
 
 - **Implemented**: 기획 문서와 국제정세 프론트엔드 프로토타입이 저장소에 존재
-- **Unit-verified**: 사건 데이터·검색 테스트 4건과 정적 Sites worker 테스트 4건 통과
-- **Rendered-browser-verified**: Chrome에서 검색·선택·AI 패널 접근성 흐름과 4개 viewport를 확인
+- **Unit-verified**: 사건·관계 데이터 및 정적 Sites worker 테스트 12건 통과
+- **Simulator-verified**: Chrome에서 지도 선택·레이어·배율, 브리핑·이슈 이동, AI 패널 접근성 흐름과 1440×1024, 1280×720, 700×800, 390×844 viewport를 확인
 - **Simulator-verified**: 미검증 — 모바일 크기는 데스크톱 Chrome viewport로만 확인
 - **Physical-device-verified**: 미검증 — 실제 기기에서 실행하지 않음
 - **Live-service-verified**: 미검증 — 실제 API, AI, 인증, 저장소를 이용한 요청·저장·조회가 없음

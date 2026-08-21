@@ -10,8 +10,10 @@ Build app UI in `src/`. Keep `.openai/hosting.json`, `worker/index.js`, `scripts
 
 ## Project-specific design decisions
 
-- The selected source of truth is concept 1 from the 2026-08-21 ideation set: a large operational world map, a single right-hand briefing column, and a bottom 24-hour timeline.
+- The selected source of truth is the revised Atlas Canvas concept from 2026-08-21: a full-map situation workspace with a compact three-signal intelligence queue, an anchored event inspector, two-level navigation, and no right-hand briefing rail or bottom timeline.
 - Avoid generic AI-dashboard styling: no card grids, neon glow, glassmorphism, decorative metrics, or feature-inventory layouts.
+- The visual language should resemble a credible defensive cyber threat-intelligence workstation: deep navy surfaces, restrained cyan/green/amber states, coordinates, source agreement, verification state, and meaningful relationship lines. Avoid Matrix code, fake terminals, cyberpunk glow, hacker role-play copy, and meaningless technical decoration.
 - Separate the three domains by their work model. The international-affairs screen is map-led; politics and physics must not be implemented as reskinned copies of this screen.
+- Within international affairs, keep `상황지도`, `오늘 브리핑`, and `이슈 추적` as separate workspaces. The situation map may show at most three concise current signals; long briefings, evidence lists, timelines, and ongoing analysis belong in their dedicated workspaces.
 - Keep AI closed by default and open it only from an explicit action.
 - Any prototype event content must be visibly labeled as non-live demo data.

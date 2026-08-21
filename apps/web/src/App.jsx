@@ -1,214 +1,310 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight,
-  Compass,
-  MagnifyingGlass,
+  Brain,
+  CaretDown,
+  CaretUp,
+  Database,
   MapTrifold,
   PaperPlaneTilt,
   Selection,
-  Sparkle,
-  Triangle,
+  ShieldCheck,
   X,
 } from "@phosphor-icons/react";
-import { EVENTS, filterEvents } from "./events.js";
+import { EVENTS } from "./events.js";
+import { CATEGORY_META, STATUS_META, getTopSignals } from "./mapLayers.js";
 import { WorldSituationMap } from "./WorldSituationMap.jsx";
 
-const TIMELINE_START = Date.parse("2026-08-21T00:00:00+09:00");
-const DAY_MS = 24 * 60 * 60 * 1000;
+const ROUTES = {
+  map: "/international/map",
+  briefing: "/international/briefing",
+  issues: "/international/issues",
+};
 
-function getTimelinePosition(dateTime) {
-  const position = ((Date.parse(dateTime) - TIMELINE_START) / DAY_MS) * 100;
-  return Math.min(100, Math.max(0, position));
+const TRACKED_ISSUES = [
+  {
+    id: "supply-chain",
+    code: "ISSUE-KRUS-01",
+    title: "한미 핵심 산업·공급망",
+    summary: "핵심 광물, 배터리, 해상 교역로를 하나의 장기 산업안보 이슈로 추적합니다.",
+    eventIds: [1, 5],
+  },
+  {
+    id: "us-monetary-policy",
+    code: "ISSUE-US-02",
+    title: "미국 통화정책과 한국 시장",
+    summary: "연준 커뮤니케이션이 환율·수입물가·자금 흐름에 전파되는 과정을 추적합니다.",
+    eventIds: [2],
+  },
+  {
+    id: "middle-east-security",
+    code: "ISSUE-ME-03",
+    title: "중동 휴전 체제와 해상안보",
+    summary: "휴전 감시와 홍해 운항 위험을 에너지·물류·체류자 안전 관점에서 함께 봅니다.",
+    eventIds: [3, 6],
+  },
+  {
+    id: "europe-energy",
+    code: "ISSUE-EU-04",
+    title: "유럽 에너지와 LNG 시장",
+    summary: "유럽 공동구매와 저장 정책이 아시아 LNG 가격에 미치는 파급을 추적합니다.",
+    eventIds: [4],
+  },
+];
+
+function routeFromPath(pathname) {
+  return Object.entries(ROUTES).find(([, path]) => pathname === path)?.[0] ?? "map";
 }
 
 function DomainNavigation({ onUnavailable }) {
   return (
     <nav className="domain-navigation" aria-label="분야 이동">
-      <button className="domain-tab is-active" type="button" aria-current="page">
-        국제정세
-      </button>
-      <button className="domain-tab" type="button" onClick={() => onUnavailable("정치")}>
-        정치
-      </button>
-      <button className="domain-tab" type="button" onClick={() => onUnavailable("물리")}>
-        물리
-      </button>
+      <button className="domain-tab is-active" type="button" aria-current="page">국제정세</button>
+      <button className="domain-tab" type="button" onClick={() => onUnavailable("정치")}>정치</button>
+      <button className="domain-tab" type="button" onClick={() => onUnavailable("물리")}>물리</button>
     </nav>
   );
 }
 
-function Header({ query, onQueryChange, onOpenAi, onUnavailable, aiOpen, aiTriggerRef, aiAvailable }) {
+function Header({ onOpenAi, onUnavailable, aiOpen, aiTriggerRef }) {
   return (
     <header className="app-header">
       <button
-        className="project-mark"
+        className="brand-lockup"
         type="button"
-        onClick={() => onUnavailable("홈")}
-        aria-label="홈 — 프로젝트명 미정"
+        onClick={() => onUnavailable("프로젝트 홈")}
+        aria-label="프로젝트 홈 — 이름 미정"
       >
-        <Compass size={24} weight="light" />
+        <span>INTEL WORKSPACE</span>
       </button>
-      <h1 className="sr-only">국제정세 분석 상황실</h1>
+      <h1 className="sr-only">국제정세 분석 워크스페이스</h1>
       <DomainNavigation onUnavailable={onUnavailable} />
-      <label className="search-field">
-        <MagnifyingGlass size={18} weight="regular" aria-hidden="true" />
-        <span className="sr-only">사건, 지역 또는 주제 검색</span>
-        <input
-          value={query}
-          onChange={(event) => onQueryChange(event.target.value)}
-          placeholder="사건, 지역, 주제 검색"
-        />
-      </label>
-      <button
-        className="ai-trigger"
-        type="button"
-        onClick={onOpenAi}
-        ref={aiTriggerRef}
-        aria-haspopup="dialog"
-        aria-expanded={aiOpen}
-        aria-controls="ai-analysis-drawer"
-        disabled={!aiAvailable}
-      >
-        <Sparkle size={19} weight="light" aria-hidden="true" />
-        AI 분석
-      </button>
+      <div className="header-utilities">
+        <span className="as-of">기준 시각 <strong>20:04 KST</strong></span>
+        <span className="demo-stamp">NON-LIVE DEMO</span>
+        <button
+          className="ai-trigger"
+          type="button"
+          onClick={onOpenAi}
+          ref={aiTriggerRef}
+          aria-haspopup="dialog"
+          aria-expanded={aiOpen}
+          aria-controls="ai-analysis-drawer"
+        >
+          <Brain size={19} weight="duotone" aria-hidden="true" />
+          AI 분석 열기
+        </button>
+      </div>
     </header>
   );
 }
 
-function DetailStrip({ event, onClose }) {
+function InternationalSubnav({ route, onNavigate }) {
+  const items = [
+    { id: "map", label: "상황지도" },
+    { id: "briefing", label: "오늘 브리핑" },
+    { id: "issues", label: "이슈 추적" },
+  ];
+
   return (
-    <section className="detail-strip" aria-label={`${event.title} 상세 요약`}>
-      <button
-        className="icon-button detail-close"
-        type="button"
-        onClick={onClose}
-        aria-label="상세 요약 닫기"
-      >
-        <X size={18} />
-      </button>
-      <div>
-        <p className="eyebrow">VERIFIED FACTS</p>
-        <ul>{event.facts.map((item) => <li key={item}>{item}</li>)}</ul>
-      </div>
-      <div>
-        <p className="eyebrow">DISPUTED / UNVERIFIED</p>
-        <ul>{event.disputed.map((item) => <li key={item}>{item}</li>)}</ul>
-      </div>
-      <div>
-        <p className="eyebrow">WHY KOREA SHOULD CARE</p>
-        <ul>{event.relevance.map((item) => <li key={item}>{item}</li>)}</ul>
-      </div>
-    </section>
+    <nav className="international-subnav" aria-label="국제정세 작업 화면">
+      {items.map((item) => (
+        <a
+          className={route === item.id ? "is-active" : ""}
+          href={ROUTES[item.id]}
+          key={item.id}
+          aria-current={route === item.id ? "page" : undefined}
+          onClick={(event) => {
+            if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+            event.preventDefault();
+            onNavigate(item.id);
+          }}
+        >
+          {item.label}
+        </a>
+      ))}
+    </nav>
   );
 }
 
-function Briefing({ events, selectedId, onSelect, showAll, onToggleAll }) {
-  const lead = events.find((event) => event.id === selectedId) ?? events[0];
-
-  if (!lead) {
-    return (
-      <aside className="briefing-panel empty-briefing">
-        <p className="eyebrow">NO MATCHES</p>
-        <h2>검색 결과가 없습니다.</h2>
-        <p>지역명이나 더 짧은 주제로 다시 검색해 보세요.</p>
-      </aside>
-    );
-  }
-
-  const visibleEvents = showAll ? events : events.slice(0, 4);
+function SignalRow({ event, selected, onSelect }) {
+  const category = CATEGORY_META[event.category];
+  const status = STATUS_META[event.status];
 
   return (
-    <aside className="briefing-panel" aria-label="오늘의 핵심 변화">
-      <div className="briefing-heading">
-        <div>
-          <p className="date-label">TODAY / 21 AUG 2026</p>
-          <p className="timezone">KST · 최근 갱신 20:04</p>
-        </div>
-        <span className="demo-stamp">NON-LIVE DEMO</span>
-      </div>
+    <button
+      className={`signal-row category-${event.category}${selected ? " is-selected" : ""}`}
+      type="button"
+      onClick={() => onSelect(event.id)}
+      aria-pressed={selected}
+    >
+      <span className="signal-primary-meta">
+        <span className="signal-category"><i aria-hidden="true" />{category.label}</span>
+        <time dateTime={event.dateTime}>{event.time}</time>
+        <span>{event.region}</span>
+      </span>
+      <strong>{event.title}</strong>
+      <span className="signal-evidence">
+        출처 {event.sources}<span aria-hidden="true">·</span>합치도 {event.agreement}%<span aria-hidden="true">·</span>{status.label}
+      </span>
+      <span className="agreement-track" aria-hidden="true"><span style={{ width: `${event.agreement}%` }} /></span>
+    </button>
+  );
+}
 
-      <button className="lead-brief" type="button" onClick={() => onSelect(lead.id)}>
-        <span className="event-number is-selected">{lead.id}</span>
-        <span>
-          <strong>{lead.title}</strong>
-          <small>{lead.time} KST · {lead.sources} SOURCES</small>
-          <span>{lead.impact}</span>
-        </span>
-      </button>
+function TodaySignalsPanel({ events, selectedId, onSelect, onOpenBriefing }) {
+  const [collapsed, setCollapsed] = useState(() => window.matchMedia("(max-width: 600px)").matches);
 
-      <div className="list-heading">
-        <p className="eyebrow">TODAY&apos;S TOP CHANGES</p>
-        <span>{events.length} EVENTS</span>
-      </div>
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 600px)");
+    const handleChange = (event) => { if (event.matches) setCollapsed(true); };
+    media.addEventListener("change", handleChange);
+    return () => media.removeEventListener("change", handleChange);
+  }, []);
 
-      <div className="event-list">
-        {visibleEvents.map((event) => (
-          <button
-            className={`event-row${event.id === selectedId ? " is-selected" : ""}`}
-            type="button"
-            key={event.id}
-            onClick={() => onSelect(event.id)}
-            aria-pressed={event.id === selectedId}
-          >
-            <span className="event-number">{event.id}</span>
-            <span className="event-copy">
-              <span className="event-meta">
-                <time dateTime={event.dateTime}>{event.time}</time>
-                <span>{event.shortRegion}</span>
-                <span>{event.sources} sources</span>
-              </span>
-              <strong>{event.title}</strong>
-              <small>{event.summary}</small>
-            </span>
-          </button>
-        ))}
-      </div>
-
-      {events.length > 4 && (
-        <button className="view-all" type="button" onClick={onToggleAll}>
-          {showAll ? "핵심 4건만 보기" : "전체 변화 보기"}
-          <ArrowRight size={16} aria-hidden="true" />
+  return (
+    <aside className={`signals-panel${collapsed ? " is-collapsed" : ""}`} aria-label="주요 신호">
+      <div className="signals-heading">
+        <div><p className="system-kicker">INTELLIGENCE QUEUE</p><h2>주요 신호</h2></div>
+        <button
+          className="panel-toggle"
+          type="button"
+          onClick={() => setCollapsed((value) => !value)}
+          aria-expanded={!collapsed}
+        >
+          {collapsed ? "펼치기" : "접기"}
+          {collapsed ? <CaretDown size={15} /> : <CaretUp size={15} />}
         </button>
+      </div>
+      {!collapsed && (
+        <>
+          <div className="signal-list">
+            {events.map((event) => (
+              <SignalRow event={event} key={event.id} selected={event.id === selectedId} onSelect={onSelect} />
+            ))}
+          </div>
+          <button className="panel-link" type="button" onClick={onOpenBriefing}>
+            오늘 브리핑 전체 보기 <ArrowRight size={16} aria-hidden="true" />
+          </button>
+        </>
       )}
     </aside>
   );
 }
 
-function Timeline({ events, selectedId, onSelect }) {
+function BriefingPage({ events, selectedId, onSelect, onOpenIssues }) {
   return (
-    <section className="timeline-panel" aria-label="최근 24시간 사건 타임라인">
-      <div className="timeline-title-row">
-        <p className="eyebrow">Last 24 hours (KST)</p>
+    <main className="focused-workspace briefing-workspace">
+      <header className="workspace-heading">
+        <div>
+          <p className="system-kicker">DAILY INTELLIGENCE BRIEF · 21 AUG 2026</p>
+          <h2>오늘 브리핑</h2>
+          <p>한국을 중심으로 미국의 영향과 급격한 변화를 분리해 읽습니다.</p>
+        </div>
+        <span className="workspace-count">{events.length} SIGNALS · 33 SOURCES</span>
+      </header>
+      <div className="briefing-feed">
+        {events.map((event) => {
+          const category = CATEGORY_META[event.category];
+          const status = STATUS_META[event.status];
+          return (
+            <article className={`briefing-item${event.id === selectedId ? " is-selected" : ""}`} key={event.id}>
+              <button type="button" onClick={() => onSelect(event.id)} aria-pressed={event.id === selectedId}>
+                <span className="briefing-rank">{String(event.signalRank).padStart(2, "0")}</span>
+                <span className="briefing-copy">
+                  <span className="briefing-meta">
+                    <strong>{category.label}</strong><time dateTime={event.dateTime}>{event.time} KST</time>
+                    <span>{event.region}</span><span>출처 {event.sources}</span><span>{status.label}</span>
+                  </span>
+                  <strong>{event.title}</strong><span>{event.summary}</span>
+                </span>
+              </button>
+              <button className="text-action" type="button" onClick={() => onOpenIssues(event.id)}>
+                이슈 추적에서 보기 <ArrowRight size={14} />
+              </button>
+            </article>
+          );
+        })}
       </div>
-      <div className="timeline-track-wrap">
-        <span className="timeline-boundary is-start">21 AUG<small>00:00</small></span>
-        <span className="timeline-zone">(KST)</span>
-        <span className="timeline-boundary is-end">22 AUG<small>00:00</small></span>
-        <div className="timeline-track" aria-hidden="true" />
-        {[0, 4, 8, 12, 16, 20, 24].map((hour) => (
-          <span className="timeline-tick" key={hour} style={{ left: `${(hour / 24) * 100}%` }}>
-            {hour > 0 && hour < 24 ? `${String(hour).padStart(2, "0")}:00` : ""}
-          </span>
-        ))}
-        {events.map((event) => (
-          <button
-            type="button"
-            className={`timeline-event${event.id === selectedId ? " is-selected" : ""}`}
-            style={{ left: `${getTimelinePosition(event.dateTime)}%` }}
-            key={event.id}
-            onClick={() => onSelect(event.id)}
-            aria-label={`${event.time}, ${event.title}`}
-            aria-pressed={event.id === selectedId}
-          >
-            {event.id}
-            {event.id === selectedId && (
-              <Triangle className="timeline-selection" size={10} weight="fill" aria-hidden="true" />
-            )}
-          </button>
-        ))}
-      </div>
-    </section>
+    </main>
+  );
+}
+
+function IssuesPage({ selectedEvent, onSelect, onOpenAi }) {
+  const activeIssue = TRACKED_ISSUES.find((issue) => issue.eventIds.includes(selectedEvent.id)) ?? TRACKED_ISSUES[0];
+  const issueEvents = activeIssue.eventIds
+    .map((eventId) => EVENTS.find((event) => event.id === eventId))
+    .filter(Boolean);
+
+  return (
+    <main className="focused-workspace issues-workspace">
+      <aside className="issue-index" aria-label="추적 중인 이슈">
+        <p className="system-kicker">TRACKED ISSUES</p><h2>이슈 추적</h2>
+        <span className="issue-scroll-hint">좌우로 탐색 · {TRACKED_ISSUES.length}개</span>
+        <div>
+          {TRACKED_ISSUES.map((issue) => (
+            <button
+              type="button"
+              key={issue.id}
+              className={issue.id === activeIssue.id ? "is-selected" : ""}
+              onClick={() => onSelect(issue.eventIds[0])}
+              aria-pressed={issue.id === activeIssue.id}
+            >
+              <span>{issue.code.slice(-2)}</span><strong>{issue.title}</strong>
+              <small>{issue.eventIds.length}개 변화 · 최근 {EVENTS.find((event) => event.id === issue.eventIds[0]).time} KST</small>
+            </button>
+          ))}
+        </div>
+      </aside>
+      <article className="issue-dossier">
+        <header>
+          <p className="system-kicker">{activeIssue.code} · 장기 추적</p>
+          <h2>{activeIssue.title}</h2><p>{activeIssue.summary}</p>
+          <div className="dossier-meta">
+            <span><Database size={15} /> 출처 {selectedEvent.sources}</span>
+            <span><ShieldCheck size={15} /> 합치도 {selectedEvent.agreement}%</span>
+            <span>{STATUS_META[selectedEvent.status].label}</span>
+          </div>
+        </header>
+        <section className="issue-history" aria-labelledby="issue-history-title">
+          <div>
+            <p className="system-kicker">CHANGE LOG</p>
+            <h3 id="issue-history-title">누적 변화</h3>
+            <span>{issueEvents.length}개 기록</span>
+          </div>
+          <ol>
+            {issueEvents.map((event) => (
+              <li key={event.id}>
+                <button type="button" onClick={() => onSelect(event.id)} aria-pressed={event.id === selectedEvent.id}>
+                  <time dateTime={event.dateTime}>{event.time} KST</time>
+                  <strong>{event.title}</strong>
+                  <span>{event.summary}</span>
+                </button>
+              </li>
+            ))}
+          </ol>
+        </section>
+        <div className="evidence-grid">
+          <section><p className="system-kicker">확인된 사실</p><ul>{selectedEvent.facts.map((item) => <li key={item}>{item}</li>)}</ul></section>
+          <section><p className="system-kicker">불확실한 부분</p><ul>{selectedEvent.disputed.map((item) => <li key={item}>{item}</li>)}</ul></section>
+          <section><p className="system-kicker">한국 영향</p><ul>{selectedEvent.relevance.map((item) => <li key={item}>{item}</li>)}</ul></section>
+        </div>
+        <footer className="watch-condition">
+          <span>다음 관찰 조건</span><strong>{selectedEvent.disputed[0]}</strong>
+          <button type="button" onClick={onOpenAi}><Brain size={17} /> AI로 추가 분석</button>
+        </footer>
+      </article>
+    </main>
+  );
+}
+
+function PassiveStatusBar() {
+  return (
+    <footer className="system-status" aria-label="데이터 상태">
+      <span>DATASET <strong>DEMO</strong></span><span>VISIBLE SIGNALS <strong>6</strong></span>
+      <span>SOURCES <strong>33</strong></span><span>PROJECTION <strong>NATURAL EARTH</strong></span>
+      <span className="system-health">마지막 확인 20:04 KST <i aria-hidden="true" /> 시스템 정상</span>
+    </footer>
   );
 }
 
@@ -219,33 +315,19 @@ function AiDrawer({ event, onClose }) {
   const drawerRef = useRef(null);
   const closeButtonRef = useRef(null);
 
-  useEffect(() => {
-    closeButtonRef.current?.focus();
-  }, []);
+  useEffect(() => { closeButtonRef.current?.focus(); }, []);
 
   function handleKeyDown(eventObject) {
-    if (eventObject.key === "Escape") {
-      eventObject.preventDefault();
-      onClose();
-      return;
-    }
-
+    if (eventObject.key === "Escape") { eventObject.preventDefault(); onClose(); return; }
     if (eventObject.key !== "Tab") return;
-
     const focusable = drawerRef.current?.querySelectorAll(
       'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
     );
     if (!focusable?.length) return;
-
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
-    if (eventObject.shiftKey && document.activeElement === first) {
-      eventObject.preventDefault();
-      last.focus();
-    } else if (!eventObject.shiftKey && document.activeElement === last) {
-      eventObject.preventDefault();
-      first.focus();
-    }
+    if (eventObject.shiftKey && document.activeElement === first) { eventObject.preventDefault(); last.focus(); }
+    else if (!eventObject.shiftKey && document.activeElement === last) { eventObject.preventDefault(); first.focus(); }
   }
 
   function submit(eventObject) {
@@ -255,83 +337,32 @@ function AiDrawer({ event, onClose }) {
 
   return (
     <div className="drawer-layer" role="presentation">
-      <button
-        className="drawer-scrim"
-        type="button"
-        onClick={onClose}
-        tabIndex={-1}
-        aria-hidden="true"
-      />
+      <button className="drawer-scrim" type="button" onClick={onClose} tabIndex={-1} aria-hidden="true" />
       <aside
-        className="ai-drawer"
-        id="ai-analysis-drawer"
-        ref={drawerRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="ai-analysis-title"
-        aria-describedby="ai-connection-status"
-        onKeyDown={handleKeyDown}
+        className="ai-drawer" id="ai-analysis-drawer" ref={drawerRef} role="dialog" aria-modal="true"
+        aria-labelledby="ai-analysis-title" aria-describedby="ai-connection-status" onKeyDown={handleKeyDown}
       >
         <div className="drawer-heading">
-          <div>
-            <p className="eyebrow">ANALYSIS WORKSPACE</p>
-            <h2 id="ai-analysis-title">AI 분석</h2>
-          </div>
-          <button
-            className="icon-button"
-            type="button"
-            onClick={onClose}
-            ref={closeButtonRef}
-            aria-label="AI 분석 패널 닫기"
-          >
-            <X size={20} />
-          </button>
+          <div><p className="system-kicker">ANALYSIS WORKSPACE</p><h2 id="ai-analysis-title">AI 분석</h2></div>
+          <button className="icon-button" type="button" onClick={onClose} ref={closeButtonRef} aria-label="AI 분석 패널 닫기"><X size={20} /></button>
         </div>
-
-        <div className="connection-note" id="ai-connection-status">
-          <span />
-          AI 연결 전 · 상호작용 구조 확인용
-        </div>
-
+        <div className="connection-note" id="ai-connection-status"><span />AI 연결 전 · 상호작용 구조 확인용</div>
         <section className="selected-context">
-          <p className="eyebrow">SELECTED CONTEXT</p>
-          <strong>{event.title}</strong>
+          <p className="system-kicker">SELECTED CONTEXT</p><strong>{event.title}</strong>
           <small>{event.region} · {event.time} KST · 데모 자료</small>
         </section>
-
         <div className="context-actions" aria-label="분석 컨텍스트 선택">
-          {[
-            { label: "현재 사건", icon: MapTrifold },
-            { label: "영역 선택", icon: Selection },
-          ].map(({ label, icon: Icon }) => (
-            <button
-              className={context === label ? "is-selected" : ""}
-              type="button"
-              key={label}
-              onClick={() => setContext(label)}
-              aria-pressed={context === label}
-            >
-              <Icon size={18} />
-              {label}
-            </button>
+          {[{ label: "현재 사건", icon: MapTrifold }, { label: "영역 선택", icon: Selection }].map(({ label, icon: Icon }) => (
+            <button className={context === label ? "is-selected" : ""} type="button" key={label}
+              onClick={() => setContext(label)} aria-pressed={context === label}><Icon size={18} />{label}</button>
           ))}
         </div>
-
         <form className="analysis-form" onSubmit={submit}>
           <label htmlFor="analysis-prompt">무엇을 분석할까요?</label>
-          <textarea
-            id="analysis-prompt"
-            value={prompt}
-            onChange={(eventObject) => setPrompt(eventObject.target.value)}
-            maxLength={4000}
-            placeholder="확인된 사실과 추론을 구분해서, 한국에 미칠 영향을 분석해줘."
-          />
-          <button type="submit" className="analysis-submit">
-            분석 요청
-            <PaperPlaneTilt size={17} />
-          </button>
+          <textarea id="analysis-prompt" value={prompt} onChange={(eventObject) => setPrompt(eventObject.target.value)}
+            maxLength={4000} placeholder="확인된 사실과 추론을 구분해서, 한국에 미칠 영향을 분석해줘." />
+          <button type="submit" className="analysis-submit">분석 요청<PaperPlaneTilt size={17} /></button>
         </form>
-
         {notice && <p className="prototype-notice" role="status">{notice}</p>}
       </aside>
     </div>
@@ -339,40 +370,36 @@ function AiDrawer({ event, onClose }) {
 }
 
 export function App() {
-  const [selectedId, setSelectedId] = useState(1);
-  const [query, setQuery] = useState("");
-  const [detailsOpen, setDetailsOpen] = useState(true);
-  const [showAll, setShowAll] = useState(false);
+  const [route, setRoute] = useState(() => routeFromPath(window.location.pathname));
+  const [selectedId, setSelectedId] = useState(() => (
+    routeFromPath(window.location.pathname) === "map" && !window.matchMedia("(max-width: 600px)").matches ? 1 : null
+  ));
   const [aiOpen, setAiOpen] = useState(false);
   const [notice, setNotice] = useState("");
   const noticeTimerRef = useRef(null);
   const aiTriggerRef = useRef(null);
-
-  const filteredEvents = useMemo(() => filterEvents(EVENTS, query), [query]);
-  const selectedEvent = filteredEvents.find((event) => event.id === selectedId) ?? filteredEvents[0] ?? null;
-  const effectiveSelectedId = selectedEvent?.id ?? null;
+  const topSignals = useMemo(() => getTopSignals(EVENTS, 3), []);
+  const selectedEvent = EVENTS.find((event) => event.id === selectedId) ?? EVENTS[0];
 
   useEffect(() => {
-    if (!selectedEvent) {
-      setDetailsOpen(false);
-      setAiOpen(false);
-    }
-  }, [selectedEvent]);
-
+    const handlePopState = () => setRoute(routeFromPath(window.location.pathname));
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
   useEffect(() => () => window.clearTimeout(noticeTimerRef.current), []);
 
-  function selectEvent(id) {
-    setSelectedId(id);
-    setDetailsOpen(true);
-    if (filteredEvents.findIndex((event) => event.id === id) >= 4) {
-      setShowAll(true);
-    }
+  function navigate(nextRoute) {
+    const path = ROUTES[nextRoute];
+    if (window.location.pathname !== path) window.history.pushState({}, "", path);
+    setRoute(nextRoute);
   }
+
+  function openIssues(id = selectedId) { setSelectedId(id); navigate("issues"); }
 
   function showUnavailable(label) {
     window.clearTimeout(noticeTimerRef.current);
-    setNotice(`${label} 화면은 다음 설계 단계에서 별도로 구성합니다.`);
-    noticeTimerRef.current = window.setTimeout(() => setNotice(""), 2600);
+    setNotice(`${label} 화면은 국제정세와 다른 작업 방식으로 별도 설계합니다.`);
+    noticeTimerRef.current = window.setTimeout(() => setNotice(""), 2800);
   }
 
   function closeAi() {
@@ -382,40 +409,32 @@ export function App() {
 
   return (
     <div className="application-shell">
-      <Header
-        query={query}
-        onQueryChange={setQuery}
-        onOpenAi={() => setAiOpen(true)}
-        onUnavailable={showUnavailable}
-        aiOpen={aiOpen}
-        aiTriggerRef={aiTriggerRef}
-        aiAvailable={Boolean(selectedEvent)}
-      />
+      <div className="app-surface" inert={aiOpen ? true : undefined}>
+        <Header onOpenAi={() => setAiOpen(true)} onUnavailable={showUnavailable} aiOpen={aiOpen} aiTriggerRef={aiTriggerRef} />
+        <InternationalSubnav route={route} onNavigate={navigate} />
 
-      <p className="sr-only" role="status" aria-live="polite">
-        검색 결과 {filteredEvents.length}건
-      </p>
+        {route === "map" && (
+          <main className="situation-map-page">
+            <WorldSituationMap events={EVENTS} selectedEvent={selectedEvent} onSelect={setSelectedId}
+              onOpenIssues={() => openIssues(selectedEvent.id)} onOpenAi={() => setAiOpen(true)} />
+            <TodaySignalsPanel events={topSignals} selectedId={selectedId} onSelect={setSelectedId}
+              onOpenBriefing={() => navigate("briefing")} />
+          </main>
+        )}
 
-      <main className="workspace">
-        <div className={`map-workspace${detailsOpen ? " has-details" : ""}`}>
-          <WorldSituationMap events={filteredEvents} selectedId={effectiveSelectedId} onSelect={selectEvent} />
-          {detailsOpen && selectedEvent && (
-            <DetailStrip event={selectedEvent} onClose={() => setDetailsOpen(false)} />
-          )}
-        </div>
-        <Briefing
-          events={filteredEvents}
-          selectedId={effectiveSelectedId}
-          onSelect={selectEvent}
-          showAll={showAll}
-          onToggleAll={() => setShowAll((value) => !value)}
-        />
-      </main>
+        {route === "briefing" && (
+          <BriefingPage events={EVENTS} selectedId={selectedId} onSelect={setSelectedId} onOpenIssues={openIssues} />
+        )}
 
-      <Timeline events={filteredEvents} selectedId={effectiveSelectedId} onSelect={selectEvent} />
+        {route === "issues" && (
+          <IssuesPage selectedEvent={selectedEvent} onSelect={setSelectedId} onOpenAi={() => setAiOpen(true)} />
+        )}
 
+        <PassiveStatusBar />
+      </div>
+      <p className="sr-only" role="status" aria-live="polite">선택 사건: {selectedEvent.title}</p>
       {notice && <div className="domain-notice" role="status">{notice}</div>}
-      {aiOpen && selectedEvent && <AiDrawer event={selectedEvent} onClose={closeAi} />}
+      {aiOpen && <AiDrawer event={selectedEvent} onClose={closeAi} />}
     </div>
   );
 }
