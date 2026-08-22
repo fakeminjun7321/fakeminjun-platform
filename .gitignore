@@ -7,3 +7,4 @@ outputs/
 .wrangler/
 .vite/
 .dev.vars
+apps/web/design-qa-assets/*-wide.png

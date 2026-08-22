@@ -11,14 +11,40 @@ export class BackendApiError extends Error {
 
 const ANALYSIS_ATTEMPT_TTL_MS = 10 * 60 * 1000;
 const MAX_RETAINED_ANALYSIS_ATTEMPTS = 24;
+const MAX_VISUAL_ATTEMPT_METADATA_BYTES = 8 * 1024;
+const MAX_VISUAL_ATTEMPT_IMAGE_BYTES = 2 * 1024 * 1024;
 const analysisAttempts = new Map();
+const visualAnalysisAttempts = new Map();
 
-async function analysisFingerprint(analysis) {
-  const canonical = JSON.stringify(analysis);
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical));
+async function sha256Hex(value) {
+  const bytes = typeof value === "string" ? new TextEncoder().encode(value) : value;
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(digest)]
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
+}
+
+async function analysisFingerprint(analysis) {
+  return sha256Hex(JSON.stringify(analysis));
+}
+
+async function visualAnalysisFingerprint({ metadata, image }) {
+  const metadataText = JSON.stringify(metadata);
+  if (typeof metadataText !== "string") throw new TypeError("Visual analysis metadata must be serializable");
+  const metadataBytes = new TextEncoder().encode(metadataText);
+  if (metadataBytes.byteLength > MAX_VISUAL_ATTEMPT_METADATA_BYTES) {
+    throw new RangeError("Visual analysis metadata exceeds the retry fingerprint limit");
+  }
+  if (!image || typeof image.arrayBuffer !== "function" || !Number.isFinite(image.size)
+    || image.size < 1 || image.size > MAX_VISUAL_ATTEMPT_IMAGE_BYTES) {
+    throw new RangeError("Visual analysis image exceeds the retry fingerprint limit");
+  }
+  const imageBytes = new Uint8Array(await image.arrayBuffer());
+  if (imageBytes.byteLength !== image.size) {
+    throw new RangeError("Visual analysis image size changed while fingerprinting");
+  }
+  const imageHash = await sha256Hex(imageBytes);
+  return sha256Hex(JSON.stringify({ metadata: metadataText, imageHash, mimeType: image.type ?? "" }));
 }
 
 function sweepExpiredAnalysisAttempts(now) {
@@ -44,6 +70,29 @@ export async function getAnalysisAttempt(analysis, now = Date.now()) {
 
 export function clearAnalysisAttempt(fingerprint) {
   analysisAttempts.delete(fingerprint);
+}
+
+function sweepExpiredVisualAnalysisAttempts(now) {
+  for (const [fingerprint, attempt] of visualAnalysisAttempts) {
+    if (now - attempt.createdAt >= ANALYSIS_ATTEMPT_TTL_MS) visualAnalysisAttempts.delete(fingerprint);
+  }
+}
+
+export async function getVisualAnalysisAttempt(input, now = Date.now()) {
+  const fingerprint = await visualAnalysisFingerprint(input);
+  sweepExpiredVisualAnalysisAttempts(now);
+  const existing = visualAnalysisAttempts.get(fingerprint);
+  if (existing) return { fingerprint, idempotencyKey: existing.idempotencyKey };
+  while (visualAnalysisAttempts.size >= MAX_RETAINED_ANALYSIS_ATTEMPTS) {
+    visualAnalysisAttempts.delete(visualAnalysisAttempts.keys().next().value);
+  }
+  const attempt = { idempotencyKey: crypto.randomUUID(), createdAt: now };
+  visualAnalysisAttempts.set(fingerprint, attempt);
+  return { fingerprint, idempotencyKey: attempt.idempotencyKey };
+}
+
+export function clearVisualAnalysisAttempt(fingerprint) {
+  visualAnalysisAttempts.delete(fingerprint);
 }
 
 export function shouldClearAnalysisAttempt(error, { hasCreatedAnalysis = false } = {}) {
@@ -84,23 +133,35 @@ function eventCandidatesQuery(params = {}) {
   return encoded ? `?${encoded}` : "";
 }
 
+function physicsResourcesQuery(params = {}) {
+  const query = new URLSearchParams();
+  if (params.query?.trim()) query.set("q", params.query.trim());
+  if (params.type && params.type !== "전체") query.set("type", params.type);
+  if (params.cursor) query.set("cursor", params.cursor);
+  if (params.limit !== undefined) query.set("limit", String(params.limit));
+  const encoded = query.toString();
+  return encoded ? `?${encoded}` : "";
+}
+
 export function createBackendClient({ baseUrl = "", fetchImpl = globalThis.fetch } = {}) {
   if (typeof fetchImpl !== "function") throw new TypeError("fetchImpl must be a function");
   const base = normalizeBaseUrl(baseUrl);
 
   async function request(path, options = {}) {
-    const { returnEnvelope = false, ...fetchOptions } = options;
+    const { returnEnvelope = false, responseType = "json", ...fetchOptions } = options;
+    const isFormData = typeof FormData !== "undefined" && fetchOptions.body instanceof FormData;
     const response = await fetchImpl(`${base}${path}`, {
       credentials: "same-origin",
       ...fetchOptions,
       headers: {
-        accept: "application/json",
-        ...(fetchOptions.body === undefined ? {} : { "content-type": "application/json" }),
+        accept: responseType === "blob" ? "text/markdown, application/zip, application/octet-stream" : "application/json",
+        ...(fetchOptions.body === undefined || isFormData ? {} : { "content-type": "application/json" }),
         ...fetchOptions.headers,
       },
     });
 
     if (response.status === 204) return null;
+    if (response.ok && responseType === "blob") return response.blob();
     const body = await response.json();
     if (!response.ok) {
       const error = body?.error ?? {};
@@ -118,6 +179,10 @@ export function createBackendClient({ baseUrl = "", fetchImpl = globalThis.fetch
   return Object.freeze({
     health: () => request("/api/v1/health"),
     listEvents: (params) => request(`/api/v1/events${eventQuery(params)}`),
+    listEventsEnvelope: ({ signal, ...params } = {}) => request(
+      `/api/v1/events${eventQuery(params)}`,
+      { signal, returnEnvelope: true },
+    ),
     listSourceItems: ({ signal, ...params } = {}) => request(
       `/api/v1/source-items${sourceItemsQuery(params)}`,
       { signal, returnEnvelope: true },
@@ -144,6 +209,37 @@ export function createBackendClient({ baseUrl = "", fetchImpl = globalThis.fetch
         signal,
       },
     ),
+    reviewCandidateEvidence: (candidateId, evidence, { signal, idempotencyKey = crypto.randomUUID() } = {}) => request(
+      `/api/v1/event-candidates/${encodeURIComponent(candidateId)}/evidence-reviews`,
+      {
+        method: "POST",
+        body: JSON.stringify(evidence),
+        headers: { "idempotency-key": idempotencyKey },
+        signal,
+      },
+    ),
+    putCandidateLocation: (candidateId, location, { signal, idempotencyKey = crypto.randomUUID() } = {}) => request(
+      `/api/v1/event-candidates/${encodeURIComponent(candidateId)}/location`,
+      {
+        method: "PUT",
+        body: JSON.stringify(location),
+        headers: { "idempotency-key": idempotencyKey },
+        signal,
+      },
+    ),
+    getCandidateReadiness: (candidateId, { signal } = {}) => request(
+      `/api/v1/event-candidates/${encodeURIComponent(candidateId)}/readiness`,
+      { signal },
+    ),
+    promoteEventCandidate: (candidateId, promotion, { signal, idempotencyKey = crypto.randomUUID() } = {}) => request(
+      `/api/v1/event-candidates/${encodeURIComponent(candidateId)}/promote`,
+      {
+        method: "POST",
+        body: JSON.stringify(promotion),
+        headers: { "idempotency-key": idempotencyKey },
+        signal,
+      },
+    ),
     getEvent: (eventId) => request(`/api/v1/events/${encodeURIComponent(eventId)}`),
     runIngestion: ({ signal } = {}) => request("/api/v1/ingestion/runs", {
       method: "POST",
@@ -165,6 +261,28 @@ export function createBackendClient({ baseUrl = "", fetchImpl = globalThis.fetch
       method: "PUT",
       body: JSON.stringify(levels),
     }),
+    searchPhysicsResources: ({ signal, ...params } = {}) => request(
+      `/api/v1/physics/resources${physicsResourcesQuery(params)}`,
+      { signal, returnEnvelope: true },
+    ),
+    listPhysicsLibrary: ({ signal } = {}) => request("/api/v1/physics/library", { signal }),
+    savePhysicsResource: (resource, { signal, idempotencyKey = crypto.randomUUID() } = {}) => request(
+      "/api/v1/physics/library",
+      {
+        method: "POST",
+        body: JSON.stringify(resource),
+        headers: { "idempotency-key": idempotencyKey },
+        signal,
+      },
+    ),
+    removePhysicsResource: (resourceId, { signal } = {}) => request(
+      `/api/v1/physics/library/${encodeURIComponent(resourceId)}`,
+      { method: "DELETE", signal },
+    ),
+    exportPhysicsLibraryToObsidian: ({ signal } = {}) => request(
+      "/api/v1/physics/library/export/obsidian",
+      { signal, responseType: "blob" },
+    ),
     createAnalysis: (analysis, { signal, idempotencyKey = crypto.randomUUID() } = {}) => request(
       "/api/v1/analyses",
       {
@@ -174,6 +292,17 @@ export function createBackendClient({ baseUrl = "", fetchImpl = globalThis.fetch
         signal,
       },
     ),
+    createVisualAnalysis: ({ metadata, image }, { signal, idempotencyKey = crypto.randomUUID() } = {}) => {
+      const body = new FormData();
+      body.append("metadata", JSON.stringify(metadata));
+      body.append("image", image);
+      return request("/api/v1/visual-analyses", {
+        method: "POST",
+        body,
+        headers: { "idempotency-key": idempotencyKey },
+        signal,
+      });
+    },
     getAnalysis: (analysisId, { signal } = {}) => request(
       `/api/v1/analyses/${encodeURIComponent(analysisId)}`,
       { signal },

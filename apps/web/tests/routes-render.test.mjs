@@ -9,8 +9,10 @@ globalThis.window = {
   history: {},
   addEventListener() {},
   removeEventListener() {},
+  setTimeout,
   clearTimeout,
   requestAnimationFrame(callback) { callback(); },
+  cancelAnimationFrame() {},
   matchMedia() {
     return { matches: false, addEventListener() {}, removeEventListener() {} };
   },
@@ -22,6 +24,15 @@ const vite = await createServer({
   logLevel: "silent",
 });
 const { App, CandidateReviewDesk } = await vite.ssrLoadModule("/src/App.jsx");
+const { PhysicsWorkspace } = await vite.ssrLoadModule("/src/PhysicsWorkspace.jsx");
+const { AiDrawer, buildAgentActivity } = await vite.ssrLoadModule("/src/AiDrawer.jsx");
+const { CandidatePromotionPanel } = await vite.ssrLoadModule("/src/CandidatePromotionPanel.jsx");
+const {
+  claimCaptureStream,
+  createTrackedObjectUrl,
+  waitForVideo,
+  waitForVideoFrame,
+} = await vite.ssrLoadModule("/src/CaptureComposer.jsx");
 
 after(async () => {
   await vite.close();
@@ -40,7 +51,20 @@ for (const [pathname, expectedText] of ROUTE_EXPECTATIONS) {
   test(`renders the frontend contract for ${pathname}`, () => {
     window.location.pathname = pathname;
     const html = renderToStaticMarkup(React.createElement(App));
-    assert.ok(html.includes(expectedText));
+    if (pathname.startsWith("/physics/")) {
+      assert.ok(html.includes("물리 작업공간을 불러오는 중입니다.") || html.includes(expectedText));
+      const view = { "/physics/library": "library", "/physics/find": "finder", "/physics/ipho": "ipho" }[pathname] ?? "learn";
+      const physicsHtml = renderToStaticMarkup(React.createElement(PhysicsWorkspace, {
+        view,
+        level: 4,
+        onLevelChange() {},
+        onOpenAi() {},
+        onNotice() {},
+      }));
+      assert.ok(physicsHtml.includes(expectedText));
+    } else {
+      assert.ok(html.includes(expectedText));
+    }
     assert.ok(html.includes("NON-LIVE DEMO"));
     assert.ok(!html.includes("정치"));
     assert.ok(!html.includes("/politics"));
@@ -92,4 +116,172 @@ test("renders candidate evidence and review controls without claiming verificati
   assert.ok(html.includes('target="_blank"'));
   assert.ok(html.includes('rel="noopener noreferrer"'));
   assert.ok(!html.includes(">VERIFIED<"));
+});
+
+test("renders promotion readiness without claiming a candidate is verified", () => {
+  const html = renderToStaticMarkup(React.createElement(CandidatePromotionPanel, {
+    candidate: {
+      id: "candidate-2",
+      revision: 1,
+      candidateHash: "a".repeat(64),
+      sourceCount: 2,
+      evidenceSnapshots: [{ sourceItemId: 1, sourceName: "외교부", title: "공식 발표" }],
+      mapReadiness: { ready: false, reason: "원문 근거와 위치가 필요합니다." },
+    },
+    onPromoted() {},
+  }));
+  assert.ok(html.includes("지도 승격 준비"));
+  assert.ok(html.includes("FAIL-CLOSED"));
+  assert.ok(!html.includes("PROMOTION READY"));
+  assert.ok(!html.includes(">VERIFIED<"));
+});
+
+test("AI drawer defaults to auto and exposes built-in capture without faking stage progress", () => {
+  const html = renderToStaticMarkup(React.createElement(AiDrawer, {
+    analysisContext: {
+      domain: "physics",
+      level: "P4",
+      title: "그래프 분석",
+      meta: "물리 학습",
+      placeholder: "이 그래프를 분석해줘.",
+    },
+    onClose() {},
+  }));
+  assert.ok(html.includes("자동 판단"));
+  assert.ok(html.includes("영역 선택"));
+  assert.ok(html.includes("REQUESTED · AUTO"));
+  assert.ok(!html.includes("내장 영역 캡처 구현 후"));
+
+  assert.deepEqual(buildAgentActivity({ analysis: null, requestedMode: "deep", requestState: "submitting" }), [{
+    id: "server-execution",
+    label: "SERVER EXECUTION",
+    detail: "내부 단계별 상태는 서버가 반환한 경우에만 표시합니다.",
+    status: "running",
+  }]);
+
+  assert.deepEqual(buildAgentActivity({
+    requestedMode: "auto",
+    requestState: "success",
+    analysis: {
+      mode: "deep",
+      steps: [{ stage: "synthesis", role: "final-synthesizer", model: "gpt-test", status: "completed" }],
+    },
+  }), [{
+    id: "stage-1",
+    label: "final-synthesizer",
+    detail: "final-synthesizer · gpt-test",
+    status: "completed",
+  }]);
+});
+
+test("capture lifecycle stops a stream that resolves after cleanup and revokes a late URL", () => {
+  const track = { stopCalls: 0, stop() { this.stopCalls += 1; } };
+  const stream = { getTracks: () => [track] };
+  const mountedRef = { current: false };
+  const operationRef = { current: 2 };
+  const streamRef = { current: null };
+
+  assert.equal(claimCaptureStream(stream, {
+    operationId: 1,
+    operationRef,
+    mountedRef,
+    streamRef,
+  }), false);
+  assert.equal(track.stopCalls, 1);
+  assert.equal(streamRef.current, null);
+
+  const trackedUrls = new Set();
+  const revoked = [];
+  let currentChecks = 0;
+  const url = createTrackedObjectUrl(new Blob(["pixels"]), {
+    isCurrent: () => { currentChecks += 1; return currentChecks === 1; },
+    objectUrls: trackedUrls,
+    createObjectURL: () => "blob:late-capture",
+    revokeObjectURL: (value) => revoked.push(value),
+  });
+  assert.equal(url, null);
+  assert.deepEqual(revoked, ["blob:late-capture"]);
+  assert.equal(trackedUrls.size, 0);
+});
+
+test("capture frame wait is bounded and releases ended listeners and callbacks", async () => {
+  function frameFixture() {
+    let frameCallback;
+    let endedHandler;
+    const cancelled = [];
+    return {
+      video: {
+        requestVideoFrameCallback(callback) { frameCallback = callback; return 19; },
+        cancelVideoFrameCallback(id) { cancelled.push(id); },
+      },
+      track: {
+        readyState: "live",
+        addEventListener(type, callback) { if (type === "ended") endedHandler = callback; },
+        removeEventListener(type, callback) { if (type === "ended" && endedHandler === callback) endedHandler = null; },
+      },
+      cancelled,
+      frame: () => frameCallback?.(),
+      end: () => endedHandler?.(),
+      listener: () => endedHandler,
+    };
+  }
+
+  const ended = frameFixture();
+  const endedWait = waitForVideoFrame(ended.video, { track: ended.track, timeoutMs: 100 });
+  ended.end();
+  await assert.rejects(endedWait, /종료/);
+  assert.deepEqual(ended.cancelled, [19]);
+  assert.equal(ended.listener(), null);
+
+  const timedOut = frameFixture();
+  await assert.rejects(
+    waitForVideoFrame(timedOut.video, { track: timedOut.track, timeoutMs: 5 }),
+    /시간이 초과/,
+  );
+  assert.deepEqual(timedOut.cancelled, [19]);
+  assert.equal(timedOut.listener(), null);
+
+  const completed = frameFixture();
+  const completedWait = waitForVideoFrame(completed.video, { track: completed.track, timeoutMs: 100 });
+  completed.frame();
+  await completedWait;
+  assert.deepEqual(completed.cancelled, [19]);
+  assert.equal(completed.listener(), null);
+});
+
+test("capture metadata wait is bounded and removes video and track handlers", async () => {
+  let endedHandler;
+  const track = {
+    readyState: "live",
+    addEventListener(type, callback) { if (type === "ended") endedHandler = callback; },
+    removeEventListener(type, callback) { if (type === "ended" && endedHandler === callback) endedHandler = null; },
+  };
+  const video = { onloadedmetadata: null, onerror: null, play: () => Promise.resolve() };
+  const endedWait = waitForVideo(video, { track, timeoutMs: 100 });
+  endedHandler();
+  await assert.rejects(endedWait, /종료/);
+  assert.equal(endedHandler, null);
+  assert.equal(video.onloadedmetadata, null);
+  assert.equal(video.onerror, null);
+
+  const timedOutVideo = { onloadedmetadata: null, onerror: null, play: () => Promise.resolve() };
+  await assert.rejects(waitForVideo(timedOutVideo, { timeoutMs: 5 }), /시간이 초과/);
+  assert.equal(timedOutVideo.onloadedmetadata, null);
+  assert.equal(timedOutVideo.onerror, null);
+
+  let completedEndedHandler;
+  const completedTrack = {
+    readyState: "live",
+    addEventListener(type, callback) { if (type === "ended") completedEndedHandler = callback; },
+    removeEventListener(type, callback) {
+      if (type === "ended" && completedEndedHandler === callback) completedEndedHandler = null;
+    },
+  };
+  const completedVideo = { onloadedmetadata: null, onerror: null, play: () => Promise.resolve() };
+  const completedWait = waitForVideo(completedVideo, { track: completedTrack, timeoutMs: 100 });
+  completedVideo.onloadedmetadata();
+  await completedWait;
+  assert.equal(completedEndedHandler, null);
+  assert.equal(completedVideo.onloadedmetadata, null);
+  assert.equal(completedVideo.onerror, null);
 });

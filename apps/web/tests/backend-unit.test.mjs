@@ -3,6 +3,8 @@ import test from "node:test";
 import worker, {
   ANALYSIS_REPORT_SCHEMA,
   EVENT_CANDIDATE_SCHEMA,
+  analysisStepPlan,
+  captureImageDimensions,
   eventCandidateEvidenceDigest,
   eventCandidateHash,
   eventCandidateModelInput,
@@ -12,8 +14,13 @@ import worker, {
   parseEventsQuery,
   parseSourceItemsQuery,
   requestStructuredOpenAI,
+  resolveAnalysisMode,
+  runAnalysisWorkflow,
   sourceStreamStatus,
   validateAnalysisPayload,
+  validateCandidateEvidenceReviewPayload,
+  validateCandidateLocationPayload,
+  validateCandidatePromotionPayload,
   validateEventCandidateEvidence,
   validateEventCandidatePayload,
   validateEventCandidateReviewPayload,
@@ -251,13 +258,17 @@ test("manual ingestion checks origin before identity and network access", async 
 });
 
 test("candidate mutations reject an untrusted origin before identity, D1, or OpenAI access", async () => {
-  for (const pathname of [
-    "/api/v1/event-candidates",
-    "/api/v1/event-candidates/candidate-1/reviews",
-    "/api/v1/event-candidates/candidate-1/promote",
+  for (const [pathname, method] of [
+    ["/api/v1/event-candidates", "POST"],
+    ["/api/v1/event-candidates/candidate-1/reviews", "POST"],
+    ["/api/v1/event-candidates/candidate-1/evidence-reviews", "POST"],
+    ["/api/v1/event-candidates/candidate-1/location", "PUT"],
+    ["/api/v1/event-candidates/candidate-1/promote", "POST"],
+    ["/api/v1/visual-analyses", "POST"],
+    ["/api/v1/physics/library", "POST"],
   ]) {
     const response = await worker.fetch(new Request(`https://example.test${pathname}`, {
-      method: "POST",
+      method,
       headers: {
         "content-type": "application/json",
         origin: "https://attacker.example",
@@ -272,6 +283,55 @@ test("candidate mutations reject an untrusted origin before identity, D1, or Ope
     assert.equal(response.status, 403);
     assert.equal((await response.json()).error.code, "origin_forbidden");
   }
+});
+
+test("candidate evidence, location, and promotion contracts keep verification server-owned", () => {
+  assert.deepEqual(validateCandidateEvidenceReviewPayload({
+    sourceItemId: 7,
+    relationship: "supports",
+    locatorType: "paragraph",
+    locatorValue: "para-4",
+    excerpt: "  사용자가 원문에서 확인한 발췌  ",
+    candidateHash: "a".repeat(64),
+  }), {
+    sourceItemId: 7,
+    relationship: "supports",
+    locatorType: "paragraph",
+    locatorValue: "para-4",
+    excerpt: "사용자가 원문에서 확인한 발췌",
+    candidateHash: "a".repeat(64),
+  });
+  assert.throws(
+    () => validateCandidateEvidenceReviewPayload({
+      sourceItemId: 7,
+      relationship: "supports",
+      locatorType: "url",
+      candidateHash: "a".repeat(64),
+    }),
+    (error) => error.code === "supporting_excerpt_required",
+  );
+  assert.deepEqual(validateCandidateLocationPayload({
+    placeName: " 서울 ", longitude: 126.978, latitude: 37.5665,
+    accuracy: "approximate", candidateHash: "a".repeat(64),
+  }), {
+    placeName: "서울", longitude: 126.978, latitude: 37.5665,
+    accuracy: "approximate", candidateHash: "a".repeat(64),
+  });
+  assert.deepEqual(validateCandidatePromotionPayload({
+    expectedRevision: 2,
+    candidateHash: "a".repeat(64),
+  }), {
+    expectedRevision: 2,
+    candidateHash: "a".repeat(64),
+  });
+  assert.throws(
+    () => validateCandidatePromotionPayload({
+      expectedRevision: 2,
+      candidateHash: "a".repeat(64),
+      verificationStatus: "verified",
+    }),
+    (error) => error.code === "unknown_fields",
+  );
 });
 
 test("note validation accepts only the server-owned contract", () => {
@@ -352,6 +412,7 @@ test("analysis validation keeps model and owner controls on the server", () => {
   }), {
     domain: "international",
     mode: "deep",
+    taskType: "general",
     prompt: "한국에 미칠 영향을 검토해줘.",
     eventId: 1,
     level: "I2",
@@ -370,6 +431,98 @@ test("analysis validation keeps model and owner controls on the server", () => {
     () => validateAnalysisPayload({ domain: "physics", prompt: "유도해줘.", eventId: 1 }),
     (error) => error.code === "invalid_analysis_event",
   );
+
+  assert.deepEqual(resolveAnalysisMode(validateAnalysisPayload({
+    domain: "physics",
+    mode: "auto",
+    taskType: "full-derivation",
+    prompt: "가정부터 유도해줘.",
+  })), { mode: "deep", reason: "auto-task-full-derivation" });
+  assert.deepEqual(resolveAnalysisMode(validateAnalysisPayload({
+    domain: "physics",
+    mode: "auto",
+    prompt: "핵심 개념을 설명해줘.",
+  })), { mode: "standard", reason: "auto-routine-request" });
+});
+
+test("capture image inspection accepts only bounded PNG and JPEG signatures", () => {
+  const png = new Uint8Array(24);
+  png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  new DataView(png.buffer).setUint32(16, 800);
+  new DataView(png.buffer).setUint32(20, 600);
+  assert.deepEqual(captureImageDimensions(png, "image/png"), { width: 800, height: 600 });
+
+  const jpeg = new Uint8Array(21);
+  jpeg.set([0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x02, 0x00, 0x03]);
+  assert.deepEqual(captureImageDimensions(jpeg, "image/jpeg"), { width: 3, height: 2 });
+  assert.throws(
+    () => captureImageDimensions(new Uint8Array([0, 1, 2, 3]), "image/png"),
+    (error) => error.code === "capture_signature_mismatch" && error.status === 415,
+  );
+  assert.throws(
+    () => captureImageDimensions(png, "image/webp"),
+    (error) => error.code === "unsupported_capture_type" && error.status === 415,
+  );
+});
+
+test("deep analysis plans two bounded specialists and one final synthesis", async () => {
+  const calls = [];
+  const report = {
+    headline: "통합 검토",
+    summary: "요약",
+    sourceBoundary: "제공된 맥락과 확립된 지식",
+    sections: [
+      { title: "구조", content: "가정을 분리했다.", confidence: "medium", basis: "inference" },
+      { title: "검산", content: "단위를 확인했다.", confidence: "high", basis: "established-knowledge" },
+    ],
+    uncertainties: [],
+    nextQuestions: [],
+    visual: { type: "none", title: "", items: [] },
+  };
+  const specialist = { findings: ["핵심 검토"], risks: [], openQuestions: [] };
+  const fetchImpl = async (_url, options) => {
+    const body = JSON.parse(options.body);
+    calls.push(body);
+    const isSpecialist = body.text.format.name.startsWith("specialist_review_");
+    return jsonResponse({
+      id: `resp-${calls.length}`,
+      status: "completed",
+      model: body.model,
+      output_text: JSON.stringify(isSpecialist ? specialist : report),
+      usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+    });
+  };
+  const env = {
+    OPENAI_API_KEY: "test-key-that-is-long-enough",
+    OPENAI_SPECIALIST_MODEL: "specialist-model",
+    OPENAI_DEEP_MODEL: "synthesis-model",
+    OPENAI_FETCH: fetchImpl,
+  };
+  const plan = analysisStepPlan({ domain: "physics", mode: "deep" }, env);
+  assert.deepEqual(plan.map(({ position, stage, model }) => ({ position, stage, model })), [
+    { position: 0, stage: "specialist", model: "specialist-model" },
+    { position: 1, stage: "specialist", model: "specialist-model" },
+    { position: 2, stage: "synthesis", model: "synthesis-model" },
+  ]);
+
+  const completed = await runAnalysisWorkflow({
+    domain: "physics",
+    mode: "deep",
+    taskType: "solution-audit",
+    prompt: "풀이를 검산해줘.",
+  }, { domain: "physics", evidenceNotice: "별도 출처 없음" }, env, {
+    analysisId: "analysis-deep-1",
+    safetyId: "safety-test",
+  });
+  assert.equal(calls.length, 3);
+  assert.deepEqual(completed.steps.map(({ position, stage, model }) => ({ position, stage, model })), [
+    { position: 0, stage: "specialist", model: "specialist-model" },
+    { position: 1, stage: "specialist", model: "specialist-model" },
+    { position: 2, stage: "synthesis", model: "synthesis-model" },
+  ]);
+  assert.equal(completed.result.headline, "통합 검토");
+  assert.equal(completed.usage.totalTokens, 45);
+  assert.equal(calls.every(({ store, tools }) => store === false && Array.isArray(tools) && tools.length === 0), true);
 });
 
 test("structured OpenAI requests disable storage and tools while enforcing the schema", async () => {

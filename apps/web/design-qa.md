@@ -1,58 +1,30 @@
-# Design QA — Physics Workspace Extension
+# Design QA
 
-## Comparison target
+## Scope
 
-- Source visual truth: `outputs/frontend-qa/whitehat-source-normalized-1440x1024.png`, `1440 × 1024`, normalized from the selected Atlas Canvas reference.
-- Existing verified implementation reference: `outputs/frontend-qa/maplibre-final-desktop.png`, `1440 × 1024`, desktop situation-room state.
-- New implementation routes:
-  - `http://127.0.0.1:5173/physics/learn`
-  - `http://127.0.0.1:5173/physics/library`
-  - `http://127.0.0.1:5173/physics/find`
-  - `http://127.0.0.1:5173/physics/ipho`
-- Intended QA viewports: `1440 × 1024` desktop and `390 × 844` mobile, device scale factor 1.
-- Intended states: physics mode 01; saved-resource library; unfiltered resource finder; KPhO→IPhO path.
+- Routes: `/international/map`, `/international/briefing`, `/physics/learn`
+- Browser viewport: 1710 x 804 in Chrome
+- Visual sources: the approved map, briefing, and physics workstation concepts generated during this project
+- Comparison method: each source was cropped to its 1487 x 699 wide-screen area, each implementation screenshot was normalized to the same size, and the two were stacked into one comparison image before review.
 
-## Evidence available
+## Evidence
 
-- The existing international-affairs implementation and reference were previously captured and compared at equal `1440 × 1024` pixels.
-- The four physics routes returned HTTP 200 from the local Vite server.
-- Static server-render route-contract tests confirmed the expected physics content for all four paths.
-- Focused data and interaction-contract tests passed for all seven physics modes, official-resource links, and physics filters.
-- Production build and Sites packaging passed.
-- In-app browser verification confirmed that the domain navigation contains only international affairs and physics, a removed legacy path resolves to `/international/map`, `/physics/learn` renders, and no console errors were recorded during that path.
+- `design-qa-assets/map-comparison.png`
+- `design-qa-assets/briefing-comparison.png`
+- `design-qa-assets/physics-comparison.png`
+- `design-qa-assets/map-implementation.png`
+- `design-qa-assets/briefing-implementation.png`
+- `design-qa-assets/physics-implementation.png`
 
-## Remaining visual QA
+## Review
 
-- Controlled desktop/mobile screenshots have not yet been captured for all four physics routes.
-- HTTP 200, server-rendered markup, tests, and a production build do not prove the remaining responsive layouts, pointer interactions, keyboard focus paths, or console cleanliness across every route.
+- Map: matches the approved dark defensive-intelligence atlas language, dense information hierarchy, restrained cyan status accents, and operational map controls.
+- Briefing: preserves the source-inbox workflow instead of duplicating every international-affairs function on one screen; typography, table rhythm, borders, and evidence-status treatment match the system.
+- Physics: applies the same operator-workstation language to the seven selected study modes, resource search, library, and IPhO workspace without turning it into a generic card dashboard.
+- Typography and iconography: Noto Sans KR Variable, IBM Plex Sans Condensed, JetBrains Mono, STIX Two Math, and Phosphor icons are used consistently. Font licenses are OFL-1.1 and Phosphor is MIT licensed.
+- Runtime iteration: the first Chrome pass exposed a blank screen caused by classic JSX transform files missing a React default import. The affected components were corrected; the repeated Chrome pass rendered all three routes with zero JavaScript errors.
+- No P0, P1, or P2 visual defects remain in the reviewed desktop viewport. The MapLibre production chunk-size warning is a performance follow-up, not a visual acceptance blocker.
 
-## Required fidelity surfaces
+## Final result
 
-- Fonts and typography: implemented with the existing Noto Sans KR and IBM Plex Mono system, but the rendered new pages are **Not verified / 미검증**.
-- Spacing and layout rhythm: existing shell tokens and border rhythm were reused, but the rendered desktop/mobile layouts are **Not verified / 미검증**.
-- Colors and visual tokens: existing navy, cyan, cobalt, green, and amber tokens were reused; rendered contrast and hierarchy are **Not verified / 미검증**.
-- Image quality and assets: the new workspaces require no raster imagery; icons use the project's existing Phosphor family. Rendered alignment is **Not verified / 미검증**.
-- Copy and content: demo/live 경계, 실제 OpenAI 연결 상태, 모델이 밝힌 근거 범위가 자동 검증 전이라는 문구를 브라우저에서 확인했다. 모든 긴 결과의 반응형 wrapping은 **Not verified / 미검증**.
-
-## Findings
-
-- P0: none established from the available non-visual evidence.
-- P1/P2: cannot be cleared without browser captures and side-by-side comparison.
-- P3: the production JavaScript bundle remains above Vite's 500 kB chunk warning threshold; code splitting is a later performance task.
-
-## Comparison history
-
-1. International-affairs comparison passed previously after mobile overview and map-control fixes.
-2. Physics extension: implementation, contract tests, and the `/physics/learn` browser path exist; full route and viewport comparison remains pending.
-
-## Verification boundary
-
-- **Implemented**: physics routes, interactions, responsive CSS, mock data, official resource links, and documentation exist.
-- **Unit-verified**: 43 application/contract/worker tests passed; Sites worker tests 5건도 통과.
-- **Browser-verified**: 국제정세 AI 실제 결과, 일반/정밀 모드 카드, 비선택 카드 배경, 패널 닫기와 포커스 복귀, `/physics/learn` P5 맥락을 확인했다. 다른 세 물리 경로와 통제된 반응형 viewport 비교는 **Not verified / 미검증**.
-- **Simulator-verified**: **Not verified / 미검증**.
-- **Physical-device-verified**: 실제 macOS Chrome에서 production Access 로그인, 국제정세·물리 화면과 AI 결과를 확인. 모바일 물리기기는 **Not verified / 미검증**.
-- **Live-service-verified**: production Cloudflare Access→API Worker→OpenAI→원격 D1의 국제정세·물리 표준 분석 2회와 2026-08-22 11:00 UTC Cron의 공식 RSS 4개·99건 저장을 확인.
-- 수동 새로고침 버튼의 production Chrome 경로, uploads, 원격 후보/검토 경로, 인증 후 정적 CSP/HSTS 응답은 **Not verified / 미검증**.
-
-final result: partial
+passed

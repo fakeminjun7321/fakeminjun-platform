@@ -11,6 +11,8 @@ Build app UI in `src/`. Keep `.openai/hosting.json`, `worker/index.js`, `scripts
 ## Project-specific design decisions
 
 - The selected source of truth is the revised Atlas Canvas concept from 2026-08-21: a full-map situation workspace with a compact three-signal intelligence queue, an anchored event inspector, two-level navigation, and no right-hand briefing rail or bottom timeline.
+- The 2026-08-22 visual system combines three purpose-built references rather than forcing one dashboard layout everywhere: BLACK ATLAS for the map workspace, EVIDENCE LEDGER for briefing and evidence review, and OPERATOR'S LAB for physics. Share typography, iconography, color semantics, and interaction quality across them, but preserve their distinct workspace anatomy.
+- Typography and icons are first-class design assets. Use reviewed open-source font families with real Korean, condensed-heading, mono-metadata, and math weights as needed, and one coherent maintained open-source icon library. Do not substitute emoji, text glyphs, generic browser defaults, or hand-drawn SVG/CSS icons.
 - Avoid generic AI-dashboard styling: no card grids, neon glow, glassmorphism, decorative metrics, or feature-inventory layouts.
 - The visual language should resemble a credible defensive cyber threat-intelligence workstation: deep navy surfaces, restrained cyan/green/amber states, coordinates, source agreement, verification state, and meaningful relationship lines. Avoid Matrix code, fake terminals, cyberpunk glow, hacker role-play copy, and meaningless technical decoration.
 - Keep the two domains distinct. The international-affairs screen is map-led; physics must use its own learning and resource workflow rather than a reskinned copy of the map screen.
