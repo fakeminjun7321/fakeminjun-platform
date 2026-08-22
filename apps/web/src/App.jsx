@@ -920,6 +920,12 @@ export function App() {
   const selectedEvent = EVENTS.find((event) => event.id === selectedId) ?? EVENTS[0];
   const domain = domainFromRoute(route);
 
+  useEffect(() => {
+    document.title = domain === "physics"
+      ? "물리 학습 워크스페이스 · 데모"
+      : "국제정세 분석 워크스페이스 · 데모";
+  }, [domain]);
+
   const defaultAnalysisContext = useMemo(() => {
     if (domain === "physics") {
       return {
