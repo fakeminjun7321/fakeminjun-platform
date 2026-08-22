@@ -1,32 +1,30 @@
-# Design QA — Politics and Physics Workspace Extension
+# Design QA — Physics Workspace Extension
 
 ## Comparison target
 
 - Source visual truth: `outputs/frontend-qa/whitehat-source-normalized-1440x1024.png`, `1440 × 1024`, normalized from the selected Atlas Canvas reference.
 - Existing verified implementation reference: `outputs/frontend-qa/maplibre-final-desktop.png`, `1440 × 1024`, desktop situation-room state.
 - New implementation routes:
-  - `http://127.0.0.1:5173/politics/desk`
-  - `http://127.0.0.1:5173/politics/institutions`
   - `http://127.0.0.1:5173/physics/learn`
   - `http://127.0.0.1:5173/physics/library`
   - `http://127.0.0.1:5173/physics/find`
   - `http://127.0.0.1:5173/physics/ipho`
 - Intended QA viewports: `1440 × 1024` desktop and `390 × 844` mobile, device scale factor 1.
-- Intended states: politics first agenda selected; politics institution reader; physics mode 01; saved-resource library; unfiltered resource finder; KPhO→IPhO path.
+- Intended states: physics mode 01; saved-resource library; unfiltered resource finder; KPhO→IPhO path.
 
 ## Evidence available
 
 - The existing international-affairs implementation and reference were previously captured and compared at equal `1440 × 1024` pixels.
-- The six new routes returned HTTP 200 from the local Vite server.
-- Static server-render route-contract tests confirmed the expected political and physics content for all six paths.
-- Focused data and interaction-contract tests passed for politics scope/search, political institutions, all seven physics modes, official-resource links, and physics filters.
+- The four physics routes returned HTTP 200 from the local Vite server.
+- Static server-render route-contract tests confirmed the expected physics content for all four paths.
+- Focused data and interaction-contract tests passed for all seven physics modes, official-resource links, and physics filters.
 - Production build and Sites packaging passed.
+- In-app browser verification confirmed that the domain navigation contains only international affairs and physics, a removed legacy path resolves to `/international/map`, `/physics/learn` renders, and no console errors were recorded during that path.
 
-## Blocker
+## Remaining visual QA
 
-- The required in-app Browser control transport returned `Transport closed` during setup and remained unavailable after retry.
-- Because the new routes could not be captured in a controlled browser viewport, there is no browser-rendered implementation screenshot for politics or physics in this QA run.
-- HTTP 200, server-rendered markup, tests, and a production build do not prove visual layout, responsive behavior, pointer interactions, keyboard focus, or console cleanliness.
+- Controlled desktop/mobile screenshots have not yet been captured for all four physics routes.
+- HTTP 200, server-rendered markup, tests, and a production build do not prove the remaining responsive layouts, pointer interactions, keyboard focus paths, or console cleanliness across every route.
 
 ## Required fidelity surfaces
 
@@ -45,15 +43,15 @@
 ## Comparison history
 
 1. International-affairs comparison passed previously after mobile overview and map-control fixes.
-2. Politics/physics extension: implementation and contract tests exist, but first visual comparison is blocked before findings can be classified or fixed.
+2. Physics extension: implementation, contract tests, and the `/physics/learn` browser path exist; full route and viewport comparison remains pending.
 
 ## Verification boundary
 
-- **Implemented**: politics and physics routes, interactions, responsive CSS, mock data, official resource links, and documentation exist.
-- **Unit-verified**: 25 application/contract/worker tests passed.
-- **Browser-verified**: **Not verified / 미검증** for the new politics and physics routes because the browser-control transport was unavailable.
+- **Implemented**: physics routes, interactions, responsive CSS, mock data, official resource links, and documentation exist.
+- **Unit-verified**: 20 application/contract/worker tests passed.
+- **Browser-verified**: `/physics/learn`, two-domain navigation, removed-route redirection, and console error state verified. The other three physics routes and controlled responsive viewport comparisons are **Not verified / 미검증**.
 - **Simulator-verified**: **Not verified / 미검증**.
 - **Physical-device-verified**: **Not verified / 미검증**.
 - **Live-service-verified**: **Not verified / 미검증** — backend, authentication, persistence, uploads, and AI remain intentionally disconnected.
 
-final result: blocked
+final result: partial

@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { createServer } from "vite";
 
 globalThis.window = {
-  location: { pathname: "/politics/desk" },
+  location: { pathname: "/physics/learn" },
   history: {},
   addEventListener() {},
   removeEventListener() {},
@@ -29,8 +29,6 @@ after(async () => {
 });
 
 const ROUTE_EXPECTATIONS = [
-  ["/politics/desk", "정치 데스크"],
-  ["/politics/institutions", "제도 이해"],
   ["/physics/learn", "물리 학습 허브"],
   ["/physics/library", "물리 자료 보관소"],
   ["/physics/find", "물리 자료 찾기"],
@@ -43,5 +41,7 @@ for (const [pathname, expectedText] of ROUTE_EXPECTATIONS) {
     const html = renderToStaticMarkup(React.createElement(App));
     assert.ok(html.includes(expectedText));
     assert.ok(html.includes("NON-LIVE DEMO"));
+    assert.ok(!html.includes("정치"));
+    assert.ok(!html.includes("/politics"));
   });
 }

@@ -14,15 +14,12 @@ import {
 import { EVENTS } from "./events.js";
 import { CATEGORY_META, STATUS_META, getTopSignals } from "./mapLayers.js";
 import { PhysicsWorkspace } from "./PhysicsWorkspace.jsx";
-import { PoliticsWorkspace } from "./PoliticsWorkspace.jsx";
 import { WorldSituationMap } from "./WorldSituationMap.jsx";
 
 const ROUTES = {
   map: "/international/map",
   briefing: "/international/briefing",
   issues: "/international/issues",
-  politics: "/politics/desk",
-  institutions: "/politics/institutions",
   physics: "/physics/learn",
   library: "/physics/library",
   finder: "/physics/find",
@@ -31,13 +28,11 @@ const ROUTES = {
 
 const DOMAIN_ROUTES = {
   international: ["map", "briefing", "issues"],
-  politics: ["politics", "institutions"],
   physics: ["physics", "library", "finder", "ipho"],
 };
 
 const DOMAIN_META = {
   international: { label: "국제정세", title: "국제정세 분석 워크스페이스", entry: "map" },
-  politics: { label: "정치", title: "정치 이해 워크스페이스", entry: "politics" },
   physics: { label: "물리", title: "물리 학습 워크스페이스", entry: "physics" },
 };
 
@@ -46,10 +41,6 @@ const SUBNAV_ITEMS = {
     { id: "map", label: "상황지도" },
     { id: "briefing", label: "오늘 브리핑" },
     { id: "issues", label: "이슈 추적" },
-  ],
-  politics: [
-    { id: "politics", label: "정치 데스크" },
-    { id: "institutions", label: "제도 이해" },
   ],
   physics: [
     { id: "physics", label: "학습 허브" },
@@ -343,15 +334,6 @@ function IssuesPage({ selectedEvent, onSelect, onOpenAi }) {
 }
 
 function PassiveStatusBar({ domain }) {
-  if (domain === "politics") {
-    return (
-      <footer className="system-status" aria-label="정치 데모 상태">
-        <span>DATASET <strong>DEMO</strong></span><span>PRIMARY <strong>KOREA</strong></span>
-        <span>CONTEXT <strong>UNITED STATES</strong></span><span>DEFAULT LEVEL <strong>C2</strong></span>
-        <span className="system-health">백엔드 미연결 <i aria-hidden="true" /> 프론트엔드 데모</span>
-      </footer>
-    );
-  }
   if (domain === "physics") {
     return (
       <footer className="system-status" aria-label="물리 데모 상태">
@@ -446,13 +428,6 @@ export function App() {
   const domain = domainFromRoute(route);
 
   const defaultAnalysisContext = useMemo(() => {
-    if (domain === "politics") {
-      return {
-        title: "대한민국 정치 구조",
-        meta: "정치 워크스페이스 · 설명 수준 C2 · 프론트엔드 데모",
-        placeholder: "현재 선택한 정치 의제를 결정 주체와 절차 중심으로 설명해줘.",
-      };
-    }
     if (domain === "physics") {
       return {
         title: "물리 학습 워크스페이스",
@@ -468,7 +443,14 @@ export function App() {
   }, [domain, selectedEvent]);
 
   useEffect(() => {
-    const handlePopState = () => setRoute(routeFromPath(window.location.pathname));
+    const syncRouteToPath = () => {
+      const nextRoute = routeFromPath(window.location.pathname);
+      const canonicalPath = ROUTES[nextRoute];
+      if (window.location.pathname !== canonicalPath) window.history.replaceState({}, "", canonicalPath);
+      setRoute(nextRoute);
+    };
+    syncRouteToPath();
+    const handlePopState = () => syncRouteToPath();
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
@@ -519,10 +501,6 @@ export function App() {
 
         {route === "issues" && (
           <IssuesPage selectedEvent={selectedEvent} onSelect={setSelectedId} onOpenAi={() => openAi()} />
-        )}
-
-        {domain === "politics" && (
-          <PoliticsWorkspace view={route === "institutions" ? "institutions" : "desk"} onOpenAi={openAi} />
         )}
 
         {domain === "physics" && (
