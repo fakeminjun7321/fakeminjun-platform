@@ -19,28 +19,28 @@ Firebase는 첫 출시부터 공개 회원가입, 소셜 로그인, 비밀번호
 - `apps/web/worker/index.js`: 정적 SPA와 분리된 `/api/v1` Worker BFF
 - `apps/web/migrations`: D1 관계형 schema와 명시적으로 `is_live=0`인 데모 사건 seed
 - 공개 읽기: health, 사건 bbox/날짜/레이어 목록, 사건 상세
-- 개인 경로: Access 신원 확인, 노트 CRUD, 국제정세·물리 수준 설정
-- 방어 경계: 서버 결정 소유자, 개인 쿼리의 `owner_id` 제한, 고정 Origin, JSON 전용, 16 KiB 본문 제한, 필드 allowlist, prepared statement, 노트 optimistic locking
+- 개인 경로: Access 신원 확인, 노트 CRUD, 국제정세·물리 수준 설정, OpenAI 일반·정밀 분석 생성·조회·삭제
+- 방어 경계: 서버 결정 소유자, 개인 쿼리의 `owner_id` 제한, 고정 Origin, JSON 전용, 16 KiB 본문 제한, 필드 allowlist, prepared statement, 노트 optimistic locking, 분석 idempotency·사용량 원장·응답 제한
 - `apps/web/src/backendClient.js`: 화면에서 사용할 same-origin API client와 구조화 오류 타입
 - Vite 개발 프록시: `127.0.0.1:5173/api` → `127.0.0.1:8787/api`
 
-이는 로컬 기반 구현이다. 현재 지도와 물리 화면은 아직 이 client를 호출하지 않고 기존 데모 자료를 렌더한다. 원격 D1, production Access 정책, live 데이터 수집과 배포는 만들지 않았다.
+국제정세·물리 AI 패널은 이 client를 실제로 사용한다. 지도 사건 자체는 여전히 정적 `NON-LIVE DEMO` 자료다. 원격 D1, production Access 정책, live 데이터 수집과 배포는 만들지 않았다.
 
 ## 서비스 구성
 
 | 요구 | 1차 선택 | 역할 |
 |---|---|---|
-| 프론트와 API | Workers Static Assets + Worker BFF | SPA 전달, `/api/v1/*` 인증·검증·응답 |
+| 프론트와 API | 정적 프론트 호스팅 + 전용 API Worker | 프론트와 `/api/*`를 분리해 Access 신원 컨텍스트 보존 |
 | 관계형 데이터 | D1 | 사건, 출처, 주장, 근거, 이슈, 노트, 분석 메타데이터 |
 | 파일과 원본 | 비공개 R2 | API 원본 JSON, 캡처, PDF, 이미지, 추출 텍스트 |
 | 수집 작업 | Cron Triggers + Queues | 예약 수집, 정규화, 중복 제거 |
 | 긴 처리 | Workflows, 2단계 | 추출, 임베딩, AI, 검증과 재시도 |
 | 의미 검색 | Vectorize, 2단계 | 개인 자료와 근거 청크 검색 |
-| AI 관문 | AI Gateway | 공급자 교체, 비용·지연·오류 통제 |
+| AI | OpenAI Responses API 직접 호출 | OpenAI-only 모델 선택, 구조화 출력, 비용·오류 통제 |
 | 개인 알파 인증 | Cloudflare Access | 허용된 소수 계정만 접근 |
 | 지도 운영 | MapLibre + PMTiles + R2/Worker | 공개 타일 의존성을 자체 호스팅으로 교체 |
 
-AI Gateway의 요청·응답 로그는 기본 활성화될 수 있고 개인 자료를 포함할 수 있다. 따라서 승인 전에는 Gateway 자체를 만들지 않으며, 생성하더라도 첫 실제 요청 전에 로그 수집을 끈다. 로그 사용을 별도 승인한 경우에만 보관 기간, 프롬프트·응답 포함 범위와 민감정보 제거 방식을 정한다.
+초기 구현은 중간 AI Gateway 없이 전용 Worker가 OpenAI Responses API만 호출한다. 프롬프트·응답 전문은 운영 로그에 남기지 않고, `store: false`, 도구 비활성화, 구조화 출력, 짧은 모델 목록과 고정 공급자 URL을 사용한다.
 
 ## 데이터 배치
 
@@ -52,7 +52,7 @@ AI Gateway의 요청·응답 로그는 기본 활성화될 수 있고 개인 자
       ├─ R2: 원본 응답·캡처·PDF·이미지·파생 파일
       ├─ Queue / Workflow: 수집·추출·임베딩·AI 작업
       ├─ Vectorize: 근거 및 개인 자료 검색
-      └─ AI Gateway → 나중에 선택할 모델 공급자
+      └─ OpenAI Responses API
 ```
 
 브라우저는 D1, R2, Vectorize를 직접 호출하지 않는다. 모든 데이터 요청은 `/api/v1`을 통과해 나중에 공급자를 바꿔도 프론트 계약이 유지되게 한다. 서버가 발급한 단일 객체용·단기 만료 R2 업로드 URL을 통한 `PUT`만 명시적 예외로 둔다.
@@ -113,9 +113,9 @@ GET    /api/v1/profile/levels
 PUT    /api/v1/profile/levels
 ```
 
-현재 Worker는 Cloudflare Workers의 Access 통합이 제공하는 `ctx.access.getIdentity()`에서 안정적인 `identity.id`를 받아 `users.external_subject`에 연결하고, 해당 컨텍스트가 없으면 개인 경로를 닫는다. 이메일은 표시용이며 영구 소유자 키로 사용하지 않는다. 모든 개인 데이터 읽기와 쓰기는 서버가 결정한 `owner_id`로 제한하고 브라우저가 보낸 소유자 ID를 받지 않는다. production에서는 Access application과 policy를 실제 도메인에 연결하고 거부·로그아웃·다른 사용자 격리를 다시 검증해야 한다.
+현재 Worker는 Cloudflare Workers의 Access 통합이 제공하는 `ctx.access.getIdentity()`에서 안정적인 `identity.user_uuid`를 우선 사용하고, 로컬 개발 신원에서는 `identity.id`로 대체해 `users.external_subject`에 연결한다. 해당 컨텍스트가 없으면 개인 경로를 닫는다. 이메일은 표시용이며 영구 소유자 키로 사용하지 않는다. 모든 개인 데이터 읽기와 쓰기는 서버가 결정한 `owner_id`로 제한하고 브라우저가 보낸 소유자 ID를 받지 않는다. production에서는 Access application과 policy를 실제 도메인에 연결하고 거부·로그아웃·다른 사용자 격리를 다시 검증해야 한다.
 
-브라우저 세션 쿠키를 쓰는 상태 변경 API는 정확히 일치하는 `Origin`, JSON `Content-Type`, 요청 본문 크기와 허용 필드를 검사한다. wildcard CORS는 사용하지 않는다. 호출 빈도 제한은 아직 구현하지 않았으며 public write API를 열기 전에 추가한다.
+브라우저 세션 쿠키를 쓰는 상태 변경 API는 정확히 일치하는 `Origin`, JSON `Content-Type`, 요청 본문 크기와 허용 필드를 검사한다. wildcard CORS는 사용하지 않는다. AI 분석은 별도 D1 원장으로 10분·일·30일·정밀 분석 한도를 적용한다. 공개 읽기 API의 edge 단위 DDoS/WAF 한도는 production 배포 단계에서 추가한다.
 
 ### 파일과 분석
 
@@ -125,14 +125,16 @@ POST /api/v1/files/:fileId/complete
 GET  /api/v1/files/:fileId/status
 POST /api/v1/analyses
 GET  /api/v1/analyses/:analysisId
+DELETE /api/v1/analyses/:analysisId
 ```
 
 - 업로드는 무작위 단일 객체 키와 짧은 만료의 R2 업로드 URL을 사용하고, 정확한 앱 origin의 `PUT` CORS만 허용한다.
 - 업로드 직후 객체는 비공개 `quarantine/`에 두고 완료 API가 R2 `HEAD`로 키·크기·Content-Type을 다시 검증한다.
 - 크기·MIME·확장자·파일 시그니처 검사는 악성코드 검사가 아니다. 압축 폭탄·PDF 객체 수·페이지 수 제한과 별도의 실제 malware scanner를 두기 전에는 `Antivirus-verified`라고 표시하지 않는다.
 - 검사 통과 전에는 다운로드, AI 입력, 텍스트 추출과 임베딩을 금지하고 감염·실패·시간초과 상태 및 삭제 정책을 기록한다.
-- AI 분석은 사건 ID, 근거 ID, 선택 영역 ID만 받아 서버에서 실제 근거 묶음을 만든다.
-- 모델이 반환한 인용 ID가 실제 근거에 존재하는지 서버에서 다시 검사한다.
+- 현재 AI 분석은 분야·모드·질문·사건 ID·설명 수준·제한된 화면 맥락을 받고, 사건 상세는 서버가 D1에서 다시 읽는다.
+- 일반 작업은 `gpt-5.6-luna` 한 번, 정밀 작업은 `gpt-5.6-terra` 두 번과 `gpt-5.6-sol` 통합 한 번으로 고정한다.
+- 현재 모델 출력의 근거 분류는 자동 검증된 인용이 아니다. 실제 출처 수집을 붙일 때 `analysis_evidence`와 서버 검증 evidence ID를 추가해야 한다.
 
 ## 지도 데이터 경로
 
@@ -183,11 +185,11 @@ preview와 production 바인딩은 자동 상속된다고 가정하지 않고 �
 - 지도에서 사건 선택 → 출처 확인
 - 현재 프론트 화면을 API client에 연결
 
-### 2. 자료·AI
+### 2. 자료·AI — AI 기본 경로 로컬 구현
 
 - 캡처·PDF quarantine, 형식 검증과 실제 악성코드 검사 경계
 - R2 파생물, D1 메타데이터, Vectorize 근거 검색
-- AI Gateway를 통한 구조화 분석
+- OpenAI Responses API 구조화 분석: 로컬 구현·실제 API 검증
 - 인용 ID 서버 검증과 분석 이력 저장
 
 ### 3. 지도 자체 호스팅
@@ -204,18 +206,19 @@ preview와 production 바인딩은 자동 상속된다고 가정하지 않고 �
 3. `fakeminjun.com`, `app.fakeminjun.com`, preview 호스트 구성
 4. 월 비용 상한과 결제 계정
 5. 첫 실제 국제정세 수집 API 한 곳과 갱신 주기
-6. AI 모델·월 한도·AI Gateway 로그 정책
+6. OpenAI 월 예산 상한과 production 모델 변경 정책
 7. 파일 최대 크기·허용 형식·실제 악성코드 검사 수단·원본 보관 기간
 8. 삭제·백업·복구와 감사 로그 보관 정책
 9. 실제 Cloudflare 리소스·DNS·Access·Secrets 생성 승인
 
 ## 현재 검증 경계
 
-- **Implemented**: Worker BFF, D1 schema/seed, 사건 목록·상세, 세션, 노트 CRUD, 분야별 수준 API, same-origin 프론트 client와 로컬 개발 설정
-- **Unit-verified**: 전체 Node 테스트 30건 및 전용 Sites worker 테스트 5건 통과
+- **Implemented**: Worker BFF, D1 schema/seed, 사건 목록·상세, 세션, 노트 CRUD, 분야별 수준, OpenAI 분석 API, same-origin 프론트 client와 로컬 개발 설정
+- **Unit-verified**: 전체 Node 테스트 43건 및 전용 Sites worker 테스트 5건 통과
 - **Local-runtime-verified**: 실제 로컬 Wrangler와 임시 D1에서 migration, HTTP 요청, 재시작 후 영속성, 다른 사용자 데이터 격리와 삭제 확인
-- **Simulator-verified**: **Not verified / 미검증** — 브라우저 자동화로 새 백엔드 사용자 경로를 실행하지 않음
+- **Browser-verified**: 국제정세 AI 결과 렌더, 일반·정밀 모드, 포커스 복귀와 물리 P5 맥락을 인앱 브라우저에서 확인
+- **Simulator-verified**: **Not verified / 미검증**
 - **Physical-device-verified**: **Not verified / 미검증**
-- **Live-service-verified**: **Not verified / 미검증** — Cloudflare 계정의 원격 D1·Access·Worker 배포를 사용하지 않음
-- R2, Queue, Workflows, Vectorize, AI Gateway, DNS, 실제 데이터 수집: **Not verified / 미검증**
+- **Live-service-verified**: 로컬 Worker에서 실제 OpenAI 일반·정밀 분석과 D1 저장·재조회·idempotent replay 확인. Cloudflare 계정의 원격 D1·Access·Worker 배포는 **Not verified / 미검증**
+- R2, Queue, Workflows, Vectorize, DNS, 실제 데이터 수집: **Not verified / 미검증**
 - 실제 업로드 악성코드 검사와 antivirus/EDR: **Not verified / 미검증**

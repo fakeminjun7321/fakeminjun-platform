@@ -8,14 +8,16 @@
 
 - 제품 범위와 정보 구조 초안 작성
 - 데이터/API 후보와 검증 조건 정리
-- 공급자 중립 아키텍처 초안 작성
+- Cloudflare-first 저장·API 구조와 OpenAI-only AI 구조 작성
 - 국제정세·물리 프론트엔드 프로토타입 구현 (`apps/web`)
 - Cloudflare Worker BFF, D1 migration, 사건 조회, 개인 노트와 분야별 수준 설정 API의 로컬 백엔드 구현
 - MapLibre 기반 확대·이동·URL 상태·레이어가 있는 세계 상황지도, 3개 핵심 신호, 별도 오늘 브리핑·이슈 추적 화면, 사건 선택, 호출형 AI 패널의 화면 흐름 구현
 - 물리: 7개 학습 모드, 혼합형 자료 보관소, 검증된 공개 자료 검색, KPhO→IPhO 준비 화면과 조절 가능한 데모 설명 수준 구현
 - 물리 자료 찾기는 MIT OpenCourseWare, 한국물리올림피아드, IPhO 공식 공개 링크만 사용하며 실제 검색 API는 아직 연결하지 않음
-- 현재 사건은 모두 `NON-LIVE DEMO` 자료이며 AI 백엔드는 연결되지 않음
-- 프론트 화면은 아직 새 API를 소비하지 않으며, 원격 Cloudflare·실제 뉴스/API·파일·캡처·OCR·AI 파이프라인은 연결하지 않음
+- 현재 사건은 모두 `NON-LIVE DEMO` 자료이며 실제 뉴스 수집 결과가 아님
+- 국제정세·물리의 호출형 AI 패널은 로컬 Worker를 거쳐 OpenAI Responses API에 연결되고, 결과·사용량·요청 중복 방지 기록을 소유자별 D1에 저장
+- 일반 분석은 비용 효율적인 OpenAI 단일 모델, 정밀 분석은 OpenAI 전문 검토 2회와 최종 통합 1회로 제한
+- 원격 Cloudflare·실제 뉴스/API·파일·캡처·OCR 파이프라인은 아직 연결하지 않음
 
 ## 확정된 방향
 
@@ -69,11 +71,11 @@ Vite는 `/api`를 `127.0.0.1:8787`의 Worker로 전달한다. 로컬 Access 개�
 
 ## 검증 상태
 
-- **Implemented**: 기획 문서, 국제정세·물리 프론트엔드 프로토타입, Worker BFF, D1 schema/seed, 사건·노트·수준 API와 프론트 API client가 저장소에 존재
-- **Unit-verified**: `npm test` 30건 통과. 별도 Sites worker 묶음 `npm run test:sites` 5건 통과
+- **Implemented**: 기획 문서, 국제정세·물리 프론트엔드, 전용 API Worker, D1 schema/seed, 사건·노트·수준·AI 분석 API와 프론트 client가 저장소에 존재
+- **Unit-verified**: `npm test` 43건 통과. 별도 Sites worker 묶음 `npm run test:sites` 5건 통과
 - **Local-runtime-verified**: 실제 로컬 Wrangler와 임시 D1에서 migration, HTTP 사건 조회, Access 개발 신원, 수준 저장, 노트 생성·수정 충돌·재시작 후 재조회·다른 사용자 격리·삭제를 확인
-- **Browser-verified**: 국제정세는 실제 데스크톱 Chrome에서 OpenFreeMap 렌더, 지도 확대·이동·레이어·URL 상태, 마커 선택과 1440×1024 및 390×844 반응형 viewport 확인. 인앱 브라우저에서 분야 내비게이션이 `국제정세 / 물리`만 노출되는지, 제거된 경로의 국제정세 리디렉션, 물리 학습 허브 전환과 콘솔 오류 0건을 확인. 나머지 물리 하위 화면의 전체 상호작용·반응형 검증은 미완료
+- **Browser-verified**: 인앱 브라우저에서 국제정세 AI 패널의 실제 OpenAI 결과 렌더, 일반·정밀 모드 표시, 자동 검증 전 근거 경계, 닫기 후 포커스 복귀, 물리 P5 맥락 전달을 확인. 기존 지도 이동·레이어·URL 상태와 물리 학습 허브 경로도 확인. OpenFreeMap glyph 404 fallback 경고는 남아 있음
 - **Simulator-verified**: 미검증 — 모바일 크기는 데스크톱 Chrome 반응형 viewport로만 확인
 - **Physical-device-verified**: 미검증 — 실제 기기에서 실행하지 않음
-- **Live-service-verified**: 미검증 — 원격 Cloudflare D1·Access·배포, 실제 외부 데이터 API, AI, 파일 저장소를 사용하지 않음
+- **Live-service-verified**: 로컬 Worker에서 실제 OpenAI 표준·정밀 요청, D1 결과 재조회, 같은 idempotency key 재호출을 확인. 원격 Cloudflare D1·Access·배포, 실제 외부 데이터 API와 파일 저장소는 미검증
 - **Antivirus-verified**: 미검증 — 백신·EDR 엔진은 실행하지 못했으며, 변경분 보안 검토와 npm advisory·registry signature 검사만 수행

@@ -9,6 +9,50 @@ export class BackendApiError extends Error {
   }
 }
 
+const ANALYSIS_ATTEMPT_TTL_MS = 10 * 60 * 1000;
+const MAX_RETAINED_ANALYSIS_ATTEMPTS = 24;
+const analysisAttempts = new Map();
+
+async function analysisFingerprint(analysis) {
+  const canonical = JSON.stringify(analysis);
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical));
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function sweepExpiredAnalysisAttempts(now) {
+  for (const [fingerprint, attempt] of analysisAttempts) {
+    if (now - attempt.createdAt >= ANALYSIS_ATTEMPT_TTL_MS) analysisAttempts.delete(fingerprint);
+  }
+}
+
+export async function getAnalysisAttempt(analysis, now = Date.now()) {
+  const fingerprint = await analysisFingerprint(analysis);
+  sweepExpiredAnalysisAttempts(now);
+  const existing = analysisAttempts.get(fingerprint);
+  if (existing) {
+    return { fingerprint, idempotencyKey: existing.idempotencyKey };
+  }
+  while (analysisAttempts.size >= MAX_RETAINED_ANALYSIS_ATTEMPTS) {
+    analysisAttempts.delete(analysisAttempts.keys().next().value);
+  }
+  const attempt = { idempotencyKey: crypto.randomUUID(), createdAt: now };
+  analysisAttempts.set(fingerprint, attempt);
+  return { fingerprint, idempotencyKey: attempt.idempotencyKey };
+}
+
+export function clearAnalysisAttempt(fingerprint) {
+  analysisAttempts.delete(fingerprint);
+}
+
+export function shouldClearAnalysisAttempt(error, { hasCreatedAnalysis = false } = {}) {
+  if (hasCreatedAnalysis || !(error instanceof BackendApiError)) return false;
+  return error.status >= 400
+    && error.status < 500
+    && ![408, 425, 429].includes(error.status);
+}
+
 function normalizeBaseUrl(baseUrl) {
   return baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
 }
@@ -71,6 +115,22 @@ export function createBackendClient({ baseUrl = "", fetchImpl = globalThis.fetch
     putLevels: (levels) => request("/api/v1/profile/levels", {
       method: "PUT",
       body: JSON.stringify(levels),
+    }),
+    createAnalysis: (analysis, { signal, idempotencyKey = crypto.randomUUID() } = {}) => request(
+      "/api/v1/analyses",
+      {
+        method: "POST",
+        body: JSON.stringify(analysis),
+        headers: { "idempotency-key": idempotencyKey },
+        signal,
+      },
+    ),
+    getAnalysis: (analysisId, { signal } = {}) => request(
+      `/api/v1/analyses/${encodeURIComponent(analysisId)}`,
+      { signal },
+    ),
+    deleteAnalysis: (analysisId) => request(`/api/v1/analyses/${encodeURIComponent(analysisId)}`, {
+      method: "DELETE",
     }),
   });
 }

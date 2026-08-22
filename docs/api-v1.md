@@ -69,6 +69,9 @@ API 응답은 `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `X-R
 | `DELETE` | `/api/v1/notes/:noteId` | 현재 사용자 노트 삭제 |
 | `GET` | `/api/v1/profile/levels` | 국제정세·물리 수준 조회 |
 | `PUT` | `/api/v1/profile/levels` | 수준 저장 (`I1..I5`, `P1..P5`, 또는 `null`) |
+| `POST` | `/api/v1/analyses` | OpenAI 구조화 분석 생성 |
+| `GET` | `/api/v1/analyses/:analysisId` | 현재 사용자의 분석 상태·결과 조회 |
+| `DELETE` | `/api/v1/analyses/:analysisId` | 완료·실패 분석의 개인 내용 삭제 |
 
 노트 생성 예시:
 
@@ -91,6 +94,15 @@ API 응답은 `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `X-R
 
 서버는 owner ID를 요청에서 받지 않는다. Access의 안정적인 identity ID로 내부 사용자를 결정하고 모든 개인 쿼리를 `owner_id`로 제한한다. 오래된 `expectedVersion` 수정은 `409 note_version_conflict`를 반환한다.
 
+분석 생성은 `domain`, `mode`, `prompt`, 선택적인 `eventId`, `level`, 제한된 화면 맥락만 받는다. 모델 이름, 소유자, 도구와 공급자 URL은 브라우저가 정할 수 없다. `Idempotency-Key`가 필수이며 같은 키에 다른 본문을 쓰면 `409 idempotency_conflict`다. 삭제 후에도 별도 사용량 원장은 남아 삭제→재호출로 한도를 우회할 수 없다.
+
+- 일반 분석: OpenAI `gpt-5.6-luna` 1회
+- 정밀 분석: `gpt-5.6-terra` 전문 검토 2회 + `gpt-5.6-sol` 통합 1회
+- 10분 20회, 하루 50회, 30일 500회, 정밀 분석 하루 10회
+- `store: false`, 모델 도구 없음, strict JSON schema와 서버의 2차 형태 검사
+- OpenAI 응답 전체 90초 제한, 응답 본문 1 MiB 제한
+- 모델이 적은 `basis`, `confidence`, `sourceBoundary`는 자동 검증된 인용이 아니며 화면에도 그렇게 표시
+
 ## 쓰기 요청 경계
 
 - 정확한 `APP_ORIGIN`만 허용
@@ -101,4 +113,4 @@ API 응답은 `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `X-R
 - 사용자 값은 D1 prepared statement에 bind
 - `/api/*` 오류는 정적 SPA로 fall through하지 않음
 
-호출 빈도 제한, production Access 정책과 원격 D1은 아직 구현·검증하지 않았다. R2 파일, 캡처·OCR, AI와 외부 데이터 수집 API도 이 계약에 포함되지 않는다.
+production Access 정책과 원격 D1은 아직 구현·검증하지 않았다. R2 파일, 캡처·OCR와 외부 데이터 수집 API도 이 계약에 포함되지 않는다. OpenAI 경로는 로컬 실제 API로 검증했지만 production Cloudflare 경로는 별도 검증 대상이다.

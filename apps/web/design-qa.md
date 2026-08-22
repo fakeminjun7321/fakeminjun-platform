@@ -32,7 +32,7 @@
 - Spacing and layout rhythm: existing shell tokens and border rhythm were reused, but the rendered desktop/mobile layouts are **Not verified / 미검증**.
 - Colors and visual tokens: existing navy, cyan, cobalt, green, and amber tokens were reused; rendered contrast and hierarchy are **Not verified / 미검증**.
 - Image quality and assets: the new workspaces require no raster imagery; icons use the project's existing Phosphor family. Rendered alignment is **Not verified / 미검증**.
-- Copy and content: demo/live boundaries and backend-unavailable notices exist in code and server-rendered output; wrapping and truncation are **Not verified / 미검증**.
+- Copy and content: demo/live 경계, 실제 OpenAI 연결 상태, 모델이 밝힌 근거 범위가 자동 검증 전이라는 문구를 브라우저에서 확인했다. 모든 긴 결과의 반응형 wrapping은 **Not verified / 미검증**.
 
 ## Findings
 
@@ -48,10 +48,10 @@
 ## Verification boundary
 
 - **Implemented**: physics routes, interactions, responsive CSS, mock data, official resource links, and documentation exist.
-- **Unit-verified**: 20 application/contract/worker tests passed.
-- **Browser-verified**: `/physics/learn`, two-domain navigation, removed-route redirection, and console error state verified. The other three physics routes and controlled responsive viewport comparisons are **Not verified / 미검증**.
+- **Unit-verified**: 43 application/contract/worker tests passed; Sites worker tests 5건도 통과.
+- **Browser-verified**: 국제정세 AI 실제 결과, 일반/정밀 모드 카드, 비선택 카드 배경, 패널 닫기와 포커스 복귀, `/physics/learn` P5 맥락을 확인했다. 다른 세 물리 경로와 통제된 반응형 viewport 비교는 **Not verified / 미검증**.
 - **Simulator-verified**: **Not verified / 미검증**.
 - **Physical-device-verified**: **Not verified / 미검증**.
-- **Live-service-verified**: **Not verified / 미검증** — backend, authentication, persistence, uploads, and AI remain intentionally disconnected.
+- **Live-service-verified**: 로컬 Worker→실제 OpenAI→로컬 D1 분석 경로는 확인. production Cloudflare Access/D1/배포, uploads, 외부 데이터는 **Not verified / 미검증**.
 
 final result: partial

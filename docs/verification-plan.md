@@ -42,13 +42,13 @@
 
 ## 4. 현재 상태
 
-- **Implemented**: 제품 문서, 국제정세·물리 프론트엔드 프로토타입, Worker BFF, D1 schema/seed, 사건·노트·수준 API와 프론트 API client
-- **Unit-verified**: `npm test` 30건, 별도 `npm run test:sites` 5건 통과
+- **Implemented**: 제품 문서, 국제정세·물리 프론트엔드, Worker BFF, D1 schema/seed, 사건·노트·수준·AI 분석 API와 프론트 API client
+- **Unit-verified**: `npm test` 43건, 별도 `npm run test:sites` 5건 통과
 - **Local-runtime-verified**: 실제 로컬 Wrangler와 임시 D1로 migration, HTTP 사건 조회, Access 개발 신원, 수준 저장, 노트 생성·수정 충돌·재시작 후 재조회·다른 사용자 격리·삭제 확인
-- **Browser-verified**: 국제정세는 실제 데스크톱 Chrome에서 OpenFreeMap 타일 렌더, 지도 확대·이동·레이어·URL 상태, 마커 선택과 1440×1024 및 390×844 반응형 viewport 확인. 인앱 브라우저에서 분야 내비게이션이 `국제정세 / 물리`만 노출되는지, 제거된 경로의 국제정세 리디렉션, 물리 학습 허브 전환과 콘솔 오류 0건을 확인. 나머지 물리 하위 화면의 전체 상호작용·반응형 검증은 미완료
+- **Browser-verified**: 인앱 브라우저에서 국제정세 AI 패널 실제 결과, 모드 선택, 모델 근거 경계 표시, 포커스 복귀, 물리 P5 맥락 전달을 확인. 지도 공급자의 glyph 404 fallback 경고 4건 외 애플리케이션 오류는 확인되지 않음
 - **Simulator-verified**: 미검증 — 모바일 시뮬레이터는 사용하지 않음
 - **Physical-device-verified**: 미검증 — 실제 Mac·모바일 기기 실행 없음
-- **Live-service-verified**: 미검증 — 원격 Cloudflare D1·Access·Worker, 외부 데이터 API, AI, 파일 저장소를 사용하지 않음
+- **Live-service-verified**: 로컬 Worker에서 실제 OpenAI 일반·정밀 분석을 실행하고 모델 응답, D1 저장·재조회, 사용량, idempotent replay를 확인. 원격 Cloudflare D1·Access·Worker, 외부 데이터 API와 파일 저장소는 미검증
 - **Antivirus-verified**: 미검증 — 변경분 보안 검토와 npm advisory·registry signature 검사는 수행했으나 백신·EDR 엔진은 실행하지 않음
 
 ## 5. 프론트와 백엔드의 다음 연결 기준

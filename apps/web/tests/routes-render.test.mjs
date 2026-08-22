@@ -43,5 +43,6 @@ for (const [pathname, expectedText] of ROUTE_EXPECTATIONS) {
     assert.ok(html.includes("NON-LIVE DEMO"));
     assert.ok(!html.includes("정치"));
     assert.ok(!html.includes("/politics"));
+    assert.ok(!html.includes('id="ai-analysis-drawer"'));
   });
 }

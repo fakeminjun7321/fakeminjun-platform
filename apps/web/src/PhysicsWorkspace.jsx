@@ -74,8 +74,11 @@ function LearningHub({ level, onLevelChange, onOpenAi }) {
           </dl>
           <section className="physics-working-area">
             <div><p className="system-kicker">WORKING NOTE</p><h4>분석할 내용을 이 화면에 모읍니다</h4></div>
-            <p>현재는 프론트엔드 구조만 구현되어 있습니다. 파일 저장과 AI 결과 기록은 백엔드 단계에서 연결합니다.</p>
+            <p>AI 분석은 개인 전용 백엔드에서 실행되고 결과와 사용량은 소유자별 기록으로 저장됩니다.</p>
             <button type="button" onClick={() => onOpenAi({
+              level: `P${level}`,
+              contextKind: "physics-mode",
+              contextId: selected.id,
               title: selected.title,
               meta: `물리 학습 모드 ${selected.code} · 설명 수준 P${level}`,
               placeholder: selected.example,
@@ -96,7 +99,7 @@ function LearningHub({ level, onLevelChange, onOpenAi }) {
   );
 }
 
-function ResourceTable({ resources, onOpenAi, emptyLabel }) {
+function ResourceTable({ resources, onOpenAi, emptyLabel, level }) {
   return (
     <div className="physics-resource-table">
       <div className="resource-table-head" aria-hidden="true">
@@ -113,6 +116,9 @@ function ResourceTable({ resources, onOpenAi, emptyLabel }) {
           <div className="resource-actions">
             <a href={resource.href} target="_blank" rel="noreferrer">원문 열기 <ArrowSquareOut size={14} /></a>
             <button type="button" onClick={() => onOpenAi({
+              level: `P${level}`,
+              contextKind: "physics-resource",
+              contextId: resource.id,
               title: resource.title,
               meta: `${resource.provider} · ${resource.topic} · ${resource.level}`,
               placeholder: "이 자료를 어떻게 공부하면 좋을지 선수지식과 학습 순서를 알려줘.",
@@ -143,7 +149,7 @@ function LibraryPage({ level, onLevelChange, onOpenAi, onNotice }) {
             <FolderOpen size={17} /> 자료 추가
           </button>
         </div>
-        <ResourceTable resources={resources} onOpenAi={onOpenAi} emptyLabel="보관 자료에서 검색 결과를 찾지 못했습니다." />
+        <ResourceTable resources={resources} onOpenAi={onOpenAi} emptyLabel="보관 자료에서 검색 결과를 찾지 못했습니다." level={level} />
       </section>
     </main>
   );
@@ -170,7 +176,7 @@ function FinderPage({ level, onLevelChange, onOpenAi }) {
           {RESOURCE_TYPES.map((item) => <button type="button" key={item} className={type === item ? "is-selected" : ""}
             onClick={() => setType(item)} aria-pressed={type === item}>{item}</button>)}
         </div>
-        <ResourceTable resources={resources} onOpenAi={onOpenAi} emptyLabel="검색어 또는 자료 유형을 바꿔보세요." />
+        <ResourceTable resources={resources} onOpenAi={onOpenAi} emptyLabel="검색어 또는 자료 유형을 바꿔보세요." level={level} />
       </section>
     </main>
   );
@@ -203,6 +209,9 @@ function IphoPage({ level, onLevelChange, onOpenAi }) {
               <span><strong>{resource.title}</strong><small>{resource.provider}</small></span><ArrowSquareOut size={14} /></a>
           ))}
           <button type="button" onClick={() => onOpenAi({
+            level: `P${level}`,
+            contextKind: "olympiad-track",
+            contextId: "kpho-ipho",
             title: "KPhO에서 IPhO까지의 준비 계획",
             meta: `KPhO → IPhO 준비 트랙 · 데모 설명 수준 P${level}`,
             placeholder: "KPhO를 아직 시작하지 않은 상태에서 역학과 전자기학 중심의 첫 학습 순서를 짜줘.",
@@ -213,10 +222,9 @@ function IphoPage({ level, onLevelChange, onOpenAi }) {
   );
 }
 
-export function PhysicsWorkspace({ view, onOpenAi, onNotice }) {
-  const [level, setLevel] = useState(4);
-  if (view === "library") return <LibraryPage level={level} onLevelChange={setLevel} onOpenAi={onOpenAi} onNotice={onNotice} />;
-  if (view === "finder") return <FinderPage level={level} onLevelChange={setLevel} onOpenAi={onOpenAi} />;
-  if (view === "ipho") return <IphoPage level={level} onLevelChange={setLevel} onOpenAi={onOpenAi} />;
-  return <LearningHub level={level} onLevelChange={setLevel} onOpenAi={onOpenAi} />;
+export function PhysicsWorkspace({ view, onOpenAi, onNotice, level, onLevelChange }) {
+  if (view === "library") return <LibraryPage level={level} onLevelChange={onLevelChange} onOpenAi={onOpenAi} onNotice={onNotice} />;
+  if (view === "finder") return <FinderPage level={level} onLevelChange={onLevelChange} onOpenAi={onOpenAi} />;
+  if (view === "ipho") return <IphoPage level={level} onLevelChange={onLevelChange} onOpenAi={onOpenAi} />;
+  return <LearningHub level={level} onLevelChange={onLevelChange} onOpenAi={onOpenAi} />;
 }

@@ -1119,14 +1119,50 @@ textarea:focus-visible {
 .context-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 16px 0; }
 .context-actions button { min-height: 44px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--line); color: #91a8b3; font-size: 12px; }
 .context-actions button.is-selected { color: #cfe6f2; border-color: var(--cobalt); background: #12304a; }
+.context-actions button:disabled { cursor: not-allowed; opacity: 0.48; }
 
-.analysis-form { display: grid; gap: 10px; margin-top: auto; }
+.analysis-mode { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+.analysis-mode button { min-height: 70px; display: grid; gap: 4px; align-content: center; padding: 10px; border: 1px solid var(--line); color: #93a9b3; background: #0a1a24; text-align: left; }
+.analysis-mode button strong { color: #dce8ec; font-size: 11px; }
+.analysis-mode button span { color: #748e9a; font-size: 9px; line-height: 1.45; }
+.analysis-mode button.is-selected { border-color: #3f78ab; background: #102d42; }
+.analysis-mode button.is-selected strong { color: #ecf6f8; }
+.analysis-mode button:disabled { cursor: wait; opacity: 0.62; }
+
+.analysis-form { display: grid; gap: 10px; }
 .analysis-form label { font-size: 12px; font-weight: 650; }
 .analysis-form textarea { width: 100%; min-height: 148px; resize: vertical; border: 1px solid var(--line); border-radius: 4px; padding: 12px; color: var(--text); background: #081720; font-size: 13px; line-height: 1.6; }
 .analysis-form textarea::placeholder { color: #6f8a96; }
 .analysis-submit { min-height: 44px; display: flex; align-items: center; justify-content: center; gap: 9px; color: #fff; background: #17589c; font-size: 12px; font-weight: 650; }
 .analysis-submit:hover { background: #236db7; }
+.analysis-submit:disabled { cursor: not-allowed; opacity: 0.55; }
 .prototype-notice { margin: 12px 0 0; padding: 10px; border-left: 2px solid var(--amber); background: #1d2c2d; color: #d2bd9f; font-size: 11px; line-height: 1.5; }
+.prototype-notice.is-error { border-color: #c66b69; color: #e8b1ae; background: #2b1d21; }
+
+.analysis-result { display: grid; gap: 18px; margin-top: 22px; padding-top: 20px; border-top: 1px solid #294654; }
+.analysis-result > header { display: grid; gap: 8px; }
+.analysis-result h3 { color: #eef6f8; font-size: 18px; line-height: 1.4; }
+.analysis-result > header > p:last-child { color: #a7bbc3; font-size: 12px; line-height: 1.7; }
+.analysis-sections { display: grid; gap: 1px; background: #27424f; border: 1px solid #27424f; }
+.analysis-sections section { display: grid; gap: 9px; padding: 14px; background: #0b1b25; }
+.analysis-sections section > div { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.analysis-sections h4 { color: #dce9ed; font-size: 12px; }
+.analysis-sections span { color: #6f8d9b; font-family: "IBM Plex Mono", monospace; font-size: 8px; text-align: right; }
+.analysis-sections p { color: #9bb0b9; font-size: 11px; line-height: 1.7; }
+.analysis-boundary { padding: 12px 14px; border-left: 2px solid var(--cyan); background: #102832; }
+.analysis-boundary strong,
+.analysis-list > strong { color: #b8d3dc; font-size: 10px; letter-spacing: 0.04em; }
+.analysis-boundary p { margin-top: 5px; color: #8fa7b1; font-size: 10px; line-height: 1.6; }
+.analysis-list ul { margin: 8px 0 0; padding-left: 17px; color: #95abb4; font-size: 10px; line-height: 1.65; }
+.analysis-visual { display: grid; gap: 10px; padding: 13px; border: 1px solid #2a4a58; background: #091923; }
+.analysis-visual > strong { color: #b9d4dd; font-size: 10px; }
+.analysis-visual ol { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin: 0; padding: 0; list-style: none; }
+.analysis-visual li { min-width: 0; display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 7px; padding: 9px; border: 1px solid #203d49; }
+.analysis-visual li > span { color: var(--cyan); font-family: "IBM Plex Mono", monospace; font-size: 8px; }
+.analysis-visual li div { display: grid; gap: 3px; }
+.analysis-visual li b { color: #cedde2; font-size: 9px; }
+.analysis-visual li small { color: #78939e; font-size: 8px; line-height: 1.45; }
+.analysis-result > footer { display: flex; justify-content: space-between; gap: 12px; padding-top: 10px; border-top: 1px solid #203945; color: #66828f; font-family: "IBM Plex Mono", monospace; font-size: 8px; }
 
 @media (max-width: 1120px) {
   .app-header { grid-template-columns: 190px minmax(250px, 1fr) auto; }

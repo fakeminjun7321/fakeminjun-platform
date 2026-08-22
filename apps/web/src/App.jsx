@@ -12,6 +12,13 @@ import {
   X,
 } from "@phosphor-icons/react";
 import { EVENTS } from "./events.js";
+import {
+  BackendApiError,
+  backendClient,
+  clearAnalysisAttempt,
+  getAnalysisAttempt,
+  shouldClearAnalysisAttempt,
+} from "./backendClient.js";
 import { CATEGORY_META, STATUS_META, getTopSignals } from "./mapLayers.js";
 import { PhysicsWorkspace } from "./PhysicsWorkspace.jsx";
 import { WorldSituationMap } from "./WorldSituationMap.jsx";
@@ -339,7 +346,7 @@ function PassiveStatusBar({ domain }) {
       <footer className="system-status" aria-label="물리 데모 상태">
         <span>LIBRARY <strong>DEMO</strong></span><span>DEFAULT LEVEL <strong>P4</strong></span>
         <span>TRACK <strong>KPHO → IPHO</strong></span><span>OPEN LINKS <strong>6</strong></span>
-        <span className="system-health">백엔드 미연결 <i aria-hidden="true" /> 프론트엔드 데모</span>
+        <span className="system-health">OpenAI 분석 API <i aria-hidden="true" /> 개발 환경</span>
       </footer>
     );
   }
@@ -352,14 +359,95 @@ function PassiveStatusBar({ domain }) {
   );
 }
 
+const CONFIDENCE_LABELS = { high: "높음", medium: "중간", low: "낮음" };
+const BASIS_LABELS = {
+  "provided-evidence": "모델 분류 · 제공 맥락",
+  "established-knowledge": "모델 분류 · 확립 지식",
+  inference: "모델 분류 · 추론",
+  uncertain: "모델 분류 · 불확실",
+};
+
+function AnalysisResult({ analysis }) {
+  const result = analysis.result;
+  if (!result) return null;
+  return (
+    <article className="analysis-result" aria-labelledby="analysis-result-title">
+      <header>
+        <p className="system-kicker">STRUCTURED ANALYSIS · {analysis.mode === "deep" ? "DEEP" : "STANDARD"}</p>
+        <h3 id="analysis-result-title">{result.headline}</h3>
+        <p>{result.summary}</p>
+      </header>
+      {result.visual?.type !== "none" && result.visual?.items?.length > 0 ? (
+        <section className={`analysis-visual is-${result.visual.type}`} aria-label={result.visual.title}>
+          <strong>{result.visual.title}</strong>
+          <ol>{result.visual.items.map((item, index) => (
+            <li key={`${item.label}-${index}`}><span>{String(index + 1).padStart(2, "0")}</span><div><b>{item.label}</b><small>{item.detail}</small></div></li>
+          ))}</ol>
+        </section>
+      ) : null}
+      <div className="analysis-sections">
+        {result.sections?.map((section, index) => (
+          <section key={`${section.title}-${index}`}>
+            <div><h4>{section.title}</h4><span>{BASIS_LABELS[section.basis] ?? section.basis} · 확신 추정 {CONFIDENCE_LABELS[section.confidence] ?? section.confidence}</span></div>
+            <p>{section.content}</p>
+          </section>
+        ))}
+      </div>
+      <section className="analysis-boundary">
+        <strong>모델이 밝힌 근거 범위 · 자동 검증 전</strong><p>{result.sourceBoundary}</p>
+      </section>
+      {result.uncertainties?.length ? (
+        <section className="analysis-list"><strong>불확실성</strong><ul>{result.uncertainties.map((item) => <li key={item}>{item}</li>)}</ul></section>
+      ) : null}
+      {result.nextQuestions?.length ? (
+        <section className="analysis-list"><strong>다음 질문</strong><ul>{result.nextQuestions.map((item) => <li key={item}>{item}</li>)}</ul></section>
+      ) : null}
+      <footer>
+        <span>{analysis.models?.join(" · ")}</span>
+        <span>{analysis.usage?.totalTokens ? `${analysis.usage.totalTokens.toLocaleString("ko-KR")} tokens` : "사용량 집계 없음"}</span>
+      </footer>
+    </article>
+  );
+}
+
+function waitForPoll(delayMs, signal) {
+  return new Promise((resolve, reject) => {
+    const finish = () => {
+      signal.removeEventListener("abort", abort);
+      resolve();
+    };
+    const timeout = window.setTimeout(finish, delayMs);
+    const abort = () => {
+      window.clearTimeout(timeout);
+      signal.removeEventListener("abort", abort);
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    if (signal.aborted) abort();
+    else signal.addEventListener("abort", abort, { once: true });
+  });
+}
+
+async function resolvePendingAnalysis(initial, signal) {
+  let current = initial;
+  for (let attempt = 0; current?.status === "pending" && attempt < 45; attempt += 1) {
+    await waitForPoll(2000, signal);
+    current = await backendClient.getAnalysis(current.id, { signal });
+  }
+  return current;
+}
+
 function AiDrawer({ analysisContext, onClose }) {
-  const [context, setContext] = useState("현재 화면");
   const [prompt, setPrompt] = useState("");
+  const [mode, setMode] = useState("standard");
+  const [requestState, setRequestState] = useState("idle");
+  const [analysis, setAnalysis] = useState(null);
   const [notice, setNotice] = useState("");
   const drawerRef = useRef(null);
   const closeButtonRef = useRef(null);
+  const requestRef = useRef(null);
 
   useEffect(() => { closeButtonRef.current?.focus(); }, []);
+  useEffect(() => () => requestRef.current?.abort(), []);
 
   function handleKeyDown(eventObject) {
     if (eventObject.key === "Escape") { eventObject.preventDefault(); onClose(); return; }
@@ -374,9 +462,62 @@ function AiDrawer({ analysisContext, onClose }) {
     else if (!eventObject.shiftKey && document.activeElement === last) { eventObject.preventDefault(); first.focus(); }
   }
 
-  function submit(eventObject) {
+  async function submit(eventObject) {
     eventObject.preventDefault();
-    setNotice("AI 백엔드는 아직 연결되지 않았습니다. 현재는 입력 흐름만 확인하는 프로토타입입니다.");
+    const question = prompt.trim();
+    if (!question || requestState === "submitting") {
+      if (!question) setNotice("분석할 질문을 입력하세요.");
+      return;
+    }
+    const controller = new AbortController();
+    requestRef.current?.abort();
+    requestRef.current = controller;
+    setRequestState("submitting");
+    setNotice("");
+    setAnalysis(null);
+    const payload = {
+      domain: analysisContext.domain,
+      mode,
+      prompt: question,
+      ...(analysisContext.eventId ? { eventId: analysisContext.eventId } : {}),
+      ...(analysisContext.level ? { level: analysisContext.level } : {}),
+      context: {
+        title: analysisContext.title,
+        meta: analysisContext.meta,
+        ...(analysisContext.contextKind ? { kind: analysisContext.contextKind } : {}),
+        ...(analysisContext.contextId ? { refId: analysisContext.contextId } : {}),
+      },
+    };
+    let attempt = null;
+    let createdAnalysisId = null;
+    try {
+      attempt = await getAnalysisAttempt(payload);
+      const created = await backendClient.createAnalysis(payload, {
+        signal: controller.signal,
+        idempotencyKey: attempt.idempotencyKey,
+      });
+      createdAnalysisId = created?.id ?? null;
+      const completed = await resolvePendingAnalysis(created, controller.signal);
+      if (completed?.status === "pending") {
+        throw new Error("분석이 아직 진행 중입니다. 잠시 후 같은 질문으로 다시 확인하세요.");
+      }
+      if (completed?.status === "failed") {
+        clearAnalysisAttempt(attempt.fingerprint);
+        throw new BackendApiError(502, completed.errorCode ?? "analysis_failed", "이전 분석 요청이 완료되지 않았습니다. 다시 시도하세요.");
+      }
+      clearAnalysisAttempt(attempt.fingerprint);
+      setAnalysis(completed);
+      setRequestState("success");
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+      if (attempt && shouldClearAnalysisAttempt(error, { hasCreatedAnalysis: Boolean(createdAnalysisId) })) {
+        clearAnalysisAttempt(attempt.fingerprint);
+      }
+      setRequestState("error");
+      setNotice(error?.message ?? "분석 요청을 처리하지 못했습니다.");
+    } finally {
+      if (requestRef.current === controller) requestRef.current = null;
+    }
   }
 
   return (
@@ -390,24 +531,33 @@ function AiDrawer({ analysisContext, onClose }) {
           <div><p className="system-kicker">ANALYSIS WORKSPACE</p><h2 id="ai-analysis-title">AI 분석</h2></div>
           <button className="icon-button" type="button" onClick={onClose} ref={closeButtonRef} aria-label="AI 분석 패널 닫기"><X size={20} /></button>
         </div>
-        <div className="connection-note" id="ai-connection-status"><span />AI 연결 전 · 상호작용 구조 확인용</div>
+        <div className="connection-note" id="ai-connection-status"><span />OPENAI BACKEND · 요청 시 연결 확인</div>
         <section className="selected-context">
           <p className="system-kicker">SELECTED CONTEXT</p><strong>{analysisContext.title}</strong>
           <small>{analysisContext.meta}</small>
         </section>
-        <div className="context-actions" aria-label="분석 컨텍스트 선택">
-          {[{ label: "현재 화면", icon: MapTrifold }, { label: "영역 선택", icon: Selection }].map(({ label, icon: Icon }) => (
-            <button className={context === label ? "is-selected" : ""} type="button" key={label}
-              onClick={() => setContext(label)} aria-pressed={context === label}><Icon size={18} />{label}</button>
-          ))}
+        <div className="context-actions" aria-label="분석 컨텍스트">
+          <button className="is-selected" type="button" aria-pressed="true"><MapTrifold size={18} />현재 화면</button>
+          <button type="button" disabled title="내장 영역 캡처 구현 후 활성화됩니다."><Selection size={18} />영역 선택 · 준비 중</button>
         </div>
-        <form className="analysis-form" onSubmit={submit}>
+        <div className="analysis-mode" aria-label="분석 강도">
+          <button type="button" className={mode === "standard" ? "is-selected" : ""} onClick={() => setMode("standard")} aria-pressed={mode === "standard"} disabled={requestState === "submitting"}>
+            <strong>일반 분석</strong><span>Luna · 빠르고 저렴한 단일 분석</span>
+          </button>
+          <button type="button" className={mode === "deep" ? "is-selected" : ""} onClick={() => setMode("deep")} aria-pressed={mode === "deep"} disabled={requestState === "submitting"}>
+            <strong>정밀 분석</strong><span>전문 검토 2회 + Sol 최종 통합</span>
+          </button>
+        </div>
+        <form className="analysis-form" onSubmit={submit} aria-busy={requestState === "submitting"}>
           <label htmlFor="analysis-prompt">무엇을 분석할까요?</label>
           <textarea id="analysis-prompt" value={prompt} onChange={(eventObject) => setPrompt(eventObject.target.value)}
             maxLength={4000} placeholder={analysisContext.placeholder} />
-          <button type="submit" className="analysis-submit">분석 요청<PaperPlaneTilt size={17} /></button>
+          <button type="submit" className="analysis-submit" disabled={requestState === "submitting" || !prompt.trim()}>
+            {requestState === "submitting" ? "분석 중…" : "분석 요청"}<PaperPlaneTilt size={17} />
+          </button>
         </form>
-        {notice && <p className="prototype-notice" role="status">{notice}</p>}
+        {notice && <p className={`prototype-notice${requestState === "error" ? " is-error" : ""}`} role="status">{notice}</p>}
+        {analysis && <AnalysisResult analysis={analysis} />}
       </aside>
     </div>
   );
@@ -420,9 +570,11 @@ export function App() {
   ));
   const [aiOpen, setAiOpen] = useState(false);
   const [analysisContext, setAnalysisContext] = useState(null);
+  const [physicsLevel, setPhysicsLevel] = useState(4);
   const [notice, setNotice] = useState("");
   const noticeTimerRef = useRef(null);
   const aiTriggerRef = useRef(null);
+  const aiOpenerRef = useRef(null);
   const topSignals = useMemo(() => getTopSignals(EVENTS, 3), []);
   const selectedEvent = EVENTS.find((event) => event.id === selectedId) ?? EVENTS[0];
   const domain = domainFromRoute(route);
@@ -430,17 +582,26 @@ export function App() {
   const defaultAnalysisContext = useMemo(() => {
     if (domain === "physics") {
       return {
+        domain: "physics",
+        level: `P${physicsLevel}`,
+        contextKind: "physics-workspace",
+        contextId: "current",
         title: "물리 학습 워크스페이스",
-        meta: "물리 워크스페이스 · 데모 설명 수준 P4",
+        meta: `물리 워크스페이스 · 설명 수준 P${physicsLevel}`,
         placeholder: "개념과 수학적 구조를 분리해서 단계적으로 설명해줘.",
       };
     }
     return {
+      domain: "international",
+      level: "I2",
+      eventId: selectedEvent.id,
+      contextKind: "event",
+      contextId: String(selectedEvent.id),
       title: selectedEvent.title,
       meta: `${selectedEvent.region} · ${selectedEvent.time} KST · 데모 자료`,
       placeholder: "확인된 사실과 추론을 구분해서, 한국에 미칠 영향을 분석해줘.",
     };
-  }, [domain, selectedEvent]);
+  }, [domain, physicsLevel, selectedEvent]);
 
   useEffect(() => {
     const syncRouteToPath = () => {
@@ -471,13 +632,14 @@ export function App() {
   }
 
   function openAi(context = defaultAnalysisContext) {
-    setAnalysisContext(context);
+    aiOpenerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : aiTriggerRef.current;
+    setAnalysisContext({ domain, ...context });
     setAiOpen(true);
   }
 
   function closeAi() {
     setAiOpen(false);
-    window.requestAnimationFrame(() => aiTriggerRef.current?.focus());
+    window.requestAnimationFrame(() => (aiOpenerRef.current ?? aiTriggerRef.current)?.focus());
   }
 
   return (
@@ -508,6 +670,8 @@ export function App() {
             view={{ library: "library", finder: "finder", ipho: "ipho" }[route] ?? "learn"}
             onOpenAi={openAi}
             onNotice={showNotice}
+            level={physicsLevel}
+            onLevelChange={setPhysicsLevel}
           />
         )}
 
