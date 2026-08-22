@@ -15,7 +15,7 @@
     {
       "binding": "DB",
       "database_name": "fakeminjun-platform-prod",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "1e8d5ff1-cfe7-4176-b6fa-735739b2c243",
       "migrations_dir": "migrations"
     }
   ],
