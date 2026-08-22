@@ -1,27 +1,23 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight,
   Brain,
   CaretDown,
   CaretUp,
   Database,
-  MapTrifold,
-  PaperPlaneTilt,
-  Selection,
   ShieldCheck,
-  X,
 } from "@phosphor-icons/react";
 import { EVENTS } from "./events.js";
 import {
   BackendApiError,
   backendClient,
-  clearAnalysisAttempt,
-  getAnalysisAttempt,
-  shouldClearAnalysisAttempt,
 } from "./backendClient.js";
 import { CATEGORY_META, STATUS_META, getTopSignals } from "./mapLayers.js";
-import { PhysicsWorkspace } from "./PhysicsWorkspace.jsx";
-import { WorldSituationMap } from "./WorldSituationMap.jsx";
+
+const AiDrawer = lazy(() => import("./AiDrawer.jsx"));
+const CandidatePromotionPanel = lazy(() => import("./CandidatePromotionPanel.jsx"));
+const PhysicsWorkspace = lazy(() => import("./PhysicsWorkspace.jsx"));
+const WorldSituationMap = lazy(() => import("./WorldSituationMap.jsx").then((module) => ({ default: module.WorldSituationMap })));
 
 const ROUTES = {
   map: "/international/map",
@@ -459,7 +455,7 @@ function CandidateEvidence({ candidate }) {
   );
 }
 
-export function CandidateReviewDesk({ state, noteDrafts, reviewState, onNoteChange, onReview }) {
+export function CandidateReviewDesk({ state, noteDrafts, reviewState, onNoteChange, onReview, onPromoted }) {
   return (
     <section className="candidate-review-desk" aria-labelledby="candidate-review-title">
       <header>
@@ -513,6 +509,9 @@ export function CandidateReviewDesk({ state, noteDrafts, reviewState, onNoteChan
                   <CandidateTextList title="불확실성" items={displayCandidate.uncertainties} emptyText="기록된 불확실성이 없습니다." />
                   <CandidateTextList title="다음 확인" items={displayCandidate.nextChecks} emptyText="제안된 다음 확인 절차가 없습니다." />
                 </div>
+                <Suspense fallback={<p className="candidate-empty-detail">승격 검토 도구를 불러오는 중입니다.</p>}>
+                  <CandidatePromotionPanel candidate={displayCandidate} onPromoted={onPromoted} />
+                </Suspense>
                 <footer className="candidate-review-command" aria-busy={reviewPending}>
                   <label htmlFor={`candidate-note-${candidateId}`}>검토 메모 <span>선택</span></label>
                   <input
@@ -557,6 +556,7 @@ function BriefingPage({
   onNoteChange,
   onReviewCandidate,
   onRunIngestion,
+  onPromoted,
 }) {
   return (
     <main className="focused-workspace briefing-workspace">
@@ -584,6 +584,7 @@ function BriefingPage({
         reviewState={reviewState}
         onNoteChange={onNoteChange}
         onReview={onReviewCandidate}
+        onPromoted={onPromoted}
       />
       <div className="briefing-section-label">
         <div><p className="system-kicker">ANALYSIS PROTOTYPE</p><h3>분석용 데모 신호</h3></div>
@@ -684,13 +685,13 @@ function IssuesPage({ selectedEvent, onSelect, onOpenAi }) {
   );
 }
 
-function PassiveStatusBar({ domain, route, sourceState }) {
+function PassiveStatusBar({ domain, route, sourceState, mapEventState, physicsLevel }) {
   if (domain === "physics") {
     return (
-      <footer className="system-status" aria-label="물리 데모 상태">
-        <span>LIBRARY <strong>DEMO</strong></span><span>DEFAULT LEVEL <strong>P4</strong></span>
+      <footer className="system-status" aria-label="물리 워크스페이스 상태">
+        <span>LIBRARY <strong>PRIVATE API</strong></span><span>ACTIVE LEVEL <strong>P{physicsLevel}</strong></span>
         <span>TRACK <strong>KPHO → IPHO</strong></span><span>OPEN LINKS <strong>6</strong></span>
-        <span className="system-health">OpenAI 분석 API <i aria-hidden="true" /> 개발 환경</span>
+        <span className="system-health">OpenAI 분석 API <i aria-hidden="true" /> 요청 시 연결 확인</span>
       </footer>
     );
   }
@@ -704,217 +705,44 @@ function PassiveStatusBar({ domain, route, sourceState }) {
       </footer>
     );
   }
+  const isDemo = ["non-live-demo", "fallback-demo"].includes(mapEventState.dataStatus);
+  const sourceCount = mapEventState.items.reduce((total, event) => total + Number(event.sourceCount ?? event.sources ?? 0), 0);
   return (
     <footer className="system-status" aria-label="데이터 상태">
-      <span>DATASET <strong>DEMO</strong></span><span>VISIBLE SIGNALS <strong>6</strong></span>
-      <span>SOURCES <strong>33</strong></span><span>PROJECTION <strong>WEB MERCATOR</strong></span>
-      <span className="system-health">마지막 확인 20:04 KST <i aria-hidden="true" /> 시스템 정상</span>
+      <span>DATASET <strong>{isDemo ? "DEMO" : mapEventState.dataStatus === "mixed" ? "MIXED" : "API"}</strong></span><span>VISIBLE SIGNALS <strong>{mapEventState.items.length}</strong></span>
+      <span>SOURCES <strong>{sourceCount}</strong></span><span>PROJECTION <strong>WEB MERCATOR</strong></span>
+      <span className="system-health">{mapEventState.status === "error" ? "API 연결 실패 · 데모 대체" : "사건 API 응답"} <i aria-hidden="true" /> {mapEventState.status.toUpperCase()}</span>
     </footer>
   );
 }
 
-const CONFIDENCE_LABELS = { high: "높음", medium: "중간", low: "낮음" };
-const BASIS_LABELS = {
-  "provided-evidence": "모델 분류 · 제공 맥락",
-  "established-knowledge": "모델 분류 · 확립 지식",
-  inference: "모델 분류 · 추론",
-  uncertain: "모델 분류 · 불확실",
-};
-
-function AnalysisResult({ analysis }) {
-  const result = analysis.result;
-  if (!result) return null;
-  return (
-    <article className="analysis-result" aria-labelledby="analysis-result-title">
-      <header>
-        <p className="system-kicker">STRUCTURED ANALYSIS · {analysis.mode === "deep" ? "DEEP" : "STANDARD"}</p>
-        <h3 id="analysis-result-title">{result.headline}</h3>
-        <p>{result.summary}</p>
-      </header>
-      {result.visual?.type !== "none" && result.visual?.items?.length > 0 ? (
-        <section className={`analysis-visual is-${result.visual.type}`} aria-label={result.visual.title}>
-          <strong>{result.visual.title}</strong>
-          <ol>{result.visual.items.map((item, index) => (
-            <li key={`${item.label}-${index}`}><span>{String(index + 1).padStart(2, "0")}</span><div><b>{item.label}</b><small>{item.detail}</small></div></li>
-          ))}</ol>
-        </section>
-      ) : null}
-      <div className="analysis-sections">
-        {result.sections?.map((section, index) => (
-          <section key={`${section.title}-${index}`}>
-            <div><h4>{section.title}</h4><span>{BASIS_LABELS[section.basis] ?? section.basis} · 확신 추정 {CONFIDENCE_LABELS[section.confidence] ?? section.confidence}</span></div>
-            <p>{section.content}</p>
-          </section>
-        ))}
-      </div>
-      <section className="analysis-boundary">
-        <strong>모델이 밝힌 근거 범위 · 자동 검증 전</strong><p>{result.sourceBoundary}</p>
-      </section>
-      {result.uncertainties?.length ? (
-        <section className="analysis-list"><strong>불확실성</strong><ul>{result.uncertainties.map((item) => <li key={item}>{item}</li>)}</ul></section>
-      ) : null}
-      {result.nextQuestions?.length ? (
-        <section className="analysis-list"><strong>다음 질문</strong><ul>{result.nextQuestions.map((item) => <li key={item}>{item}</li>)}</ul></section>
-      ) : null}
-      <footer>
-        <span>{analysis.models?.join(" · ")}</span>
-        <span>{analysis.usage?.totalTokens ? `${analysis.usage.totalTokens.toLocaleString("ko-KR")} tokens` : "사용량 집계 없음"}</span>
-      </footer>
-    </article>
-  );
+function eventTimeLabel(value) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "--:--";
+  return new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(parsed);
 }
 
-function waitForPoll(delayMs, signal) {
-  return new Promise((resolve, reject) => {
-    const finish = () => {
-      signal.removeEventListener("abort", abort);
-      resolve();
-    };
-    const timeout = window.setTimeout(finish, delayMs);
-    const abort = () => {
-      window.clearTimeout(timeout);
-      signal.removeEventListener("abort", abort);
-      reject(new DOMException("Aborted", "AbortError"));
-    };
-    if (signal.aborted) abort();
-    else signal.addEventListener("abort", abort, { once: true });
-  });
-}
-
-async function resolvePendingAnalysis(initial, signal) {
-  let current = initial;
-  for (let attempt = 0; current?.status === "pending" && attempt < 45; attempt += 1) {
-    await waitForPoll(2000, signal);
-    current = await backendClient.getAnalysis(current.id, { signal });
-  }
-  return current;
-}
-
-function AiDrawer({ analysisContext, onClose }) {
-  const [prompt, setPrompt] = useState("");
-  const [mode, setMode] = useState("standard");
-  const [requestState, setRequestState] = useState("idle");
-  const [analysis, setAnalysis] = useState(null);
-  const [notice, setNotice] = useState("");
-  const drawerRef = useRef(null);
-  const closeButtonRef = useRef(null);
-  const requestRef = useRef(null);
-
-  useEffect(() => { closeButtonRef.current?.focus(); }, []);
-  useEffect(() => () => requestRef.current?.abort(), []);
-
-  function handleKeyDown(eventObject) {
-    if (eventObject.key === "Escape") { eventObject.preventDefault(); onClose(); return; }
-    if (eventObject.key !== "Tab") return;
-    const focusable = drawerRef.current?.querySelectorAll(
-      'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
-    );
-    if (!focusable?.length) return;
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (eventObject.shiftKey && document.activeElement === first) { eventObject.preventDefault(); last.focus(); }
-    else if (!eventObject.shiftKey && document.activeElement === last) { eventObject.preventDefault(); first.focus(); }
-  }
-
-  async function submit(eventObject) {
-    eventObject.preventDefault();
-    const question = prompt.trim();
-    if (!question || requestState === "submitting") {
-      if (!question) setNotice("분석할 질문을 입력하세요.");
-      return;
-    }
-    const controller = new AbortController();
-    requestRef.current?.abort();
-    requestRef.current = controller;
-    setRequestState("submitting");
-    setNotice("");
-    setAnalysis(null);
-    const payload = {
-      domain: analysisContext.domain,
-      mode,
-      prompt: question,
-      ...(analysisContext.eventId ? { eventId: analysisContext.eventId } : {}),
-      ...(analysisContext.level ? { level: analysisContext.level } : {}),
-      context: {
-        title: analysisContext.title,
-        meta: analysisContext.meta,
-        ...(analysisContext.contextKind ? { kind: analysisContext.contextKind } : {}),
-        ...(analysisContext.contextId ? { refId: analysisContext.contextId } : {}),
-      },
-    };
-    let attempt = null;
-    let createdAnalysisId = null;
-    try {
-      attempt = await getAnalysisAttempt(payload);
-      const created = await backendClient.createAnalysis(payload, {
-        signal: controller.signal,
-        idempotencyKey: attempt.idempotencyKey,
-      });
-      createdAnalysisId = created?.id ?? null;
-      const completed = await resolvePendingAnalysis(created, controller.signal);
-      if (completed?.status === "pending") {
-        throw new Error("분석이 아직 진행 중입니다. 잠시 후 같은 질문으로 다시 확인하세요.");
-      }
-      if (completed?.status === "failed") {
-        clearAnalysisAttempt(attempt.fingerprint);
-        throw new BackendApiError(502, completed.errorCode ?? "analysis_failed", "이전 분석 요청이 완료되지 않았습니다. 다시 시도하세요.");
-      }
-      clearAnalysisAttempt(attempt.fingerprint);
-      setAnalysis(completed);
-      setRequestState("success");
-    } catch (error) {
-      if (error?.name === "AbortError") return;
-      if (attempt && shouldClearAnalysisAttempt(error, { hasCreatedAnalysis: Boolean(createdAnalysisId) })) {
-        clearAnalysisAttempt(attempt.fingerprint);
-      }
-      setRequestState("error");
-      setNotice(error?.message ?? "분석 요청을 처리하지 못했습니다.");
-    } finally {
-      if (requestRef.current === controller) requestRef.current = null;
-    }
-  }
-
-  return (
-    <div className="drawer-layer" role="presentation">
-      <button className="drawer-scrim" type="button" onClick={onClose} tabIndex={-1} aria-hidden="true" />
-      <aside
-        className="ai-drawer" id="ai-analysis-drawer" ref={drawerRef} role="dialog" aria-modal="true"
-        aria-labelledby="ai-analysis-title" aria-describedby="ai-connection-status" onKeyDown={handleKeyDown}
-      >
-        <div className="drawer-heading">
-          <div><p className="system-kicker">ANALYSIS WORKSPACE</p><h2 id="ai-analysis-title">AI 분석</h2></div>
-          <button className="icon-button" type="button" onClick={onClose} ref={closeButtonRef} aria-label="AI 분석 패널 닫기"><X size={20} /></button>
-        </div>
-        <div className="connection-note" id="ai-connection-status"><span />OPENAI BACKEND · 요청 시 연결 확인</div>
-        <section className="selected-context">
-          <p className="system-kicker">SELECTED CONTEXT</p><strong>{analysisContext.title}</strong>
-          <small>{analysisContext.meta}</small>
-        </section>
-        <div className="context-actions" aria-label="분석 컨텍스트">
-          <button className="is-selected" type="button" aria-pressed="true"><MapTrifold size={18} />현재 화면</button>
-          <button type="button" disabled title="내장 영역 캡처 구현 후 활성화됩니다."><Selection size={18} />영역 선택 · 준비 중</button>
-        </div>
-        <div className="analysis-mode" aria-label="분석 강도">
-          <button type="button" className={mode === "standard" ? "is-selected" : ""} onClick={() => setMode("standard")} aria-pressed={mode === "standard"} disabled={requestState === "submitting"}>
-            <strong>일반 분석</strong><span>Luna · 빠르고 저렴한 단일 분석</span>
-          </button>
-          <button type="button" className={mode === "deep" ? "is-selected" : ""} onClick={() => setMode("deep")} aria-pressed={mode === "deep"} disabled={requestState === "submitting"}>
-            <strong>정밀 분석</strong><span>전문 검토 2회 + Sol 최종 통합</span>
-          </button>
-        </div>
-        <form className="analysis-form" onSubmit={submit} aria-busy={requestState === "submitting"}>
-          <label htmlFor="analysis-prompt">무엇을 분석할까요?</label>
-          <textarea id="analysis-prompt" value={prompt} onChange={(eventObject) => setPrompt(eventObject.target.value)}
-            maxLength={4000} placeholder={analysisContext.placeholder} />
-          <button type="submit" className="analysis-submit" disabled={requestState === "submitting" || !prompt.trim()}>
-            {requestState === "submitting" ? "분석 중…" : "분석 요청"}<PaperPlaneTilt size={17} />
-          </button>
-        </form>
-        {notice && <p className={`prototype-notice${requestState === "error" ? " is-error" : ""}`} role="status">{notice}</p>}
-        {analysis && <AnalysisResult analysis={analysis} />}
-      </aside>
-    </div>
-  );
+export function normalizeApiMapEvent(event) {
+  const fixture = EVENTS.find(({ id }) => String(id) === String(event.id));
+  return {
+    ...(fixture ?? {}),
+    ...event,
+    id: event.id,
+    time: event.time ?? eventTimeLabel(event.dateTime),
+    sources: event.sources ?? event.sourceCount ?? fixture?.sources ?? 0,
+    relatedCoordinates: event.relatedCoordinates ?? event.relatedLocations ?? fixture?.relatedCoordinates ?? [],
+    relationLabel: event.relationLabel ?? fixture?.relationLabel ?? "관계 정보 없음",
+    facts: event.facts ?? fixture?.facts ?? [],
+    disputed: event.disputed ?? fixture?.disputed ?? [],
+    relevance: event.relevance ?? fixture?.relevance ?? [],
+    impact: event.impact ?? fixture?.impact ?? "추가 영향 분석이 필요합니다.",
+    lastChecked: event.lastChecked ?? event.lastVerifiedAt ?? fixture?.lastChecked ?? "검증 시각 없음",
+  };
 }
 
 export function App() {
@@ -934,6 +762,8 @@ export function App() {
   const [ingestionState, setIngestionState] = useState({ status: "idle", message: "" });
   const [sourceRefreshVersion, setSourceRefreshVersion] = useState(0);
   const [candidateNoteDrafts, setCandidateNoteDrafts] = useState({});
+  const [mapEventState, setMapEventState] = useState({ status: "idle", items: EVENTS, dataStatus: "non-live-demo" });
+  const [mapRefreshVersion, setMapRefreshVersion] = useState(0);
   const noticeTimerRef = useRef(null);
   const aiTriggerRef = useRef(null);
   const aiOpenerRef = useRef(null);
@@ -941,8 +771,11 @@ export function App() {
   const candidateCreateAttemptRef = useRef(null);
   const candidateReviewRef = useRef(null);
   const candidateReviewAttemptRef = useRef(null);
-  const topSignals = useMemo(() => getTopSignals(EVENTS, 3), []);
-  const selectedEvent = EVENTS.find((event) => event.id === selectedId) ?? EVENTS[0];
+  const topSignals = useMemo(() => getTopSignals(mapEventState.items, 3), [mapEventState.items]);
+  const selectedEvent = mapEventState.items.find((event) => String(event.id) === String(selectedId))
+    ?? EVENTS.find((event) => String(event.id) === String(selectedId))
+    ?? mapEventState.items[0]
+    ?? EVENTS[0];
   const domain = domainFromRoute(route);
 
   useEffect(() => {
@@ -970,7 +803,7 @@ export function App() {
       contextKind: "event",
       contextId: String(selectedEvent.id),
       title: selectedEvent.title,
-      meta: `${selectedEvent.region} · ${selectedEvent.time} KST · 데모 자료`,
+        meta: `${selectedEvent.region} · ${selectedEvent.time} KST · ${selectedEvent.live ? "승격된 실제 사건" : "명시된 데모 자료"}`,
       placeholder: "확인된 사실과 추론을 구분해서, 한국에 미칠 영향을 분석해줘.",
     };
   }, [domain, physicsLevel, selectedEvent]);
@@ -988,6 +821,27 @@ export function App() {
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
   useEffect(() => () => window.clearTimeout(noticeTimerRef.current), []);
+  useEffect(() => {
+    if (route !== "map") return undefined;
+    const controller = new AbortController();
+    setMapEventState((current) => ({ ...current, status: "loading" }));
+    void backendClient.listEventsEnvelope({ limit: 100, signal: controller.signal })
+      .then(({ data, meta }) => {
+        const items = (Array.isArray(data) ? data : []).map(normalizeApiMapEvent);
+        setMapEventState({
+          status: "ready",
+          items: items.length ? items : EVENTS,
+          dataStatus: meta?.dataStatus ?? "unknown",
+        });
+        if (items.length && selectedId !== null && !items.some(({ id }) => String(id) === String(selectedId))) {
+          setSelectedId(items[0].id);
+        }
+      })
+      .catch((error) => {
+        if (error?.name !== "AbortError") setMapEventState({ status: "error", items: EVENTS, dataStatus: "fallback-demo" });
+      });
+    return () => controller.abort();
+  }, [route, mapRefreshVersion]);
   useEffect(() => {
     if (route !== "briefing") return undefined;
     const controller = new AbortController();
@@ -1153,12 +1007,23 @@ export function App() {
   }
 
   function navigate(nextRoute) {
+    if (nextRoute === "issues" && !TRACKED_ISSUES.some((issue) => issue.eventIds.some((eventId) => String(eventId) === String(selectedId)))) {
+      setSelectedId(TRACKED_ISSUES[0].eventIds[0]);
+    }
     const path = ROUTES[nextRoute];
     if (window.location.pathname !== path) window.history.pushState({}, "", path);
     setRoute(nextRoute);
   }
 
-  function openIssues(id = selectedId) { setSelectedId(id); navigate("issues"); }
+  function openIssues(id = selectedId) {
+    const tracked = TRACKED_ISSUES.some((issue) => issue.eventIds.some((eventId) => String(eventId) === String(id)));
+    setSelectedId(id);
+    if (!tracked) {
+      showNotice("이 사건은 아직 장기 이슈 추적 묶음에 연결되지 않았습니다.");
+      return;
+    }
+    navigate("issues");
+  }
 
   function showNotice(message) {
     window.clearTimeout(noticeTimerRef.current);
@@ -1185,10 +1050,13 @@ export function App() {
 
         {route === "map" && (
           <main className="situation-map-page">
-            <WorldSituationMap events={EVENTS} selectedEvent={selectedEvent} selectionActive={selectedId !== null} onSelect={setSelectedId}
-              onOpenIssues={() => openIssues(selectedEvent.id)} onOpenAi={() => openAi()} />
+            <Suspense fallback={<div className="workspace-loading" role="status">상황지도를 불러오는 중입니다.</div>}>
+              <WorldSituationMap events={mapEventState.items} selectedEvent={selectedEvent} selectionActive={selectedId !== null} dataStatus={mapEventState.dataStatus} onSelect={setSelectedId}
+                onOpenIssues={() => openIssues(selectedEvent.id)} onOpenAi={() => openAi()} />
+            </Suspense>
             <TodaySignalsPanel events={topSignals} selectedId={selectedId} onSelect={setSelectedId}
               onOpenBriefing={() => navigate("briefing")} />
+            {mapEventState.status === "error" ? <p className="map-data-notice" role="status">사건 API에 연결하지 못해 명시된 데모 자료를 표시합니다.</p> : null}
           </main>
         )}
 
@@ -1211,6 +1079,7 @@ export function App() {
             onNoteChange={changeCandidateNote}
             onReviewCandidate={reviewCandidate}
             onRunIngestion={runOfficialSourceIngestion}
+            onPromoted={() => setMapRefreshVersion((version) => version + 1)}
           />
         )}
 
@@ -1219,20 +1088,26 @@ export function App() {
         )}
 
         {domain === "physics" && (
-          <PhysicsWorkspace
-            view={{ library: "library", finder: "finder", ipho: "ipho" }[route] ?? "learn"}
-            onOpenAi={openAi}
-            onNotice={showNotice}
-            level={physicsLevel}
-            onLevelChange={setPhysicsLevel}
-          />
+          <Suspense fallback={<main className="focused-workspace workspace-loading" role="status">물리 작업공간을 불러오는 중입니다.</main>}>
+            <PhysicsWorkspace
+              view={{ library: "library", finder: "finder", ipho: "ipho" }[route] ?? "learn"}
+              onOpenAi={openAi}
+              onNotice={showNotice}
+              level={physicsLevel}
+              onLevelChange={setPhysicsLevel}
+            />
+          </Suspense>
         )}
 
-        <PassiveStatusBar domain={domain} route={route} sourceState={sourceState} />
+        <PassiveStatusBar domain={domain} route={route} sourceState={sourceState} mapEventState={mapEventState} physicsLevel={physicsLevel} />
       </div>
       <p className="sr-only" role="status" aria-live="polite">선택 사건: {selectedEvent.title}</p>
       {notice && <div className="domain-notice" role="status">{notice}</div>}
-      {aiOpen && <AiDrawer analysisContext={analysisContext ?? defaultAnalysisContext} onClose={closeAi} />}
+      {aiOpen && (
+        <Suspense fallback={<div className="drawer-layer"><aside className="ai-drawer" role="status">AI 분석 도구를 불러오는 중입니다.</aside></div>}>
+          <AiDrawer analysisContext={analysisContext ?? defaultAnalysisContext} onClose={closeAi} />
+        </Suspense>
+      )}
     </div>
   );
 }

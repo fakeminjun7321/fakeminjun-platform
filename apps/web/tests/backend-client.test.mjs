@@ -3,8 +3,10 @@ import test from "node:test";
 import {
   BackendApiError,
   clearAnalysisAttempt,
+  clearVisualAnalysisAttempt,
   createBackendClient,
   getAnalysisAttempt,
+  getVisualAnalysisAttempt,
   shouldClearAnalysisAttempt,
 } from "../src/backendClient.js";
 
@@ -266,6 +268,76 @@ test("analysis attempts survive ambiguous server and polling failures", () => {
   ), false);
 });
 
+test("visual analysis attempts reuse one key for unchanged metadata and image bytes", async () => {
+  const metadata = { domain: "physics", mode: "auto", prompt: "같은 캡처", context: { title: "그래프" } };
+  const firstImage = new Blob(["same-image-bytes"], { type: "image/png" });
+  const equivalentImage = new Blob(["same-image-bytes"], { type: "image/png" });
+  const first = await getVisualAnalysisAttempt({ metadata, image: firstImage }, 1_000);
+  const retry = await getVisualAnalysisAttempt({ metadata, image: equivalentImage }, 2_000);
+
+  assert.equal(retry.idempotencyKey, first.idempotencyKey);
+  assert.equal(retry.fingerprint, first.fingerprint);
+  assert.match(first.fingerprint, /^[0-9a-f]{64}$/);
+  assert.deepEqual(Object.keys(first).sort(), ["fingerprint", "idempotencyKey"]);
+  clearVisualAnalysisAttempt(first.fingerprint);
+});
+
+test("visual analysis attempts separate different image bytes and clear definite failures", async () => {
+  const metadata = { domain: "physics", mode: "auto", prompt: "이미지 비교", context: {} };
+  const first = await getVisualAnalysisAttempt({
+    metadata,
+    image: new Blob(["image-a"], { type: "image/png" }),
+  }, 3_000);
+  const different = await getVisualAnalysisAttempt({
+    metadata,
+    image: new Blob(["image-b"], { type: "image/png" }),
+  }, 3_100);
+
+  assert.notEqual(different.idempotencyKey, first.idempotencyKey);
+  assert.notEqual(different.fingerprint, first.fingerprint);
+  assert.equal(shouldClearAnalysisAttempt(new BackendApiError(400, "invalid_capture", "fix")), true);
+  clearVisualAnalysisAttempt(first.fingerprint);
+  const afterDefiniteFailure = await getVisualAnalysisAttempt({
+    metadata,
+    image: new Blob(["image-a"], { type: "image/png" }),
+  }, 3_200);
+  assert.notEqual(afterDefiniteFailure.idempotencyKey, first.idempotencyKey);
+
+  clearVisualAnalysisAttempt(afterDefiniteFailure.fingerprint);
+  clearVisualAnalysisAttempt(different.fingerprint);
+});
+
+test("visual analysis attempts separate the same bytes sent with a different MIME type", async () => {
+  const metadata = { domain: "physics", mode: "auto", prompt: "형식 비교", context: {} };
+  const png = await getVisualAnalysisAttempt({
+    metadata,
+    image: new Blob(["same-image-bytes"], { type: "image/png" }),
+  }, 4_000);
+  const jpeg = await getVisualAnalysisAttempt({
+    metadata,
+    image: new Blob(["same-image-bytes"], { type: "image/jpeg" }),
+  }, 4_100);
+
+  assert.notEqual(jpeg.idempotencyKey, png.idempotencyKey);
+  assert.notEqual(jpeg.fingerprint, png.fingerprint);
+  clearVisualAnalysisAttempt(png.fingerprint);
+  clearVisualAnalysisAttempt(jpeg.fingerprint);
+});
+
+test("visual analysis attempts expire after ten minutes", async () => {
+  const input = {
+    metadata: { domain: "international", mode: "standard", prompt: "재확인", context: {} },
+    image: new Blob(["expiry-image"], { type: "image/jpeg" }),
+  };
+  const first = await getVisualAnalysisAttempt(input, 10_000);
+  const retry = await getVisualAnalysisAttempt(input, 10_000 + (10 * 60 * 1000) - 1);
+  const expired = await getVisualAnalysisAttempt(input, 10_000 + (10 * 60 * 1000));
+
+  assert.equal(retry.idempotencyKey, first.idempotencyKey);
+  assert.notEqual(expired.idempotencyKey, first.idempotencyKey);
+  clearVisualAnalysisAttempt(expired.fingerprint);
+});
+
 test("backend client retrieves a private analysis by ID", async () => {
   const calls = [];
   const client = createBackendClient({
@@ -292,4 +364,106 @@ test("backend client deletes a private analysis through an origin-checked mutati
   await client.deleteAnalysis("analysis-1");
   assert.equal(calls[0].url, "/api/v1/analyses/analysis-1");
   assert.equal(calls[0].options.method, "DELETE");
+});
+
+test("backend client preserves the events envelope and forwards map request cancellation", async () => {
+  const calls = [];
+  const controller = new AbortController();
+  const client = createBackendClient({
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return jsonResponse({ data: [{ id: 9 }], meta: { dataStatus: "mixed" } });
+    },
+  });
+  const result = await client.listEventsEnvelope({ limit: 100, signal: controller.signal });
+  assert.equal(result.data[0].id, 9);
+  assert.equal(result.meta.dataStatus, "mixed");
+  assert.equal(calls[0].options.signal, controller.signal);
+});
+
+test("backend client serializes evidence, location, readiness, and promotion contracts", async () => {
+  const calls = [];
+  const client = createBackendClient({
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return jsonResponse({ data: { ready: false } });
+    },
+  });
+  await client.reviewCandidateEvidence("candidate/1", {
+    sourceItemId: 3,
+    candidateHash: "a".repeat(64),
+    relationship: "supports",
+    locatorType: "paragraph",
+    locatorValue: "4",
+    excerpt: "확인한 원문",
+  }, { idempotencyKey: "evidence-1" });
+  await client.putCandidateLocation("candidate/1", {
+    placeName: "서울",
+    longitude: 126.98,
+    latitude: 37.56,
+    accuracy: "approximate",
+    candidateHash: "a".repeat(64),
+  }, { idempotencyKey: "location-1" });
+  await client.getCandidateReadiness("candidate/1");
+  await client.promoteEventCandidate("candidate/1", {
+    expectedRevision: 2,
+    candidateHash: "a".repeat(64),
+  }, { idempotencyKey: "promotion-1" });
+
+  assert.equal(calls[0].url, "/api/v1/event-candidates/candidate%2F1/evidence-reviews");
+  assert.equal(calls[0].options.headers["idempotency-key"], "evidence-1");
+  assert.equal(calls[1].options.method, "PUT");
+  assert.equal(calls[1].options.headers["idempotency-key"], "location-1");
+  assert.equal(calls[2].url, "/api/v1/event-candidates/candidate%2F1/readiness");
+  assert.equal(calls[3].url, "/api/v1/event-candidates/candidate%2F1/promote");
+  assert.deepEqual(JSON.parse(calls[3].options.body), { expectedRevision: 2, candidateHash: "a".repeat(64) });
+});
+
+test("backend client searches, saves, removes, and exports private physics resources", async () => {
+  const calls = [];
+  const client = createBackendClient({
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      if (url.endsWith("/export/obsidian")) return new Response("# Physics", { headers: { "content-type": "text/markdown" } });
+      return jsonResponse({ data: [], meta: { nextCursor: "next" } });
+    },
+  });
+  const controller = new AbortController();
+  const search = await client.searchPhysicsResources({ query: "전자기학", type: "강의 영상", cursor: "page-2", limit: 20, signal: controller.signal });
+  await client.listPhysicsLibrary({ signal: controller.signal });
+  await client.savePhysicsResource({ resourceId: "mit-802" }, { idempotencyKey: "physics-save-1" });
+  await client.removePhysicsResource("mit/802");
+  const exported = await client.exportPhysicsLibraryToObsidian();
+
+  const searchUrl = new URL(`https://example.test${calls[0].url}`);
+  assert.equal(searchUrl.searchParams.get("q"), "전자기학");
+  assert.equal(searchUrl.searchParams.get("type"), "강의 영상");
+  assert.equal(search.meta.nextCursor, "next");
+  assert.equal(calls[2].options.headers["idempotency-key"], "physics-save-1");
+  assert.deepEqual(JSON.parse(calls[2].options.body), { resourceId: "mit-802" });
+  assert.equal(calls[3].url, "/api/v1/physics/library/mit%2F802");
+  assert.equal(await exported.text(), "# Physics");
+});
+
+test("visual analysis uses browser multipart boundaries instead of forcing JSON content type", async () => {
+  const calls = [];
+  const client = createBackendClient({
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return jsonResponse({ data: { id: "analysis-visual", status: "completed" } }, { status: 201 });
+    },
+  });
+  const image = new Blob(["png"], { type: "image/png" });
+  const result = await client.createVisualAnalysis({
+    metadata: { domain: "physics", mode: "auto", prompt: "그래프를 분석해줘", context: {} },
+    image,
+  }, { idempotencyKey: "visual-1" });
+
+  assert.equal(result.id, "analysis-visual");
+  assert.equal(calls[0].url, "/api/v1/visual-analyses");
+  assert.ok(calls[0].options.body instanceof FormData);
+  assert.equal(calls[0].options.headers["content-type"], undefined);
+  assert.equal(calls[0].options.headers["idempotency-key"], "visual-1");
+  assert.equal(JSON.parse(calls[0].options.body.get("metadata")).mode, "auto");
+  assert.equal(calls[0].options.body.get("image").type, "image/png");
 });

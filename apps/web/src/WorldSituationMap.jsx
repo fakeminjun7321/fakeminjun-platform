@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowSquareOut,
   Brain,
@@ -229,7 +229,7 @@ function addIntelligenceLayers(map, events) {
   });
 }
 
-export function WorldSituationMap({ events, selectedEvent, selectionActive, onSelect, onOpenIssues, onOpenAi }) {
+export function WorldSituationMap({ events, selectedEvent, selectionActive, dataStatus = "non-live-demo", onSelect, onOpenIssues, onOpenAi }) {
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
   const eventsRef = useRef(events);
@@ -431,7 +431,7 @@ export function WorldSituationMap({ events, selectedEvent, selectionActive, onSe
       <div className="maplibre-map" ref={mapContainerRef} aria-label="확대와 이동이 가능한 오픈소스 지도" />
       <div className="map-data-cluster" aria-label="지도 데이터 상태">
         {mapStatus === "ready" ? "OPEN MAP READY" : mapStatus === "degraded" ? "MAP DEGRADED" : mapStatus === "error" ? "BASEMAP ERROR" : "MAP LOADING"}
-        <span>·</span> 신호 {events.length} <span>·</span> 데모 자료 <span>·</span> OSM 기반
+        <span>·</span> 신호 {events.length} <span>·</span> {dataStatus === "non-live-demo" || dataStatus === "fallback-demo" ? "데모 자료" : dataStatus === "mixed" ? "실제·데모 혼합" : "API 자료"} <span>·</span> OSM 기반
       </div>
       <div className={`map-mobile-status is-${mapStatus}`} role="status">
         {mapStatus === "ready" ? "MAP READY" : mapStatus === "degraded" ? "MAP DEGRADED" : mapStatus === "error" ? "MAP ERROR" : "MAP LOADING"}
@@ -480,9 +480,9 @@ export function WorldSituationMap({ events, selectedEvent, selectionActive, onSe
           <p>{selectedEvent.summary}</p>
           <div className="popover-evidence">
             <span>출처 {selectedEvent.sources}</span><span>합치도 {selectedEvent.agreement}%</span>
-            <strong>{STATUS_META[selectedEvent.status].label}</strong>
+            <strong>{STATUS_META[selectedEvent.status]?.label ?? "상태 미분류"}</strong>
           </div>
-          {relation && <p className="relation-label"><ShieldCheck size={15} /> 검증된 관계&nbsp; {selectedEvent.region} → {relation.to.label} · {selectedEvent.relationLabel}</p>}
+          {relation && <p className="relation-label"><ShieldCheck size={15} /> 연결 관계&nbsp; {selectedEvent.region} → {relation.to.label} · {selectedEvent.relationLabel}</p>}
           <div className="popover-actions">
             <button type="button" onClick={onOpenIssues}>이슈 분석 보기 <ArrowSquareOut size={16} /></button>
             <button type="button" onClick={onOpenAi}><Brain size={17} /> AI에 묻기</button>
