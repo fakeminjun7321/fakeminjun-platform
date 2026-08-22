@@ -3,7 +3,9 @@ import test from "node:test";
 import worker, {
   ANALYSIS_REPORT_SCHEMA,
   parseEventsQuery,
+  parseSourceItemsQuery,
   requestStructuredOpenAI,
+  sourceStreamStatus,
   validateAnalysisPayload,
   validateNotePayload,
 } from "../worker/index.js";
@@ -36,6 +38,65 @@ test("event query parsing enforces the map API bounds", () => {
     () => parseEventsQuery(new URL("https://example.test/api/v1/events?ownerId=1")),
     (error) => error.code === "unknown_query" && error.status === 400,
   );
+});
+
+test("source item query accepts only bounded editorial lanes", () => {
+  const parsed = parseSourceItemsQuery(new URL(
+    "https://example.test/api/v1/source-items?lanes=korea-core,us-impact&limit=12&from=2026-08-21T00:00:00Z",
+  ));
+  assert.deepEqual(parsed.lanes, ["korea-core", "us-impact"]);
+  assert.equal(parsed.limit, 12);
+  assert.equal(parsed.from, "2026-08-21T00:00:00.000Z");
+  assert.throws(
+    () => parseSourceItemsQuery(new URL("https://example.test/api/v1/source-items?lanes=verified")),
+    (error) => error.code === "invalid_lanes",
+  );
+  assert.throws(
+    () => parseSourceItemsQuery(new URL("https://example.test/api/v1/source-items?sourceUrl=https://attacker.example")),
+    (error) => error.code === "unknown_query",
+  );
+});
+
+test("source stream freshness distinguishes API readiness from collection health", () => {
+  const now = Date.parse("2026-08-22T04:00:00.000Z");
+  const base = { cadence_minutes: 30, last_error_code: null };
+  assert.equal(sourceStreamStatus({ ...base, last_success_at: null, last_attempt_at: null }, now), "not-collected");
+  assert.equal(sourceStreamStatus({
+    ...base,
+    last_success_at: "2026-08-22T03:50:00.000Z",
+    last_attempt_at: "2026-08-22T03:50:00.000Z",
+  }, now), "current");
+  assert.equal(sourceStreamStatus({
+    ...base,
+    last_success_at: "2026-08-22T01:00:00.000Z",
+    last_attempt_at: "2026-08-22T01:00:00.000Z",
+  }, now), "stale");
+  assert.equal(sourceStreamStatus({
+    ...base,
+    last_success_at: "2026-08-22T03:40:00.000Z",
+    last_attempt_at: "2026-08-22T03:50:00.000Z",
+    last_error_code: "feed_timeout",
+  }, now), "degraded");
+});
+
+test("source inbox reports missing D1 without fabricating live data", async () => {
+  const response = await worker.fetch(new Request("https://example.test/api/v1/source-items"), {}, {});
+  const body = await response.json();
+  assert.equal(response.status, 503);
+  assert.equal(body.error.code, "database_unavailable");
+});
+
+test("manual ingestion checks origin before identity and network access", async () => {
+  const response = await worker.fetch(new Request("https://example.test/api/v1/ingestion/runs", {
+    method: "POST",
+    headers: { origin: "https://attacker.example" },
+  }), {
+    APP_ORIGIN: "https://app.example.test",
+    DB: {},
+  }, {});
+  const body = await response.json();
+  assert.equal(response.status, 403);
+  assert.equal(body.error.code, "origin_forbidden");
 });
 
 test("note validation accepts only the server-owned contract", () => {

@@ -19,12 +19,13 @@ Firebase는 첫 출시부터 공개 회원가입, 소셜 로그인, 비밀번호
 - `apps/web/worker/index.js`: 정적 SPA와 분리된 `/api/v1` Worker BFF
 - `apps/web/migrations`: D1 관계형 schema와 명시적으로 `is_live=0`인 데모 사건 seed
 - 공개 읽기: health, 사건 bbox/날짜/레이어 목록, 사건 상세
+- 공식 출처 수집: 고정 RSS 4개, metadata-only 정규화, idempotent D1 upsert, 수집 이력, 공개 수집함 조회
 - 개인 경로: Access 신원 확인, 노트 CRUD, 국제정세·물리 수준 설정, OpenAI 일반·정밀 분석 생성·조회·삭제
 - 방어 경계: 서버 결정 소유자, 개인 쿼리의 `owner_id` 제한, 고정 Origin, JSON 전용, 16 KiB 본문 제한, 필드 allowlist, prepared statement, 노트 optimistic locking, 분석 idempotency·사용량 원장·응답 제한
 - `apps/web/src/backendClient.js`: 화면에서 사용할 same-origin API client와 구조화 오류 타입
 - Vite 개발 프록시: `127.0.0.1:5173/api` → `127.0.0.1:8787/api`
 
-국제정세·물리 AI 패널은 이 client를 실제로 사용한다. 지도 사건 자체는 여전히 정적 `NON-LIVE DEMO` 자료다. 원격 D1, production Access 정책, live 데이터 수집과 배포는 만들지 않았다.
+국제정세·물리 AI 패널은 이 client를 실제로 사용한다. 오늘 브리핑의 공식 출처 수집함은 실제 RSS 메타데이터를 읽지만, 지도 사건 자체는 여전히 정적 `NON-LIVE DEMO` 자료다. 원격 D1, production Access/Cron 정책과 배포는 만들지 않았다.
 
 ## 서비스 구성
 
@@ -63,7 +64,8 @@ Firebase는 첫 출시부터 공개 회원가입, 소셜 로그인, 비밀번호
 
 - `sources`: 공급자, 원문 사이트, 신뢰·라이선스 메타데이터
 - `source_items`: 원본 ID, URL, 발행 시각, R2 원본 키, 콘텐츠 해시
-- `ingestion_runs`: 공급자별 시작·성공·실패·마지막 커서
+- `source_streams`, `source_item_streams`: 편집 분류, 선택 이유, 최초·마지막 관측 시각
+- `ingestion_runs`: 공급자별 시간창, 시작·성공·실패와 수집 건수
 - `events`: 제목, 요약, 시간 범위, 중요도, 확인 상태
 - `event_locations`: 사건별 위도·경도·정확도·장소명
 - `event_sources`: 사건과 원자료의 다대다 연결
@@ -96,11 +98,13 @@ Firebase는 첫 출시부터 공개 회원가입, 소셜 로그인, 비밀번호
 GET /api/v1/events?bbox=west,south,east,north&from=ISO_DATE&layers=korea-core,us-impact,rapid-change
 GET /api/v1/events/:eventId
 GET /api/v1/issues/:issueId
+GET /api/v1/source-items?lanes=korea-core,us-impact,rapid-change&from=ISO_DATE&limit=30
 ```
 
 - 목록 응답은 지도에 필요한 좌표, 범주, 확인 상태, 짧은 요약만 보낸다.
 - 상세 응답은 출처, 주장, 근거, 한국 관련성과 마지막 검증 시각을 포함한다.
 - `bbox`, 날짜 범위, 레이어 수, 페이지 크기는 서버에서 제한한다.
+- 수집함은 실제 공식 RSS 메타데이터이지만 항상 `unverified`이며 사건 API와 분리한다.
 
 ### 노트와 설정
 
@@ -180,8 +184,10 @@ preview와 production 바인딩은 자동 상속된다고 가정하지 않고 �
 - Access 개발 신원과 서버 소유자 경계: 로컬 구현·검증, production 미구성
 - D1 migration과 `/api/v1/events` bbox 조회: 로컬 구현·검증
 - 개인 노트 저장 → Worker 재시작 후 재조회: 로컬 구현·검증
-- 실제 공개 API 한 곳 수집
-- 원본 JSON을 R2에 저장하고 Queue에서 정규화
+- 고정 공식 RSS 4개 metadata-only 수집·중복 제거·D1 저장·브리핑 표시: 로컬 구현·실제 피드 검증
+- 기사 본문·이미지는 권리와 공격면을 줄이기 위해 저장하지 않음
+- 수집 자료를 복수 근거로 검증해 사건 후보로 승격하는 단계는 미구현
+- 허용되는 공급자의 원본이 필요해질 때 R2와 Queue에서 별도 구현
 - 지도에서 사건 선택 → 출처 확인
 - 현재 프론트 화면을 API client에 연결
 
@@ -205,7 +211,7 @@ preview와 production 바인딩은 자동 상속된다고 가정하지 않고 �
 2. 첫 버전을 개인 Access 알파로 잠글지 공개 회원가입으로 시작할지
 3. `fakeminjun.com`, `app.fakeminjun.com`, preview 호스트 구성
 4. 월 비용 상한과 결제 계정
-5. 첫 실제 국제정세 수집 API 한 곳과 갱신 주기
+5. production Cron 갱신 주기와 공식 RSS 이외의 교차검증 출처
 6. OpenAI 월 예산 상한과 production 모델 변경 정책
 7. 파일 최대 크기·허용 형식·실제 악성코드 검사 수단·원본 보관 기간
 8. 삭제·백업·복구와 감사 로그 보관 정책
@@ -213,12 +219,12 @@ preview와 production 바인딩은 자동 상속된다고 가정하지 않고 �
 
 ## 현재 검증 경계
 
-- **Implemented**: Worker BFF, D1 schema/seed, 사건 목록·상세, 세션, 노트 CRUD, 분야별 수준, OpenAI 분석 API, same-origin 프론트 client와 로컬 개발 설정
-- **Unit-verified**: 전체 Node 테스트 43건 및 전용 Sites worker 테스트 5건 통과
-- **Local-runtime-verified**: 실제 로컬 Wrangler와 임시 D1에서 migration, HTTP 요청, 재시작 후 영속성, 다른 사용자 데이터 격리와 삭제 확인
-- **Browser-verified**: 국제정세 AI 결과 렌더, 일반·정밀 모드, 포커스 복귀와 물리 P5 맥락을 인앱 브라우저에서 확인
+- **Implemented**: Worker BFF, D1 schema/seed, 사건·수집함·세션·노트·수준·OpenAI 분석 API, 고정 공식 RSS 수집기, same-origin 프론트 client와 로컬 개발 설정
+- **Unit-verified**: 전체 Node 테스트 57건 통과. Sites 전용 테스트는 현재 실행 결과 참조
+- **Local-runtime-verified**: 실제 로컬 Wrangler와 임시 D1에서 migration, 사건·수집함 HTTP 요청, 재시작 후 영속성, 다른 사용자 데이터 격리와 삭제 확인
+- **Browser-verified**: 실제 수집함 12건, 한국→미국→급변 편집 순서, 상태 경계와 안전한 원문 링크, 콘솔 오류 없음을 인앱 브라우저에서 확인
 - **Simulator-verified**: **Not verified / 미검증**
 - **Physical-device-verified**: **Not verified / 미검증**
-- **Live-service-verified**: 로컬 Worker에서 실제 OpenAI 일반·정밀 분석과 D1 저장·재조회·idempotent replay 확인. Cloudflare 계정의 원격 D1·Access·Worker 배포는 **Not verified / 미검증**
-- R2, Queue, Workflows, Vectorize, DNS, 실제 데이터 수집: **Not verified / 미검증**
+- **Live-service-verified**: 로컬 Worker에서 공식 RSS 4개 총 99건 수집과 로컬 D1 조회 확인. 이전 실행에서 실제 OpenAI 일반·정밀 분석과 D1 저장·재조회·idempotent replay 확인. Cloudflare 계정의 원격 D1·Access·Worker 배포는 **Not verified / 미검증**
+- R2, Queue, Workflows, Vectorize, DNS, production Cron: **Not verified / 미검증**
 - 실제 업로드 악성코드 검사와 antivirus/EDR: **Not verified / 미검증**

@@ -15,9 +15,11 @@
 - 물리: 7개 학습 모드, 혼합형 자료 보관소, 검증된 공개 자료 검색, KPhO→IPhO 준비 화면과 조절 가능한 데모 설명 수준 구현
 - 물리 자료 찾기는 MIT OpenCourseWare, 한국물리올림피아드, IPhO 공식 공개 링크만 사용하며 실제 검색 API는 아직 연결하지 않음
 - 현재 사건은 모두 `NON-LIVE DEMO` 자료이며 실제 뉴스 수집 결과가 아님
+- 공식 RSS 4개(외교부·통일부·백악관·UN 평화·안보)의 제목·기관·원문 링크·시각을 로컬 D1에 수집하고 오늘 브리핑의 별도 `실제 수집 · 미검증` 영역에 표시
+- 수집 자료는 사건·지도·검증 상태로 자동 승격하지 않으며 기사 본문과 이미지를 저장하지 않음
 - 국제정세·물리의 호출형 AI 패널은 로컬 Worker를 거쳐 OpenAI Responses API에 연결되고, 결과·사용량·요청 중복 방지 기록을 소유자별 D1에 저장
 - 일반 분석은 비용 효율적인 OpenAI 단일 모델, 정밀 분석은 OpenAI 전문 검토 2회와 최종 통합 1회로 제한
-- 원격 Cloudflare·실제 뉴스/API·파일·캡처·OCR 파이프라인은 아직 연결하지 않음
+- 원격 Cloudflare·파일·캡처·OCR 파이프라인은 아직 연결하지 않음. 공식 RSS 수집은 로컬 Worker/D1에서만 실제 연결됨
 
 ## 확정된 방향
 
@@ -38,6 +40,7 @@
 - [Cloudflare-first 백엔드 구현 계획](docs/backend-cloudflare-plan.md)
 - [로컬 API v1 계약](docs/api-v1.md)
 - [구현·검증 기준](docs/verification-plan.md)
+- [보안·공급망 정책](SECURITY.md)
 
 ## 로컬 프로토타입
 
@@ -71,11 +74,11 @@ Vite는 `/api`를 `127.0.0.1:8787`의 Worker로 전달한다. 로컬 Access 개�
 
 ## 검증 상태
 
-- **Implemented**: 기획 문서, 국제정세·물리 프론트엔드, 전용 API Worker, D1 schema/seed, 사건·노트·수준·AI 분석 API와 프론트 client가 저장소에 존재
-- **Unit-verified**: `npm test` 43건 통과. 별도 Sites worker 묶음 `npm run test:sites` 5건 통과
-- **Local-runtime-verified**: 실제 로컬 Wrangler와 임시 D1에서 migration, HTTP 사건 조회, Access 개발 신원, 수준 저장, 노트 생성·수정 충돌·재시작 후 재조회·다른 사용자 격리·삭제를 확인
-- **Browser-verified**: 인앱 브라우저에서 국제정세 AI 패널의 실제 OpenAI 결과 렌더, 일반·정밀 모드 표시, 자동 검증 전 근거 경계, 닫기 후 포커스 복귀, 물리 P5 맥락 전달을 확인. 기존 지도 이동·레이어·URL 상태와 물리 학습 허브 경로도 확인. OpenFreeMap glyph 404 fallback 경고는 남아 있음
+- **Implemented**: 기획 문서, 국제정세·물리 프론트엔드, 전용 API Worker, D1 schema/seed, 사건·노트·수준·AI 분석 API, 고정 공식 RSS 수집기와 출처 수집함이 저장소에 존재
+- **Unit-verified**: `npm test` 57건 통과. 별도 Sites worker 묶음 `npm run test:sites` 결과는 현재 검증 실행 기록 참조
+- **Local-runtime-verified**: 실제 로컬 Wrangler와 임시 D1에서 migration, HTTP 사건·수집함 조회, Access 개발 신원, 수준 저장, 노트 생성·수정 충돌·재시작 후 재조회·다른 사용자 격리·삭제를 확인
+- **Browser-verified**: 인앱 브라우저에서 실제 공식 수집 자료 12개가 한국 공식→미국 공식→국제안보 관측 순으로 렌더링되고 `CURRENT / UNVERIFIED / EVENT PROMOTION OFF`, 안전한 원문 링크 속성, 콘솔 오류 없음 확인. 기존 OpenAI·지도·물리 경로 검증은 이전 실행 기록 참조
 - **Simulator-verified**: 미검증 — 모바일 크기는 데스크톱 Chrome 반응형 viewport로만 확인
 - **Physical-device-verified**: 미검증 — 실제 기기에서 실행하지 않음
-- **Live-service-verified**: 로컬 Worker에서 실제 OpenAI 표준·정밀 요청, D1 결과 재조회, 같은 idempotency key 재호출을 확인. 원격 Cloudflare D1·Access·배포, 실제 외부 데이터 API와 파일 저장소는 미검증
+- **Live-service-verified**: 로컬 Worker에서 외교부 29건·통일부 10건·백악관 30건·UN 30건을 실제 RSS로 가져와 로컬 D1 저장과 API 조회를 확인. 이전 실행에서 실제 OpenAI 표준·정밀 요청도 확인. 원격 Cloudflare D1·Access·배포와 파일 저장소는 미검증
 - **Antivirus-verified**: 미검증 — 백신·EDR 엔진은 실행하지 못했으며, 변경분 보안 검토와 npm advisory·registry signature 검사만 수행

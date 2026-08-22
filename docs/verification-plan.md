@@ -31,8 +31,8 @@
 
 첫 번째 구현은 모든 기능의 얕은 목업이 아니라 아래 경로 하나를 실제로 연결한다.
 
-1. 공개 API 한 곳에서 실제 자료를 가져온다.
-2. 원본 응답과 정규화 레코드를 저장한다.
+1. 고정된 공식 출처에서 실제 자료를 가져온다.
+2. 이용 범위에 맞춰 원문을 복제하지 않고 정규화 메타데이터를 저장한다.
 3. 목록과 상세 화면에서 표시한다.
 4. 상세 자료를 근거 묶음으로 만들어 AI 분석을 요청한다.
 5. 결과의 출처를 눌러 원문 위치로 돌아간다.
@@ -42,13 +42,13 @@
 
 ## 4. 현재 상태
 
-- **Implemented**: 제품 문서, 국제정세·물리 프론트엔드, Worker BFF, D1 schema/seed, 사건·노트·수준·AI 분석 API와 프론트 API client
-- **Unit-verified**: `npm test` 43건, 별도 `npm run test:sites` 5건 통과
-- **Local-runtime-verified**: 실제 로컬 Wrangler와 임시 D1로 migration, HTTP 사건 조회, Access 개발 신원, 수준 저장, 노트 생성·수정 충돌·재시작 후 재조회·다른 사용자 격리·삭제 확인
-- **Browser-verified**: 인앱 브라우저에서 국제정세 AI 패널 실제 결과, 모드 선택, 모델 근거 경계 표시, 포커스 복귀, 물리 P5 맥락 전달을 확인. 지도 공급자의 glyph 404 fallback 경고 4건 외 애플리케이션 오류는 확인되지 않음
+- **Implemented**: 제품 문서, 국제정세·물리 프론트엔드, Worker BFF, D1 schema/seed, 사건·수집함·노트·수준·AI 분석 API와 프론트 API client
+- **Unit-verified**: `npm test` 57건 통과. Sites 전용 테스트는 현재 실행 결과 참조
+- **Local-runtime-verified**: 실제 로컬 Wrangler와 임시 D1로 migration, HTTP 사건·수집함 조회, Access 개발 신원, 수준 저장, 노트 생성·수정 충돌·재시작 후 재조회·다른 사용자 격리·삭제 확인
+- **Browser-verified**: 인앱 브라우저에서 실제 공식 출처 12건 표시, 편집 순서, 수집/검증/사건 승격 경계, 원문 링크 속성과 콘솔 오류 없음을 확인. 기존 AI·지도·물리 검증은 이전 실행 기록 참조
 - **Simulator-verified**: 미검증 — 모바일 시뮬레이터는 사용하지 않음
 - **Physical-device-verified**: 미검증 — 실제 Mac·모바일 기기 실행 없음
-- **Live-service-verified**: 로컬 Worker에서 실제 OpenAI 일반·정밀 분석을 실행하고 모델 응답, D1 저장·재조회, 사용량, idempotent replay를 확인. 원격 Cloudflare D1·Access·Worker, 외부 데이터 API와 파일 저장소는 미검증
+- **Live-service-verified**: 로컬 Worker에서 외교부·통일부·백악관·UN 실제 RSS 99건을 수집해 로컬 D1과 API에서 조회. 이전 실행에서 실제 OpenAI 일반·정밀 분석도 확인. 원격 Cloudflare D1·Access·Worker·Cron과 파일 저장소는 미검증
 - **Antivirus-verified**: 미검증 — 변경분 보안 검토와 npm advisory·registry signature 검사는 수행했으나 백신·EDR 엔진은 실행하지 않음
 
 ## 5. 프론트와 백엔드의 다음 연결 기준
@@ -61,4 +61,4 @@
 - 보관소의 `자료 추가`가 R2 경로 구현 전에는 저장 완료처럼 오해되지 않는지 확인
 - 공개 자료 링크가 실제 공식 목적지를 열고, 깨진 링크나 비공식 재배포 자료가 섞이지 않았는지 확인
 - 신규 화면의 콘솔 오류와 키보드 포커스 경로 확인
-- 실제 공개 데이터 수집, R2 업로드 영속성, 캡처·OCR와 AI 호출은 각각 별도 세로 조각으로 구현·검증
+- 수집 자료의 복수 출처 검증·사건 승격, R2 업로드 영속성, 캡처·OCR는 각각 별도 세로 조각으로 구현·검증

@@ -41,6 +41,33 @@ test("backend client serializes the bounded event query", async () => {
   assert.equal(calls[0].options.credentials, "same-origin");
 });
 
+test("backend client serializes the source inbox query and forwards abort", async () => {
+  const calls = [];
+  const controller = new AbortController();
+  const client = createBackendClient({
+    baseUrl: "https://app.example.test/",
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return jsonResponse({
+        data: [{ id: 1, verificationStatus: "unverified" }],
+        meta: { collectionStatus: "current" },
+      });
+    },
+  });
+  const items = await client.listSourceItems({
+    lanes: ["korea-core", "us-impact"],
+    from: "2026-08-21T00:00:00Z",
+    limit: 12,
+    signal: controller.signal,
+  });
+  assert.equal(items.data[0].verificationStatus, "unverified");
+  assert.equal(items.meta.collectionStatus, "current");
+  const calledUrl = new URL(calls[0].url);
+  assert.equal(calledUrl.pathname, "/api/v1/source-items");
+  assert.equal(calledUrl.searchParams.get("lanes"), "korea-core,us-impact");
+  assert.equal(calls[0].options.signal, controller.signal);
+});
+
 test("backend client sends JSON writes without accepting an owner ID", async () => {
   const calls = [];
   const client = createBackendClient({

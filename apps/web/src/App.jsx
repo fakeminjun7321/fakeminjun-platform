@@ -234,17 +234,102 @@ function TodaySignalsPanel({ events, selectedId, onSelect, onOpenBriefing }) {
   );
 }
 
-function BriefingPage({ events, selectedId, onSelect, onOpenIssues }) {
+const SOURCE_LANE_LABELS = {
+  "korea-core": "한국 공식",
+  "us-impact": "미국 공식",
+  "rapid-change": "국제안보 관측",
+};
+
+const COLLECTION_STATUS_LABELS = {
+  current: "CURRENT",
+  stale: "STALE",
+  degraded: "DEGRADED",
+  "not-collected": "NOT COLLECTED",
+  unknown: "UNKNOWN",
+};
+
+function briefingDateLabel() {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Seoul",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(new Date()).toUpperCase();
+}
+
+function sourceTimestamp(value) {
+  if (!value) return "발행 시각 없음";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "발행 시각 없음";
+  const parts = new Intl.DateTimeFormat("ko-KR", {
+    timeZone: "Asia/Seoul",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(parsed);
+  const values = Object.fromEntries(parts.map(({ type, value: partValue }) => [type, partValue]));
+  return `${values.month}.${values.day} · ${values.hour}:${values.minute}`;
+}
+
+function SourceInbox({ state }) {
+  return (
+    <section className="source-inbox" aria-labelledby="source-inbox-title">
+      <header>
+        <div>
+          <p className="system-kicker">OFFICIAL SOURCE INBOX</p>
+          <h3 id="source-inbox-title">공식 출처 수집함</h3>
+        </div>
+        <div className="source-boundary" aria-label="자료 상태">
+          <span>실제 수집</span><span>미검증 자료</span><span>사건·지도 미반영</span>
+        </div>
+      </header>
+      {state.status === "loading" && <p className="source-empty">공식 피드 수집 자료를 확인 중입니다.</p>}
+      {state.status === "error" && (
+        <p className="source-empty is-error">
+          수집 자료 API에 연결하지 못했습니다. {state.items.length ? "이전 성공 자료를 표시하며 최신성은 확인되지 않았습니다." : "데모 신호로 대체하지 않고 빈 상태로 둡니다."}
+        </p>
+      )}
+      {state.status === "ready" && state.items.length === 0 && (
+        <p className="source-empty">아직 저장된 공식 출처 자료가 없습니다. 수집 실행 후 이곳에 표시됩니다.</p>
+      )}
+      {state.items.length > 0 && (
+        <ol className="source-item-list">
+          {state.items.map((item) => (
+            <li key={`${item.source.key}-${item.providerItemId}`}>
+              <div className="source-item-meta">
+                <span className={`source-lane lane-${item.lane}`}>{SOURCE_LANE_LABELS[item.lane] ?? item.lane}</span>
+                <span>{item.source.name}</span>
+                <time dateTime={item.publishedAt ?? item.collectedAt}>{sourceTimestamp(item.publishedAt)}</time>
+              </div>
+              <a href={item.originalUrl} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">
+                {item.title}<ArrowRight size={14} aria-hidden="true" />
+              </a>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  );
+}
+
+function BriefingPage({ events, selectedId, onSelect, onOpenIssues, sourceState }) {
   return (
     <main className="focused-workspace briefing-workspace">
       <header className="workspace-heading">
         <div>
-          <p className="system-kicker">DAILY INTELLIGENCE BRIEF · 21 AUG 2026</p>
+          <p className="system-kicker">DAILY INTELLIGENCE BRIEF · {briefingDateLabel()}</p>
           <h2>오늘 브리핑</h2>
           <p>한국을 중심으로 미국의 영향과 급격한 변화를 분리해 읽습니다.</p>
         </div>
-        <span className="workspace-count">{events.length} SIGNALS · 33 SOURCES</span>
+        <span className="workspace-count">{events.length} DEMO SIGNALS</span>
       </header>
+      <SourceInbox state={sourceState} />
+      <div className="briefing-section-label">
+        <div><p className="system-kicker">ANALYSIS PROTOTYPE</p><h3>분석용 데모 신호</h3></div>
+        <span>NON-LIVE DEMO</span>
+      </div>
       <div className="briefing-feed">
         {events.map((event) => {
           const category = CATEGORY_META[event.category];
@@ -340,13 +425,23 @@ function IssuesPage({ selectedEvent, onSelect, onOpenAi }) {
   );
 }
 
-function PassiveStatusBar({ domain }) {
+function PassiveStatusBar({ domain, route, sourceState }) {
   if (domain === "physics") {
     return (
       <footer className="system-status" aria-label="물리 데모 상태">
         <span>LIBRARY <strong>DEMO</strong></span><span>DEFAULT LEVEL <strong>P4</strong></span>
         <span>TRACK <strong>KPHO → IPHO</strong></span><span>OPEN LINKS <strong>6</strong></span>
         <span className="system-health">OpenAI 분석 API <i aria-hidden="true" /> 개발 환경</span>
+      </footer>
+    );
+  }
+  if (route === "briefing") {
+    return (
+      <footer className="system-status" aria-label="수집 자료 상태">
+        <span>SOURCE INBOX <strong>{sourceState.status === "ready" ? COLLECTION_STATUS_LABELS[sourceState.collectionStatus] : sourceState.status.toUpperCase()}</strong></span>
+        <span>VISIBLE ITEMS <strong>{sourceState.items.length}</strong></span>
+        <span>VERIFICATION <strong>UNVERIFIED</strong></span><span>EVENT PROMOTION <strong>OFF</strong></span>
+        <span className="system-health"><i aria-hidden="true" /> 공식 출처 메타데이터</span>
       </footer>
     );
   }
@@ -572,6 +667,7 @@ export function App() {
   const [analysisContext, setAnalysisContext] = useState(null);
   const [physicsLevel, setPhysicsLevel] = useState(4);
   const [notice, setNotice] = useState("");
+  const [sourceState, setSourceState] = useState({ status: "idle", items: [], collectionStatus: "unknown" });
   const noticeTimerRef = useRef(null);
   const aiTriggerRef = useRef(null);
   const aiOpenerRef = useRef(null);
@@ -616,6 +712,28 @@ export function App() {
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
   useEffect(() => () => window.clearTimeout(noticeTimerRef.current), []);
+  useEffect(() => {
+    if (route !== "briefing") return undefined;
+    const controller = new AbortController();
+    setSourceState((current) => ({ ...current, status: "loading" }));
+    Promise.all([
+      backendClient.listSourceItems({ lanes: ["korea-core"], limit: 4, signal: controller.signal }),
+      backendClient.listSourceItems({ lanes: ["us-impact"], limit: 4, signal: controller.signal }),
+      backendClient.listSourceItems({ lanes: ["rapid-change"], limit: 4, signal: controller.signal }),
+    ])
+      .then((groups) => {
+        const statuses = groups.map(({ meta }) => meta.collectionStatus ?? "unknown");
+        const collectionStatus = statuses.includes("degraded") ? "degraded"
+          : statuses.includes("not-collected") ? "not-collected"
+            : statuses.includes("stale") ? "stale"
+              : statuses.every((status) => status === "current") ? "current" : "unknown";
+        setSourceState({ status: "ready", items: groups.flatMap(({ data }) => data), collectionStatus });
+      })
+      .catch((error) => {
+        if (error?.name !== "AbortError") setSourceState((current) => ({ ...current, status: "error", collectionStatus: "unknown" }));
+      });
+    return () => controller.abort();
+  }, [route]);
 
   function navigate(nextRoute) {
     const path = ROUTES[nextRoute];
@@ -658,7 +776,13 @@ export function App() {
         )}
 
         {route === "briefing" && (
-          <BriefingPage events={EVENTS} selectedId={selectedId} onSelect={setSelectedId} onOpenIssues={openIssues} />
+          <BriefingPage
+            events={EVENTS}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            onOpenIssues={openIssues}
+            sourceState={sourceState}
+          />
         )}
 
         {route === "issues" && (
@@ -675,7 +799,7 @@ export function App() {
           />
         )}
 
-        <PassiveStatusBar domain={domain} />
+        <PassiveStatusBar domain={domain} route={route} sourceState={sourceState} />
       </div>
       <p className="sr-only" role="status" aria-live="polite">선택 사건: {selectedEvent.title}</p>
       {notice && <div className="domain-notice" role="status">{notice}</div>}
