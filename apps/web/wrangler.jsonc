@@ -1,0 +1,33 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "fakeminjun-platform",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-08-22",
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "fakeminjun-platform-local",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "preview_database_id": "fakeminjun-platform-local-preview",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    "APP_ENV": "local",
+    "APP_ORIGIN": "http://127.0.0.1:5173"
+  },
+  "access": {
+    "dev": {
+      "aud": "local-development",
+      "identity": {
+        "id": "local-development-user",
+        "email": "local@fakeminjun.invalid"
+      }
+    }
+  }
+}

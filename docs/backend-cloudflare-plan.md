@@ -1,6 +1,6 @@
 # Cloudflare-first 백엔드 구현 계획
 
-작성일: 2026-08-21
+작성일: 2026-08-21 · 구현 상태 갱신: 2026-08-22
 
 ## 결론과 결정 경계
 
@@ -13,6 +13,18 @@
 3. 이미 Cloudflare에 있는 도메인과 정적 자산, API, DB, 파일, 비동기 작업을 한 운영 경계에서 관리할 수 있다.
 
 Firebase는 첫 출시부터 공개 회원가입, 소셜 로그인, 비밀번호 복구, 모바일 오프라인 동기화가 핵심일 때 다시 비교한다. 실제 Cloudflare 리소스 생성, DNS 변경, 결제 설정, 비밀키 등록은 사용자 승인 전에는 수행하지 않는다.
+
+## 현재 로컬 구현
+
+- `apps/web/worker/index.js`: 정적 SPA와 분리된 `/api/v1` Worker BFF
+- `apps/web/migrations`: D1 관계형 schema와 명시적으로 `is_live=0`인 데모 사건 seed
+- 공개 읽기: health, 사건 bbox/날짜/레이어 목록, 사건 상세
+- 개인 경로: Access 신원 확인, 노트 CRUD, 국제정세·물리 수준 설정
+- 방어 경계: 서버 결정 소유자, 개인 쿼리의 `owner_id` 제한, 고정 Origin, JSON 전용, 16 KiB 본문 제한, 필드 allowlist, prepared statement, 노트 optimistic locking
+- `apps/web/src/backendClient.js`: 화면에서 사용할 same-origin API client와 구조화 오류 타입
+- Vite 개발 프록시: `127.0.0.1:5173/api` → `127.0.0.1:8787/api`
+
+이는 로컬 기반 구현이다. 현재 지도와 물리 화면은 아직 이 client를 호출하지 않고 기존 데모 자료를 렌더한다. 원격 D1, production Access 정책, live 데이터 수집과 배포는 만들지 않았다.
 
 ## 서비스 구성
 
@@ -101,9 +113,9 @@ GET    /api/v1/profile/levels
 PUT    /api/v1/profile/levels
 ```
 
-Worker는 매 API 요청에서 `Cf-Access-Jwt-Assertion`의 서명, `iss`, application `aud`, 만료를 검증하고 검증된 `sub`를 `users.external_subject`에 연결한다. 이메일은 허용 정책과 표시에만 쓰며 영구 소유자 키로 사용하지 않는다. 모든 개인 데이터 읽기와 쓰기는 서버가 결정한 `owner_id`로 제한하고 브라우저가 보낸 소유자 ID를 신뢰하지 않는다. Service Token 주체는 사람의 세션과 별도 권한으로 분리한다.
+현재 Worker는 Cloudflare Workers의 Access 통합이 제공하는 `ctx.access.getIdentity()`에서 안정적인 `identity.id`를 받아 `users.external_subject`에 연결하고, 해당 컨텍스트가 없으면 개인 경로를 닫는다. 이메일은 표시용이며 영구 소유자 키로 사용하지 않는다. 모든 개인 데이터 읽기와 쓰기는 서버가 결정한 `owner_id`로 제한하고 브라우저가 보낸 소유자 ID를 받지 않는다. production에서는 Access application과 policy를 실제 도메인에 연결하고 거부·로그아웃·다른 사용자 격리를 다시 검증해야 한다.
 
-브라우저 세션 쿠키를 쓰는 상태 변경 API는 same-origin만 허용하고 `Origin`, JSON `Content-Type`, CSRF 방어, 요청 본문 크기와 호출 빈도를 검증한다. wildcard CORS는 사용하지 않는다.
+브라우저 세션 쿠키를 쓰는 상태 변경 API는 정확히 일치하는 `Origin`, JSON `Content-Type`, 요청 본문 크기와 허용 필드를 검사한다. wildcard CORS는 사용하지 않는다. 호출 빈도 제한은 아직 구현하지 않았으며 public write API를 열기 전에 추가한다.
 
 ### 파일과 분석
 
@@ -131,7 +143,7 @@ GET  /api/v1/analyses/:analysisId
 5. 사건을 선택하면 상세 API로 출처와 근거를 가져온다.
 6. 마지막 성공 시각과 실패·오래된 데이터 상태를 화면에 별도로 표시한다.
 
-현재 프론트는 이 계약을 흉내 내는 정적 데모 자료를 사용하며, 실제 API나 D1 데이터라고 표시하지 않는다.
+Worker와 D1에는 이 계약의 사건 목록·상세 API가 구현되어 있지만, 현재 프론트는 아직 정적 데모 자료를 사용한다. 따라서 화면에 보이는 사건을 API 또는 D1에서 읽은 live 데이터라고 표시하지 않는다.
 
 ## 작업·수집 안전 경계
 
@@ -155,20 +167,21 @@ preview와 production 바인딩은 자동 상속된다고 가정하지 않고 �
 
 ## 단계별 구현
 
-### 0. 지금 완료할 프론트 기반
+### 0. 프론트 기반 — 구현됨
 
 - MapLibre + 공개 OpenFreeMap 스타일
 - 드래그, 휠·핀치 줌, 클러스터, 레이어, 지도 URL 상태
 - 정적 사건 GeoJSON 어댑터
 
-### 1. 실제 세로 조각
+### 1. 실제 세로 조각 — 로컬 기반 일부 구현
 
-- Cloudflare Access로 개인 preview 보호
-- D1 migration과 `/api/v1/events` bbox 조회
+- Access 개발 신원과 서버 소유자 경계: 로컬 구현·검증, production 미구성
+- D1 migration과 `/api/v1/events` bbox 조회: 로컬 구현·검증
+- 개인 노트 저장 → Worker 재시작 후 재조회: 로컬 구현·검증
 - 실제 공개 API 한 곳 수집
 - 원본 JSON을 R2에 저장하고 Queue에서 정규화
 - 지도에서 사건 선택 → 출처 확인
-- 개인 노트 저장 → 새로고침 후 재조회
+- 현재 프론트 화면을 API client에 연결
 
 ### 2. 자료·AI
 
@@ -198,9 +211,11 @@ preview와 production 바인딩은 자동 상속된다고 가정하지 않고 �
 
 ## 현재 검증 경계
 
-- **Implemented**: 이 아키텍처와 API 계약 문서
-- **Unit-verified**: 해당 없음
-- **Simulator-verified**: 해당 없음
+- **Implemented**: Worker BFF, D1 schema/seed, 사건 목록·상세, 세션, 노트 CRUD, 분야별 수준 API, same-origin 프론트 client와 로컬 개발 설정
+- **Unit-verified**: 전체 Node 테스트 30건 및 전용 Sites worker 테스트 5건 통과
+- **Local-runtime-verified**: 실제 로컬 Wrangler와 임시 D1에서 migration, HTTP 요청, 재시작 후 영속성, 다른 사용자 데이터 격리와 삭제 확인
+- **Simulator-verified**: **Not verified / 미검증** — 브라우저 자동화로 새 백엔드 사용자 경로를 실행하지 않음
 - **Physical-device-verified**: **Not verified / 미검증**
-- Cloudflare 계정, D1, R2, Queue, Access, AI Gateway, DNS 연결: **Not verified / 미검증**
+- **Live-service-verified**: **Not verified / 미검증** — Cloudflare 계정의 원격 D1·Access·Worker 배포를 사용하지 않음
+- R2, Queue, Workflows, Vectorize, AI Gateway, DNS, 실제 데이터 수집: **Not verified / 미검증**
 - 실제 업로드 악성코드 검사와 antivirus/EDR: **Not verified / 미검증**

@@ -2,7 +2,7 @@
 
 작성일: 2026-08-21
 
-이 문서는 공급자 중립적인 논리 구조다. 프론트엔드 프로토타입은 React 19, Vite 6, MapLibre GL JS로 구성한다. 백엔드는 Cloudflare-first를 현재 추천안으로 두되 실제 외부 리소스 생성 전 사용자 승인을 받는다. 구체 계획은 [backend-cloudflare-plan.md](./backend-cloudflare-plan.md)에 기록한다.
+이 문서는 공급자 중립적인 논리 구조다. 프론트엔드 프로토타입은 React 19, Vite 6, MapLibre GL JS로 구성한다. 백엔드는 Cloudflare-first로 선택해 Worker BFF와 D1의 로컬 기반을 구현했으며, 실제 외부 리소스 생성 전에는 사용자 승인을 받는다. 구체 계획과 구현 경계는 [backend-cloudflare-plan.md](./backend-cloudflare-plan.md)에 기록한다.
 
 ## 1. 전체 흐름
 
@@ -114,8 +114,10 @@ AI 응답은 자유형 Markdown 한 덩어리가 아니라 다음 구조를 기�
 
 - 프론트엔드 프로토타입: React 19, Vite 6, MapLibre GL JS, OpenFreeMap, Phosphor Icons
 - 지도 운영 추천: Protomaps PMTiles + Cloudflare R2/Worker 캐시
-- 백엔드 추천: Workers Static Assets + Worker BFF + D1 + R2 + Queues
+- 현재 로컬 백엔드: Workers Static Assets + Worker BFF + D1, `/api/v1` client
+- 구현된 데이터 경계: 공개 데모 사건 읽기, Access 기반 개인 신원, owner-scoped 노트와 수준 설정
+- 운영 확장 추천: R2 + Queues + Workflows
 - 후속 추천: Workflows, Vectorize, AI Gateway
-- 아직 미확정: 실제 Cloudflare 리소스, 인증 공개 범위, AI 모델, 첫 실제 수집 API, 비용 상한
+- 아직 미확정: 실제 Cloudflare 리소스, production Access 정책, 인증 공개 범위, AI 모델, 첫 실제 수집 API, 비용 상한
 
 선택 기준은 시각적 선호가 아니라 실제 데이터 수집, 캡처 업로드, 저장, 검색, 인용 검증을 가장 작은 비용으로 끝까지 실행할 수 있는지다. Firebase는 공개 회원가입·소셜 로그인·모바일 오프라인 동기화가 첫 출시의 핵심이 될 때 다시 비교한다.
