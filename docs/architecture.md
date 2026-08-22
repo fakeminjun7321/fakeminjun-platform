@@ -2,7 +2,7 @@
 
 작성일: 2026-08-21
 
-이 문서는 특정 클라우드나 AI 공급자를 확정하지 않는 논리 구조다. 실제 프레임워크와 서비스는 작은 세로 조각을 구현하기 전에 결정한다.
+이 문서는 Cloudflare-first 저장·API 구조와 OpenAI-only AI 구조를 설명한다. 프론트엔드 프로토타입은 React 19, Vite 6, MapLibre GL JS로 구성한다. Worker BFF와 D1의 로컬 기반, OpenAI Responses API 분석 경로를 구현했으며, 실제 Cloudflare 외부 리소스 생성 전에는 사용자 승인을 받는다. 구체 계획과 구현 경계는 [backend-cloudflare-plan.md](./backend-cloudflare-plan.md)에 기록한다.
 
 ## 1. 전체 흐름
 
@@ -79,7 +79,7 @@ AI 응답은 자유형 Markdown 한 덩어리가 아니라 다음 구조를 기�
 - 더 확인할 원자료
 - 사용자 수준에 맞춘 보충 설명
 
-국제정세·정치 분석에서는 예측을 사실처럼 표시하지 않는다. 물리 분석에서는 차원, 부호, 가정, 근사 범위와 원식의 출처를 검토 항목으로 둔다.
+국제정세 분석에서는 예측을 사실처럼 표시하지 않는다. 물리 분석에서는 차원, 부호, 가정, 근사 범위와 원식의 출처를 검토 항목으로 둔다.
 
 ## 5. 수준 적응
 
@@ -110,12 +110,14 @@ AI 응답은 자유형 Markdown 한 덩어리가 아니라 다음 구조를 기�
 - 서버에서 접근 권한 검사
 - 공유 기능은 나중에 명시적으로 추가하며 기본값은 비공개
 
-## 8. 아직 선택하지 않는 기술
+## 8. 현재 선택과 아직 선택하지 않는 기술
 
-- React 계열의 구체적 프레임워크와 호스팅 공급자
-- 관계형 DB, 객체 스토리지와 벡터 검색 제품
-- 인증 서비스
-- AI 모델 및 게이트웨이
-- 백그라운드 작업·큐 시스템
+- 프론트엔드 프로토타입: React 19, Vite 6, MapLibre GL JS, OpenFreeMap, Phosphor Icons
+- 지도 운영 추천: Protomaps PMTiles + Cloudflare R2/Worker 캐시
+- 현재 로컬 백엔드: Workers Static Assets + Worker BFF + D1, `/api/v1` client
+- 구현된 데이터 경계: 공개 데모 사건 읽기, Access 기반 개인 신원, owner-scoped 노트와 수준 설정
+- 운영 확장 추천: R2 + Queues + Workflows
+- 후속 추천: Workflows, Vectorize, OpenAI-only 비동기 분석 작업
+- 아직 미확정: 실제 Cloudflare 리소스, production Access 정책, 인증 공개 범위, AI 모델, 첫 실제 수집 API, 비용 상한
 
-선택 기준은 시각적 선호가 아니라 실제 데이터 수집, 캡처 업로드, 저장, 검색, 인용 검증을 가장 작은 비용으로 끝까지 실행할 수 있는지다.
+선택 기준은 시각적 선호가 아니라 실제 데이터 수집, 캡처 업로드, 저장, 검색, 인용 검증을 가장 작은 비용으로 끝까지 실행할 수 있는지다. Firebase는 공개 회원가입·소셜 로그인·모바일 오프라인 동기화가 첫 출시의 핵심이 될 때 다시 비교한다.
