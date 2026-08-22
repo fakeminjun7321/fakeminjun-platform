@@ -40,6 +40,7 @@
 - [데이터 및 공개 API 계획](docs/data-source-plan.md)
 - [기술 아키텍처 초안](docs/architecture.md)
 - [Cloudflare-first 백엔드 구현 계획](docs/backend-cloudflare-plan.md)
+- [fakeminjun.vip 운영 배포 절차](docs/production-deployment.md)
 - [로컬 API v1 계약](docs/api-v1.md)
 - [구현·검증 기준](docs/verification-plan.md)
 - [보안·공급망 정책](SECURITY.md)
@@ -77,7 +78,7 @@ Vite는 `/api`를 `127.0.0.1:8787`의 Worker로 전달한다. 로컬 Access 개�
 ## 검증 상태
 
 - **Implemented**: 기획 문서, 국제정세·물리 프론트엔드, 전용 API Worker, D1 schema/seed, 사건·노트·수준·AI 분석 API, 고정 공식 RSS 수집기, 출처 수집함, 소유자별 사건 후보·검토 API와 지도 승격 차단 경로가 저장소에 존재
-- **Unit-verified**: `npm test` 64건 통과. 별도 Sites worker 묶음 `npm run test:sites` 5건 통과
+- **Unit-verified**: `npm test` 64건, Sites worker 5건, 운영 배포 경계 3건 통과
 - **Local-runtime-verified**: 실제 로컬 Wrangler와 임시 D1에서 migration, HTTP 사건·수집함 조회, Access 개발 신원, 수준·노트 저장과 사용자 격리, 2~8개 불변 메타데이터 스냅샷 후보, 검토 메모의 재조회, 지도 승격 fail-closed를 확인
 - **Browser-verified**: 인앱 브라우저에서 실제 공식 자료 선택 → 실제 OpenAI 후보 생성 → 검토 메모 저장 → 새로고침 후 유지 경로를 확인. 콘솔 `warn`/`error`는 0건이었고 390×844 브라우저 viewport에서 수평 overflow가 없었음
 - **Simulator-verified**: 미검증 — 390×844는 데스크톱 브라우저 viewport 확인이며 모바일 시뮬레이터 실행이 아님
