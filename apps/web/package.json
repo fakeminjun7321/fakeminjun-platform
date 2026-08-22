@@ -10,7 +10,9 @@
     "db:migrate:local": "wrangler d1 migrations apply fakeminjun-platform-local --local",
     "build": "vite build && node scripts/prepare-sites-build.mjs",
     "preview": "vite preview",
-    "security:check": "npm audit --omit=dev && npm audit signatures",
+    "security:audit": "npm audit",
+    "security:signatures": "npm audit signatures",
+    "security:check": "npm run security:audit && npm run security:signatures",
     "test:sites": "node --test tests/sites-worker.test.mjs",
     "test:backend": "npm run build && node scripts/test-backend.mjs"
   },
