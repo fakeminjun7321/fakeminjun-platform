@@ -20,6 +20,7 @@ Firebase는 첫 출시부터 공개 회원가입, 소셜 로그인, 비밀번호
 - `apps/web/migrations`: D1 관계형 schema와 명시적으로 `is_live=0`인 데모 사건 seed
 - 공개 읽기: health, 사건 bbox/날짜/레이어 목록, 사건 상세
 - 공식 출처 수집: 고정 RSS 4개, metadata-only 정규화, idempotent D1 upsert, 수집 이력, 공개 수집함 조회
+- 사건 후보: 사용자가 고른 2~8개 수집 메타데이터의 변경 불가능한 사본, 단일 OpenAI 구조화 분류, 개인 후보 목록·검토 이력, 지도 승격 fail-closed 잠금
 - 개인 경로: Access 신원 확인, 노트 CRUD, 국제정세·물리 수준 설정, OpenAI 일반·정밀 분석 생성·조회·삭제
 - 방어 경계: 서버 결정 소유자, 개인 쿼리의 `owner_id` 제한, 고정 Origin, JSON 전용, 16 KiB 본문 제한, 필드 allowlist, prepared statement, 노트 optimistic locking, 분석 idempotency·사용량 원장·응답 제한
 - `apps/web/src/backendClient.js`: 화면에서 사용할 same-origin API client와 구조화 오류 타입
@@ -69,6 +70,9 @@ Firebase는 첫 출시부터 공개 회원가입, 소셜 로그인, 비밀번호
 - `events`: 제목, 요약, 시간 범위, 중요도, 확인 상태
 - `event_locations`: 사건별 위도·경도·정확도·장소명
 - `event_sources`: 사건과 원자료의 다대다 연결
+- `event_candidates`, `event_candidate_sources`: 소유자별 메타데이터 가설과 생성 시점의 변경 불가능한 근거 사본
+- `event_candidate_reviews`: optimistic revision과 idempotent receipt를 가진 hold·reviewed·rejected 검토 이력
+- `event_candidate_usage_ledger`: 일반 분석과 분리된 사건 후보 생성 사용량·중복 요청 원장
 
 ### 근거와 분석
 
@@ -106,6 +110,21 @@ GET /api/v1/source-items?lanes=korea-core,us-impact,rapid-change&from=ISO_DATE&l
 - `bbox`, 날짜 범위, 레이어 수, 페이지 크기는 서버에서 제한한다.
 - 수집함은 실제 공식 RSS 메타데이터이지만 항상 `unverified`이며 사건 API와 분리한다.
 
+### 사건 후보와 수동 검토
+
+```http
+POST /api/v1/event-candidates
+GET  /api/v1/event-candidates?status=ready&reviewStatus=unreviewed&limit=20
+POST /api/v1/event-candidates/:candidateId/reviews
+POST /api/v1/event-candidates/:candidateId/promote
+```
+
+- 생성은 사용자가 고른 2~8개의 고유한 `sourceItemIds`만 받고, 정확한 Origin·Access 소유자·`Idempotency-Key`를 요구한다. immutable snapshot과 모델 계약의 digest가 같으면 다른 요청 키도 기존 후보를 재사용하며, 사용량 영수증·pending 후보·snapshot은 한 D1 batch로 예약한다.
+- 모델에는 URL이나 기사 본문을 보내지 않는다. 제목·시각·출처·수집 lane만 신뢰할 수 없는 데이터로 전달하고, strict schema와 서버의 evidence ID 집합 후검증을 모두 통과해야 후보가 된다.
+- 후보는 사실·좌표·영향도·출처 합의·검증 상태를 만들지 않는다. 응답의 `reviewed`는 사람이 메타데이터 묶음을 봤다는 뜻일 뿐 `verified`가 아니다.
+- 검토도 `Idempotency-Key`가 필수다. `candidateHash`와 `expectedRevision`으로 오래된 화면의 덮어쓰기를 차단하고, 같은 키·본문은 receipt로 재사용하며 같은 키의 다른 본문은 거부한다.
+- 기사 본문 수준 근거와 검토된 위치 계약이 생기기 전까지 승격 API는 편집자에게도 항상 `409 candidate_not_map_ready`를 반환하며 사건·지도 테이블을 쓰지 않는다.
+
 ### 노트와 설정
 
 ```http
@@ -139,6 +158,7 @@ DELETE /api/v1/analyses/:analysisId
 - 현재 AI 분석은 분야·모드·질문·사건 ID·설명 수준·제한된 화면 맥락을 받고, 사건 상세는 서버가 D1에서 다시 읽는다.
 - 일반 작업은 `gpt-5.6-luna` 한 번, 정밀 작업은 `gpt-5.6-terra` 두 번과 `gpt-5.6-sol` 통합 한 번으로 고정한다.
 - 현재 모델 출력의 근거 분류는 자동 검증된 인용이 아니다. 실제 출처 수집을 붙일 때 `analysis_evidence`와 서버 검증 evidence ID를 추가해야 한다.
+- 사건 후보 생성은 이와 별도로 `gpt-5.6-luna` 한 번만 직접 호출한다. 도구와 Agents SDK 루프를 쓰지 않으며, immutable metadata snapshot을 묶는 제한된 분류 작업으로만 사용한다.
 
 ## 지도 데이터 경로
 
@@ -186,7 +206,8 @@ preview와 production 바인딩은 자동 상속된다고 가정하지 않고 �
 - 개인 노트 저장 → Worker 재시작 후 재조회: 로컬 구현·검증
 - 고정 공식 RSS 4개 metadata-only 수집·중복 제거·D1 저장·브리핑 표시: 로컬 구현·실제 피드 검증
 - 기사 본문·이미지는 권리와 공격면을 줄이기 위해 저장하지 않음
-- 수집 자료를 복수 근거로 검증해 사건 후보로 승격하는 단계는 미구현
+- 수집 자료 2~8개를 metadata-only 가설 후보로 묶고 수동 검토하는 단계는 로컬 구현됨. 이는 복수 근거 검증이나 사건 승격이 아님
+- 기사 수준 근거·검토된 위치·검증 계약이 없으므로 후보의 지도 승격은 명시적으로 잠겨 있음
 - 허용되는 공급자의 원본이 필요해질 때 R2와 Queue에서 별도 구현
 - 지도에서 사건 선택 → 출처 확인
 - 현재 프론트 화면을 API client에 연결
@@ -219,12 +240,12 @@ preview와 production 바인딩은 자동 상속된다고 가정하지 않고 �
 
 ## 현재 검증 경계
 
-- **Implemented**: Worker BFF, D1 schema/seed, 사건·수집함·세션·노트·수준·OpenAI 분석 API, 고정 공식 RSS 수집기, same-origin 프론트 client와 로컬 개발 설정
-- **Unit-verified**: 일반 Node 테스트 52건 및 Sites 전용 테스트 5건 통과
-- **Local-runtime-verified**: 실제 로컬 Wrangler와 임시 D1에서 migration, 사건·수집함 HTTP 요청, 재시작 후 영속성, 다른 사용자 데이터 격리와 삭제 확인
-- **Browser-verified**: 실제 수집함 12건, 한국→미국→급변 편집 순서, 상태 경계와 안전한 원문 링크, 콘솔 오류 없음을 인앱 브라우저에서 확인
+- **Implemented**: Worker BFF, D1 schema/seed, 사건·수집함·세션·노트·수준·OpenAI 분석 API, 고정 공식 RSS 수집기, metadata-only 사건 후보·검토·승격 잠금, same-origin 프론트 client와 로컬 개발 설정
+- **Unit-verified**: 일반 Node 테스트 64건 및 Sites 전용 테스트 5건 통과
+- **Local-runtime-verified**: 실제 로컬 Wrangler와 임시 D1에서 migration, 사건·수집함 HTTP 요청, 사건 후보 목록·검토 idempotency·사용자 격리·승격 0건 잠금, 재시작 후 영속성과 삭제 확인
+- **Browser-verified**: 실제 수집함 12건 표시와 안전한 원문 링크에 더해 자료 2건 선택 → 실제 OpenAI 후보 생성 → 검토 메모 저장 → 새로고침 후 유지 경로를 인앱 브라우저에서 확인. 콘솔 warning/error 0건, 390×844 브라우저 viewport 수평 overflow 없음
 - **Simulator-verified**: **Not verified / 미검증**
 - **Physical-device-verified**: **Not verified / 미검증**
-- **Live-service-verified**: 로컬 Worker에서 공식 RSS 4개 총 99건 수집과 로컬 D1 조회 확인. 이전 실행에서 실제 OpenAI 일반·정밀 분석과 D1 저장·재조회·idempotent replay 확인. Cloudflare 계정의 원격 D1·Access·Worker 배포는 **Not verified / 미검증**
+- **Live-service-verified**: 로컬 Worker에서 공식 RSS 4개 총 99건 수집과 로컬 D1 조회 확인. 실제 OpenAI 일반·정밀 분석과 사건 후보 2건의 구조화 응답·D1 저장을 확인했고, 같은 근거 재요청이 새 후보·사용량을 만들지 않는 것과 검토 receipt 재사용, 지도 승격 `eventsWritten: 0`을 확인. Cloudflare 계정의 원격 D1·Access·Worker 배포는 **Not verified / 미검증**
 - R2, Queue, Workflows, Vectorize, DNS, production Cron: **Not verified / 미검증**
 - 실제 업로드 악성코드 검사와 antivirus/EDR: **Not verified / 미검증**

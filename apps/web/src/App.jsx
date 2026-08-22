@@ -273,7 +273,19 @@ function sourceTimestamp(value) {
   return `${values.month}.${values.day} · ${values.hour}:${values.minute}`;
 }
 
-function SourceInbox({ state }) {
+function safeExternalUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function SourceInbox({ state, selectedIds, createState, onToggle, onCreate, onCancelCreate }) {
+  const selectedCount = selectedIds.size;
+  const selectionReady = selectedCount >= 2 && selectedCount <= 8;
+
   return (
     <section className="source-inbox" aria-labelledby="source-inbox-title">
       <header>
@@ -296,25 +308,235 @@ function SourceInbox({ state }) {
       )}
       {state.items.length > 0 && (
         <ol className="source-item-list">
-          {state.items.map((item) => (
-            <li key={`${item.source.key}-${item.providerItemId}`}>
-              <div className="source-item-meta">
-                <span className={`source-lane lane-${item.lane}`}>{SOURCE_LANE_LABELS[item.lane] ?? item.lane}</span>
-                <span>{item.source.name}</span>
-                <time dateTime={item.publishedAt ?? item.collectedAt}>{sourceTimestamp(item.publishedAt)}</time>
-              </div>
-              <a href={item.originalUrl} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">
-                {item.title}<ArrowRight size={14} aria-hidden="true" />
-              </a>
-            </li>
-          ))}
+          {state.items.map((item) => {
+            const selected = selectedIds.has(item.id);
+            const sourceUrl = safeExternalUrl(item.originalUrl);
+            return (
+              <li className={selected ? "is-selected" : ""} key={item.id ?? `${item.source.key}-${item.providerItemId}`}>
+                <label className="source-item-selector">
+                  <input
+                    type="checkbox"
+                    checked={selected}
+                    disabled={createState.status === "submitting" || (!selected && selectedCount >= 8)}
+                    onChange={() => onToggle(item.id)}
+                    aria-label={`${item.title} 후보 자료로 선택`}
+                  />
+                  <span aria-hidden="true" />
+                </label>
+                <div className="source-item-copy">
+                  <div className="source-item-meta">
+                    <span className={`source-lane lane-${item.lane}`}>{SOURCE_LANE_LABELS[item.lane] ?? item.lane}</span>
+                    <span>{item.source.name}</span>
+                    <time dateTime={item.publishedAt ?? item.collectedAt}>{sourceTimestamp(item.publishedAt)}</time>
+                  </div>
+                  {sourceUrl ? (
+                    <a href={sourceUrl} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">
+                      {item.title}<ArrowRight size={14} aria-hidden="true" />
+                    </a>
+                  ) : <strong className="source-title-without-link">{item.title}</strong>}
+                </div>
+              </li>
+            );
+          })}
         </ol>
       )}
+      <footer className="source-selection-command" aria-busy={createState.status === "submitting"}>
+        <div>
+          <span><strong>{selectedCount}</strong> / 8 SELECTED</span>
+          <p>{selectionReady ? "선택한 자료를 하나의 사건 가설로 묶을 수 있습니다." : "서로 관련 있어 보이는 자료를 2개 이상 선택하세요."}</p>
+        </div>
+        <div className="source-selection-actions">
+          {createState.status === "submitting" ? (
+            <button className="candidate-cancel" type="button" onClick={onCancelCreate}>요청 취소</button>
+          ) : null}
+          <button className="candidate-create" type="button" disabled={!selectionReady || createState.status === "submitting"} onClick={onCreate}>
+            {createState.status === "submitting" ? "후보 생성 중…" : "사건 후보 만들기"}
+          </button>
+        </div>
+      </footer>
+      {createState.message ? (
+        <p className={`candidate-request-notice${createState.status === "error" ? " is-error" : ""}`} role={createState.status === "error" ? "alert" : "status"}>
+          {createState.message}
+        </p>
+      ) : null}
     </section>
   );
 }
 
-function BriefingPage({ events, selectedId, onSelect, onOpenIssues, sourceState }) {
+const CANDIDATE_REVIEW_LABELS = {
+  pending: "UNREVIEWED",
+  unreviewed: "UNREVIEWED",
+  hold: "HOLD",
+  reviewed: "REVIEWED · NOT VERIFIED",
+  rejected: "REJECTED",
+};
+
+function textItems(value) {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (typeof item === "string") return item.trim() ? [item] : [];
+    const text = item?.detail ?? item?.summary ?? item?.assessment ?? item?.label;
+    return typeof text === "string" && text.trim() ? [text] : [];
+  });
+}
+
+function CandidateTextList({ title, items, emptyText }) {
+  const visibleItems = textItems(items);
+  return (
+    <section>
+      <h5>{title}</h5>
+      {visibleItems.length ? <ul>{visibleItems.map((item, index) => <li key={`${item}-${index}`}>{item}</li>)}</ul> : <p>{emptyText}</p>}
+    </section>
+  );
+}
+
+function CandidateEvidence({ candidate }) {
+  const snapshots = Array.isArray(candidate.evidenceSnapshots) ? candidate.evidenceSnapshots : [];
+  const assessments = Array.isArray(candidate.sourceAssessments) ? candidate.sourceAssessments : [];
+  const snapshotsByEvidence = new Map(snapshots.map((snapshot) => [snapshot.evidenceId ?? snapshot.sourceItemId, snapshot]));
+  const relationshipLabels = {
+    "same-development": "동일 전개 가능성",
+    context: "배경 맥락",
+    "possibly-unrelated": "관련성 낮을 수 있음",
+  };
+
+  return (
+    <section className="candidate-evidence" aria-label="근거 스냅샷과 출처 평가">
+      <div className="candidate-subheading"><h4>근거 스냅샷</h4><span>{snapshots.length} SOURCE RECORDS</span></div>
+      {snapshots.length ? (
+        <ol>
+          {snapshots.map((snapshot, index) => {
+            const sourceUrl = safeExternalUrl(snapshot.originalUrl ?? snapshot.url);
+            return (
+              <li key={snapshot.sourceItemId ?? `${snapshot.title}-${index}`}>
+                <span>{String(index + 1).padStart(2, "0")}</span>
+                <div>
+                  <small>{snapshot.sourceName ?? snapshot.source?.name ?? "공식 출처"} · {sourceTimestamp(snapshot.publishedAt)}</small>
+                  {sourceUrl ? (
+                    <a href={sourceUrl} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">
+                      {snapshot.title ?? "제목 없는 자료"}<ArrowRight size={13} aria-hidden="true" />
+                    </a>
+                  ) : <strong>{snapshot.title ?? "제목 없는 자료"}</strong>}
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      ) : <p className="candidate-empty-detail">저장된 근거 스냅샷이 없습니다.</p>}
+      {assessments.length ? (
+        <dl className="candidate-assessments">
+          {assessments.map((assessment, index) => (
+            <div key={assessment.sourceItemId ?? `${assessment.sourceName}-${index}`}>
+              <dt>{assessment.sourceName ?? assessment.source?.name ?? snapshotsByEvidence.get(assessment.evidenceId)?.sourceName ?? `출처 ${index + 1}`}</dt>
+              <dd>
+                {relationshipLabels[assessment.relationship] ?? assessment.relationship ?? assessment.assessment ?? assessment.summary ?? assessment.role ?? "메타데이터 관계 평가 없음"}
+                {assessment.note ? ` · ${assessment.note}` : ""}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+    </section>
+  );
+}
+
+export function CandidateReviewDesk({ state, noteDrafts, reviewState, onNoteChange, onReview }) {
+  return (
+    <section className="candidate-review-desk" aria-labelledby="candidate-review-title">
+      <header>
+        <div><p className="system-kicker">CANDIDATE REVIEW DESK</p><h3 id="candidate-review-title">사건 후보 검토대</h3></div>
+        <div className="candidate-boundary" aria-label="후보 자료 상태">
+          <span>METADATA HYPOTHESIS</span><span>UNVERIFIED</span><span>MAP PROMOTION LOCKED</span>
+        </div>
+      </header>
+      <p className="candidate-desk-explainer">
+        여러 공식 출처가 같은 사건을 가리킬 가능성을 메타데이터로 묶은 가설입니다. 검토 상태를 바꿔도 사실 검증이나 지도 반영은 이루어지지 않습니다.
+      </p>
+      {reviewState.message ? (
+        <p className={`candidate-request-notice${reviewState.status === "error" ? " is-error" : ""}`} role={reviewState.status === "error" ? "alert" : "status"}>
+          {reviewState.message}
+        </p>
+      ) : null}
+      {state.status === "loading" ? <p className="candidate-empty">저장된 사건 후보를 불러오는 중입니다.</p> : null}
+      {state.status === "error" ? (
+        <p className="candidate-empty is-error" role="alert">후보 목록 API에 연결하지 못했습니다. 공식 출처 수집함의 자료에는 영향을 주지 않습니다.</p>
+      ) : null}
+      {state.status === "ready" && state.items.length === 0 ? (
+        <p className="candidate-empty">아직 생성된 후보가 없습니다. 위 수집함에서 관련 있어 보이는 공식 자료 2~8개를 선택해 첫 가설을 만드세요.</p>
+      ) : null}
+      {state.items.length ? (
+        <div className="candidate-records">
+          {state.items.map((candidate) => {
+            const candidateId = String(candidate.id);
+            const displayCandidate = { ...candidate, ...(candidate.result ?? {}) };
+            const reviewStatus = candidate.reviewStatus ?? candidate.reviewDecision ?? "unreviewed";
+            const reviewPending = reviewState.status === "submitting" && reviewState.candidateId === candidateId;
+            const reviewProtected = candidate.revision !== undefined && Boolean(candidate.candidateHash);
+            return (
+              <article className={`candidate-record status-${reviewStatus}`} key={candidateId}>
+                <header>
+                  <div className="candidate-record-code">
+                    <span>CANDIDATE {candidateId}</span>
+                    <strong>{CANDIDATE_REVIEW_LABELS[reviewStatus] ?? reviewStatus.toUpperCase()}</strong>
+                  </div>
+                  <div className="candidate-record-location">
+                    <span>{displayCandidate.regionLabel ?? "지역 미분류"}</span>
+                    <span>{SOURCE_LANE_LABELS[displayCandidate.laneRecommendation] ?? displayCandidate.laneRecommendation ?? "레인 추천 없음"}</span>
+                  </div>
+                </header>
+                <div className="candidate-record-lead">
+                  <h4>{displayCandidate.title ?? "제목 없는 사건 후보"}</h4>
+                  <p>{displayCandidate.summary ?? "요약이 생성되지 않았습니다."}</p>
+                  <dl><div><dt>묶은 이유</dt><dd>{displayCandidate.whyGrouped ?? "자료 간 관계 설명이 없습니다."}</dd></div></dl>
+                </div>
+                <CandidateEvidence candidate={displayCandidate} />
+                <div className="candidate-check-grid">
+                  <CandidateTextList title="불확실성" items={displayCandidate.uncertainties} emptyText="기록된 불확실성이 없습니다." />
+                  <CandidateTextList title="다음 확인" items={displayCandidate.nextChecks} emptyText="제안된 다음 확인 절차가 없습니다." />
+                </div>
+                <footer className="candidate-review-command" aria-busy={reviewPending}>
+                  <label htmlFor={`candidate-note-${candidateId}`}>검토 메모 <span>선택</span></label>
+                  <input
+                    id={`candidate-note-${candidateId}`}
+                    type="text"
+                    maxLength={500}
+                    value={noteDrafts[candidateId] ?? ""}
+                    onChange={(eventObject) => onNoteChange(candidateId, eventObject.target.value)}
+                    placeholder="보류·기각 이유 또는 다음 확인 조건"
+                    disabled={reviewPending}
+                  />
+                  <div>
+                    <button type="button" disabled={reviewPending || !reviewProtected} onClick={() => onReview(candidate, "hold")}>보류</button>
+                    <button type="button" disabled={reviewPending || !reviewProtected} onClick={() => onReview(candidate, "reviewed")}>검토 완료 · 검증 아님</button>
+                    <button type="button" disabled={reviewPending || !reviewProtected} onClick={() => onReview(candidate, "rejected")}>기각</button>
+                  </div>
+                </footer>
+              </article>
+            );
+          })}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function BriefingPage({
+  events,
+  selectedId,
+  onSelect,
+  onOpenIssues,
+  sourceState,
+  selectedSourceIds,
+  createState,
+  candidateState,
+  noteDrafts,
+  reviewState,
+  onToggleSource,
+  onCreateCandidate,
+  onCancelCandidate,
+  onNoteChange,
+  onReviewCandidate,
+}) {
   return (
     <main className="focused-workspace briefing-workspace">
       <header className="workspace-heading">
@@ -325,7 +547,21 @@ function BriefingPage({ events, selectedId, onSelect, onOpenIssues, sourceState 
         </div>
         <span className="workspace-count">{events.length} DEMO SIGNALS</span>
       </header>
-      <SourceInbox state={sourceState} />
+      <SourceInbox
+        state={sourceState}
+        selectedIds={selectedSourceIds}
+        createState={createState}
+        onToggle={onToggleSource}
+        onCreate={onCreateCandidate}
+        onCancelCreate={onCancelCandidate}
+      />
+      <CandidateReviewDesk
+        state={candidateState}
+        noteDrafts={noteDrafts}
+        reviewState={reviewState}
+        onNoteChange={onNoteChange}
+        onReview={onReviewCandidate}
+      />
       <div className="briefing-section-label">
         <div><p className="system-kicker">ANALYSIS PROTOTYPE</p><h3>분석용 데모 신호</h3></div>
         <span>NON-LIVE DEMO</span>
@@ -668,9 +904,18 @@ export function App() {
   const [physicsLevel, setPhysicsLevel] = useState(4);
   const [notice, setNotice] = useState("");
   const [sourceState, setSourceState] = useState({ status: "idle", items: [], collectionStatus: "unknown" });
+  const [selectedSourceIds, setSelectedSourceIds] = useState(() => new Set());
+  const [candidateState, setCandidateState] = useState({ status: "idle", items: [] });
+  const [createState, setCreateState] = useState({ status: "idle", message: "" });
+  const [reviewState, setReviewState] = useState({ status: "idle", candidateId: null, message: "" });
+  const [candidateNoteDrafts, setCandidateNoteDrafts] = useState({});
   const noticeTimerRef = useRef(null);
   const aiTriggerRef = useRef(null);
   const aiOpenerRef = useRef(null);
+  const candidateCreateRef = useRef(null);
+  const candidateCreateAttemptRef = useRef(null);
+  const candidateReviewRef = useRef(null);
+  const candidateReviewAttemptRef = useRef(null);
   const topSignals = useMemo(() => getTopSignals(EVENTS, 3), []);
   const selectedEvent = EVENTS.find((event) => event.id === selectedId) ?? EVENTS[0];
   const domain = domainFromRoute(route);
@@ -716,24 +961,145 @@ export function App() {
     if (route !== "briefing") return undefined;
     const controller = new AbortController();
     setSourceState((current) => ({ ...current, status: "loading" }));
-    Promise.all([
+    setCandidateState((current) => ({ ...current, status: "loading" }));
+    const sourceRequest = Promise.all([
       backendClient.listSourceItems({ lanes: ["korea-core"], limit: 4, signal: controller.signal }),
       backendClient.listSourceItems({ lanes: ["us-impact"], limit: 4, signal: controller.signal }),
       backendClient.listSourceItems({ lanes: ["rapid-change"], limit: 4, signal: controller.signal }),
-    ])
+    ]);
+    const candidateRequest = backendClient.listEventCandidates({ limit: 20, signal: controller.signal });
+
+    void sourceRequest
       .then((groups) => {
         const statuses = groups.map(({ meta }) => meta.collectionStatus ?? "unknown");
         const collectionStatus = statuses.includes("degraded") ? "degraded"
           : statuses.includes("not-collected") ? "not-collected"
             : statuses.includes("stale") ? "stale"
               : statuses.every((status) => status === "current") ? "current" : "unknown";
-        setSourceState({ status: "ready", items: groups.flatMap(({ data }) => data), collectionStatus });
+        const items = groups.flatMap(({ data }) => data);
+        setSourceState({ status: "ready", items, collectionStatus });
+        const visibleIds = new Set(items.map(({ id }) => id));
+        setSelectedSourceIds((current) => new Set([...current].filter((id) => visibleIds.has(id))));
       })
       .catch((error) => {
         if (error?.name !== "AbortError") setSourceState((current) => ({ ...current, status: "error", collectionStatus: "unknown" }));
       });
-    return () => controller.abort();
+
+    void candidateRequest
+      .then((items) => setCandidateState({ status: "ready", items }))
+      .catch((error) => {
+        if (error?.name !== "AbortError") setCandidateState((current) => ({ ...current, status: "error" }));
+      });
+
+    return () => {
+      controller.abort();
+      candidateCreateRef.current?.abort();
+      candidateReviewRef.current?.abort();
+    };
   }, [route]);
+
+  function toggleSourceSelection(sourceItemId) {
+    setSelectedSourceIds((current) => {
+      const next = new Set(current);
+      if (next.has(sourceItemId)) next.delete(sourceItemId);
+      else if (next.size < 8) next.add(sourceItemId);
+      return next;
+    });
+  }
+
+  async function createCandidate() {
+    const sourceItemIds = [...selectedSourceIds];
+    if (sourceItemIds.length < 2 || sourceItemIds.length > 8 || createState.status === "submitting") return;
+    const requestSignature = JSON.stringify([...sourceItemIds].sort((left, right) => left - right));
+    if (candidateCreateAttemptRef.current?.signature !== requestSignature) {
+      candidateCreateAttemptRef.current = { signature: requestSignature, idempotencyKey: crypto.randomUUID() };
+    }
+    const controller = new AbortController();
+    candidateCreateRef.current?.abort();
+    candidateCreateRef.current = controller;
+    setCreateState({ status: "submitting", message: "선택 자료의 사건 후보 가설을 생성하고 있습니다." });
+    try {
+      const created = await backendClient.createEventCandidate(
+        { sourceItemIds },
+        { signal: controller.signal, idempotencyKey: candidateCreateAttemptRef.current.idempotencyKey },
+      );
+      setCandidateState((current) => ({
+        status: "ready",
+        items: [created, ...current.items.filter(({ id }) => String(id) !== String(created.id))],
+      }));
+      setSelectedSourceIds(new Set());
+      candidateCreateAttemptRef.current = null;
+      setCreateState({ status: "success", message: "사건 후보를 저장했습니다. 메타데이터 가설이며 아직 검증되지 않았습니다." });
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        setCreateState({ status: "cancelled", message: "사건 후보 생성 요청을 취소했습니다." });
+      } else {
+        if (error instanceof BackendApiError && error.status >= 400 && error.status < 500 && ![408, 425, 429].includes(error.status)) {
+          candidateCreateAttemptRef.current = null;
+        }
+        setCreateState({ status: "error", message: error?.message ?? "사건 후보 생성 요청을 처리하지 못했습니다." });
+      }
+    } finally {
+      if (candidateCreateRef.current === controller) candidateCreateRef.current = null;
+    }
+  }
+
+  function cancelCandidateCreation() {
+    candidateCreateRef.current?.abort();
+  }
+
+  function changeCandidateNote(candidateId, value) {
+    setCandidateNoteDrafts((current) => ({ ...current, [candidateId]: value }));
+  }
+
+  async function reviewCandidate(candidate, decision) {
+    const candidateId = String(candidate.id);
+    if (reviewState.status === "submitting" || candidate.revision === undefined || !candidate.candidateHash) return;
+    const note = candidateNoteDrafts[candidateId]?.trim();
+    const reviewPayload = {
+      decision,
+      expectedRevision: candidate.revision,
+      candidateHash: candidate.candidateHash,
+      ...(note ? { note } : {}),
+    };
+    const requestSignature = JSON.stringify({ candidateId, ...reviewPayload });
+    if (candidateReviewAttemptRef.current?.signature !== requestSignature) {
+      candidateReviewAttemptRef.current = { signature: requestSignature, idempotencyKey: crypto.randomUUID() };
+    }
+    const controller = new AbortController();
+    candidateReviewRef.current?.abort();
+    candidateReviewRef.current = controller;
+    setReviewState({ status: "submitting", candidateId, message: "검토 상태를 저장하고 있습니다." });
+    try {
+      const updated = await backendClient.reviewEventCandidate(
+        candidate.id,
+        reviewPayload,
+        { signal: controller.signal, idempotencyKey: candidateReviewAttemptRef.current.idempotencyKey },
+      );
+      setCandidateState((current) => ({
+        status: "ready",
+        items: current.items.map((item) => (String(item.id) === candidateId ? updated : item)),
+      }));
+      setCandidateNoteDrafts((current) => ({ ...current, [candidateId]: "" }));
+      candidateReviewAttemptRef.current = null;
+      setReviewState({
+        status: "success",
+        candidateId,
+        message: "검토 상태를 저장했습니다. 사실 검증 완료나 지도 승격을 의미하지 않습니다.",
+      });
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        setReviewState({ status: "cancelled", candidateId, message: "검토 요청을 취소했습니다." });
+      } else {
+        if (error instanceof BackendApiError && error.status >= 400 && error.status < 500 && ![408, 425, 429].includes(error.status)) {
+          candidateReviewAttemptRef.current = null;
+        }
+        setReviewState({ status: "error", candidateId, message: error?.message ?? "검토 상태를 저장하지 못했습니다." });
+      }
+    } finally {
+      if (candidateReviewRef.current === controller) candidateReviewRef.current = null;
+    }
+  }
 
   function navigate(nextRoute) {
     const path = ROUTES[nextRoute];
@@ -782,6 +1148,16 @@ export function App() {
             onSelect={setSelectedId}
             onOpenIssues={openIssues}
             sourceState={sourceState}
+            selectedSourceIds={selectedSourceIds}
+            createState={createState}
+            candidateState={candidateState}
+            noteDrafts={candidateNoteDrafts}
+            reviewState={reviewState}
+            onToggleSource={toggleSourceSelection}
+            onCreateCandidate={createCandidate}
+            onCancelCandidate={cancelCandidateCreation}
+            onNoteChange={changeCandidateNote}
+            onReviewCandidate={reviewCandidate}
           />
         )}
 

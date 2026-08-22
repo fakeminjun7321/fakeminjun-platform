@@ -7,7 +7,7 @@
 - JavaScript 의존성은 `package-lock.json`에 고정하고 `.npmrc`의 `ignore-scripts=true`를 기본으로 유지한다.
 - 새 패키지는 기존 코드로 안전하게 구현하기 어려울 때만 추가한다. 이번 RSS 수집기는 외부 XML 패키지를 추가하지 않았다.
 - 의존성 변경 전후에 출처, 유지보수 상태, 설치 스크립트, 알려진 취약점과 registry signature를 확인한다.
-- `npm audit --omit=dev`와 `npm audit signatures`를 PR·main push·주간 CI에서 실행한다.
+- 전체 `npm audit`와 `npm audit signatures`를 PR·main push·주간 CI에서 실행한다.
 - Dependabot은 npm과 GitHub Actions 업데이트 PR을 매주 만들며 자동 병합하지 않는다. 테스트와 변경분 검토 뒤에만 반영한다.
 - GitHub Actions는 tag가 아니라 commit SHA로 고정한다.
 

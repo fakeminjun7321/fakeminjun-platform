@@ -68,6 +68,80 @@ test("backend client serializes the source inbox query and forwards abort", asyn
   assert.equal(calls[0].options.signal, controller.signal);
 });
 
+test("backend client lists event candidates with review filters and abort support", async () => {
+  const calls = [];
+  const controller = new AbortController();
+  const client = createBackendClient({
+    baseUrl: "https://app.example.test/",
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return jsonResponse({ data: [{ id: "candidate-1", reviewStatus: "hold" }] });
+    },
+  });
+
+  const candidates = await client.listEventCandidates({
+    limit: 20,
+    reviewStatus: "hold",
+    signal: controller.signal,
+  });
+
+  assert.equal(candidates[0].id, "candidate-1");
+  const calledUrl = new URL(calls[0].url);
+  assert.equal(calledUrl.pathname, "/api/v1/event-candidates");
+  assert.equal(calledUrl.searchParams.get("limit"), "20");
+  assert.equal(calledUrl.searchParams.get("reviewStatus"), "hold");
+  assert.equal(calls[0].options.signal, controller.signal);
+});
+
+test("backend client creates an idempotent event candidate from bounded source IDs", async () => {
+  const calls = [];
+  const controller = new AbortController();
+  const client = createBackendClient({
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return jsonResponse({ data: { id: "candidate-2", reviewStatus: "unreviewed" } }, { status: 201 });
+    },
+  });
+
+  const candidate = await client.createEventCandidate(
+    { sourceItemIds: [4, 7] },
+    { signal: controller.signal, idempotencyKey: "candidate-create-1" },
+  );
+
+  assert.equal(candidate.id, "candidate-2");
+  assert.equal(calls[0].url, "/api/v1/event-candidates");
+  assert.equal(calls[0].options.method, "POST");
+  assert.equal(calls[0].options.signal, controller.signal);
+  assert.equal(calls[0].options.headers["idempotency-key"], "candidate-create-1");
+  assert.deepEqual(JSON.parse(calls[0].options.body), { sourceItemIds: [4, 7] });
+});
+
+test("backend client submits an optimistic and idempotent candidate review", async () => {
+  const calls = [];
+  const client = createBackendClient({
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return jsonResponse({ data: { id: "candidate/2", reviewStatus: "reviewed", revision: 3 } });
+    },
+  });
+  const review = {
+    decision: "reviewed",
+    expectedRevision: 2,
+    candidateHash: "hash-2",
+    note: "추가 확인 완료",
+  };
+
+  const updated = await client.reviewEventCandidate("candidate/2", review, {
+    idempotencyKey: "candidate-review-1",
+  });
+
+  assert.equal(updated.reviewStatus, "reviewed");
+  assert.equal(calls[0].url, "/api/v1/event-candidates/candidate%2F2/reviews");
+  assert.equal(calls[0].options.method, "POST");
+  assert.equal(calls[0].options.headers["idempotency-key"], "candidate-review-1");
+  assert.deepEqual(JSON.parse(calls[0].options.body), review);
+});
+
 test("backend client sends JSON writes without accepting an owner ID", async () => {
   const calls = [];
   const client = createBackendClient({

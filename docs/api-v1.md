@@ -78,6 +78,10 @@ API 응답은 기본적으로 `Cache-Control: no-store`, `X-Content-Type-Options
 | `DELETE` | `/api/v1/notes/:noteId` | 현재 사용자 노트 삭제 |
 | `GET` | `/api/v1/profile/levels` | 국제정세·물리 수준 조회 |
 | `PUT` | `/api/v1/profile/levels` | 수준 저장 (`I1..I5`, `P1..P5`, 또는 `null`) |
+| `GET` | `/api/v1/event-candidates` | 현재 사용자의 메타데이터 사건 후보 목록 |
+| `POST` | `/api/v1/event-candidates` | 공식 출처 자료 2~8개로 미검증 후보 생성 |
+| `POST` | `/api/v1/event-candidates/:candidateId/reviews` | 후보 보류·검토 완료·기각 영수증 저장 |
+| `POST` | `/api/v1/event-candidates/:candidateId/promote` | 편집자 전용 승격 잠금 확인; 현재 항상 409이며 사건을 쓰지 않음 |
 | `POST` | `/api/v1/analyses` | OpenAI 구조화 분석 생성 |
 | `GET` | `/api/v1/analyses/:analysisId` | 현재 사용자의 분석 상태·결과 조회 |
 | `DELETE` | `/api/v1/analyses/:analysisId` | 완료·실패 분석의 개인 내용 삭제 |
@@ -103,6 +107,36 @@ API 응답은 기본적으로 `Cache-Control: no-store`, `X-Content-Type-Options
 ```
 
 서버는 owner ID를 요청에서 받지 않는다. Access의 안정적인 identity ID로 내부 사용자를 결정하고 모든 개인 쿼리를 `owner_id`로 제한한다. 오래된 `expectedVersion` 수정은 `409 note_version_conflict`를 반환한다.
+
+### 메타데이터 사건 후보
+
+후보 생성 본문은 정확히 다음 필드만 받으며 `Idempotency-Key`가 필수다.
+
+```json
+{ "sourceItemIds": [12, 18] }
+```
+
+- ID는 중복 없는 양의 정수 2~8개다. 서버는 제목·원문 URL·발행/수집 시각·출처 정보를 후보별 immutable snapshot으로 저장한다.
+- OpenAI 입력에는 snapshot 중 제목·시각·출처 이름/역할·수집 lane만 전달한다. 저장된 URL과 수집하지 않은 원문 본문은 모델에 넣지 않는다.
+- 후보 모델 출력은 `title`, `summary`, `whyGrouped`, `regionLabel`, `laneRecommendation`, `sourceAssessments`, `uncertainties`, `nextChecks`로 한정한다. 사실 목록·좌표·영향·합치도·검증 완료를 생성하지 않는다.
+- `sourceAssessments`의 `evidenceId`는 요청한 출처 ID를 각각 정확히 한 번 포함해야 한다. strict schema 뒤에도 서버가 집합 일치 여부를 다시 검사한다.
+- 일반 후보는 `gpt-5.6-luna` 1회, low reasoning, 도구 없음, `store: false`로 생성한다. 별도 사용량 원장은 10분 10회, 하루 30회, 30일 200회를 제한하며 후보를 지워도 원장은 남는다. 같은 소유자의 immutable snapshot 집합·prompt version·모델 계약이 같으면 `Idempotency-Key`가 달라도 저장된 후보를 반환해 모델 비용을 다시 쓰지 않는다. 사용량 예약과 pending 후보·snapshot 저장은 한 D1 batch로 묶어 후보 저장 실패 시 사용량 영수증만 남지 않게 한다.
+- 목록 조건은 `status=pending|ready|failed`, `reviewStatus=unreviewed|hold|reviewed|rejected`, `limit=1..50`이다.
+
+검토도 정확한 Origin·Access 소유자와 `Idempotency-Key`를 요구한다. 본문은 후보 hash와 revision을 함께 보내 optimistic locking을 적용한다.
+
+```json
+{
+  "decision": "reviewed",
+  "expectedRevision": 1,
+  "candidateHash": "64자리 sha256 hex",
+  "note": "원문 추가 대조 필요"
+}
+```
+
+같은 `Idempotency-Key`와 동일 본문의 재전송은 같은 검토 영수증을 반환하고, 같은 키에 다른 본문을 쓰면 `409 idempotency_conflict`다. `reviewed`는 사용자가 후보를 검토했다는 뜻일 뿐 `verified`가 아니다. 후보 API는 항상 `verificationStatus: unverified`, `evidenceScope: source-metadata-only`, `mapReadiness.ready: false`를 반환한다.
+
+승격 경로는 정확한 Origin, Access 신원, `EVENT_EDITOR_SUBJECT` 일치를 모두 확인한 뒤에도 `409 candidate_not_map_ready`와 `eventsWritten: 0`을 반환한다. 원문 근거와 사용자 확인 위치를 위한 별도 계약이 생기기 전에는 `events`, `event_locations`, `event_sources`에 쓰지 않는다.
 
 분석 생성은 `domain`, `mode`, `prompt`, 선택적인 `eventId`, `level`, 제한된 화면 맥락만 받는다. 모델 이름, 소유자, 도구와 공급자 URL은 브라우저가 정할 수 없다. `Idempotency-Key`가 필수이며 같은 키에 다른 본문을 쓰면 `409 idempotency_conflict`다. 삭제 후에도 별도 사용량 원장은 남아 삭제→재호출로 한도를 우회할 수 없다.
 
@@ -134,4 +168,4 @@ API 응답은 기본적으로 `Cache-Control: no-store`, `X-Content-Type-Options
 - 수집 실패는 기존 성공 자료를 삭제하지 않으며 오류 코드만 기록
 - scheduled handler는 구현했지만 production Cron Trigger는 아직 설정하지 않음
 
-production Access 정책과 원격 D1/Cron은 아직 구현·검증하지 않았다. R2 파일과 캡처·OCR도 이 계약에 포함되지 않는다. 공식 RSS와 OpenAI 경로는 로컬 Worker에서 실제 서비스 요청을 검증했지만 production Cloudflare 경로는 별도 검증 대상이다.
+production Access 정책과 원격 D1/Cron은 아직 구현·검증하지 않았다. R2 파일과 캡처·OCR도 이 계약에 포함되지 않는다. 공식 RSS와 기존 분석 OpenAI 경로는 로컬 Worker에서 실제 서비스 요청을 검증했지만 production Cloudflare 경로는 별도 검증 대상이다. 사건 후보 생성도 로컬 Worker에서 실제 OpenAI Responses 요청, 로컬 D1 저장, 중복 근거 재사용, 검토 영속성, 지도 승격 0건 잠금을 확인했다. 이는 원격 Cloudflare 배포 검증을 대신하지 않는다.
