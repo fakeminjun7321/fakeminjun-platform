@@ -134,6 +134,7 @@ AI 응답은 자유형 Markdown 한 덩어리가 아니라 다음 구조를 기�
 - 구현된 데이터 경계: 공개 데모 사건 읽기, 공식 RSS 4개 metadata-only 수집함, 2~8개 불변 메타데이터 스냅샷 사건 후보, Access 기반 개인 신원, owner-scoped 후보·검토·노트·수준 설정
 - 운영 확장 추천: R2 + Queues + Workflows
 - 후속 추천: Workflows, Vectorize, OpenAI-only 비동기 분석 작업
-- 아직 미확정: 실제 Cloudflare 리소스, production Access/Cron 정책, 인증 공개 범위, 원문 검증을 거친 지도 사건 승격 규칙, 비용 상한
+- 배포·검증됨: 분리된 production 프론트/API Worker, D1, 전체 도메인 Access, OpenAI secret, 30분 Cron과 공식 RSS 4개 metadata-only 저장
+- 아직 미확정: 원문 검증을 거친 지도 사건 승격 규칙, 비용 상한, R2·Queue·Workflow 도입 시점, 공개 사용자 인증 범위
 
 선택 기준은 시각적 선호가 아니라 실제 데이터 수집, 캡처 업로드, 저장, 검색, 인용 검증을 가장 작은 비용으로 끝까지 실행할 수 있는지다. Firebase는 공개 회원가입·소셜 로그인·모바일 오프라인 동기화가 첫 출시의 핵심이 될 때 다시 비교한다.

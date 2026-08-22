@@ -166,6 +166,6 @@ API 응답은 기본적으로 `Cache-Control: no-store`, `X-Content-Type-Options
 - 제목·기관·원문 링크·발행/관측 시각만 D1 저장; 본문·이미지·첨부물 미저장
 - `(source_id, provider_item_id)` unique upsert와 수집 시간창 unique로 중복 실행 방어
 - 수집 실패는 기존 성공 자료를 삭제하지 않으며 오류 코드만 기록
-- scheduled handler는 구현했지만 production Cron Trigger는 아직 설정하지 않음
+- scheduled handler와 `*/30 * * * *` production Cron Trigger가 배포되어 있으며, 2026-08-22 11:00 UTC 시간창의 4개 stream 실행이 모두 성공함
 
-production Access, 원격 D1, 분리된 프론트/API Worker, OpenAI secret과 30분 Cron은 배포됐다. 실제 macOS Chrome에서 Access 로그인 뒤 국제정세·물리 표준 분석 2회를 실행했고 원격 D1 완료 기록과 사용량을 확인했다. Cron 첫 자동 RSS 실행, production 수준·노트 저장, 사건 후보 생성·검토·승격 잠금의 원격 경로는 아직 별도 검증 대상이다. R2 파일과 캡처·OCR은 이 계약에 포함되지 않는다.
+production Access, 원격 D1, 분리된 프론트/API Worker, OpenAI secret과 30분 Cron은 배포됐다. 실제 macOS Chrome에서 Access 로그인 뒤 국제정세·물리 표준 분석 2회를 실행했고 원격 D1 완료 기록과 사용량을 확인했다. 2026-08-22 11:00 UTC 자동 RSS 실행은 4개 stream 모두 성공했고 메타데이터 99건이 저장됐다. 수동 새로고침 UI, production 수준·노트 저장, 사건 후보 생성·검토·승격 잠금의 원격 경로는 아직 별도 검증 대상이다. R2 파일과 캡처·OCR은 이 계약에 포함되지 않는다.

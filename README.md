@@ -83,5 +83,6 @@ Vite는 `/api`를 `127.0.0.1:8787`의 Worker로 전달한다. 로컬 Access 개�
 - **Browser-verified**: 인앱 브라우저에서 실제 공식 자료 선택 → 실제 OpenAI 후보 생성 → 검토 메모 저장 → 새로고침 후 유지 경로를 확인. 콘솔 `warn`/`error`는 0건이었고 390×844 브라우저 viewport에서 수평 overflow가 없었음
 - **Simulator-verified**: 미검증 — 390×844는 데스크톱 브라우저 viewport 확인이며 모바일 시뮬레이터 실행이 아님
 - **Physical-device-verified**: 실제 macOS Chrome에서 production Access 로그인, 국제정세·물리 화면과 OpenAI 응답을 확인. 모바일 물리기기는 미검증
-- **Live-service-verified**: `fakeminjun.vip` DNS·TLS·Access, 분리된 프론트/API Worker, production D1, OpenAI 국제정세·물리 표준 분석 2회와 D1 완료 기록, `workers.dev` 우회 404, Cron 등록을 확인. Cron 첫 자동 RSS 실행, production 수준·노트 UI 저장, 파일 저장소는 미검증
+- **Live-service-verified**: `fakeminjun.vip` DNS·TLS·Access, 분리된 프론트/API Worker, production D1, OpenAI 국제정세·물리 표준 분석 2회와 D1 완료 기록, `workers.dev` 우회 404를 확인. 2026-08-22 11:00 UTC Cron 시간창에서 공식 RSS 4개가 모두 성공해 메타데이터 99건이 원격 D1에 저장됨
+- **Not verified / 미검증**: 새 수동 새로고침 버튼의 production Chrome 사용자 경로, 수준·노트 UI 저장, 원격 사건 후보/검토, 파일 저장소, 인증 후 정적 응답의 CSP/HSTS
 - **Antivirus-verified**: 미검증 — 백신·EDR 엔진은 실행하지 못했으며, 변경분 보안 검토와 npm advisory·registry signature 검사만 수행

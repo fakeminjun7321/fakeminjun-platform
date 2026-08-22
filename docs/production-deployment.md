@@ -53,7 +53,7 @@
 
 - **Implemented**: 프론트/API Worker 분리, 전체 도메인 Access, production D1, OpenAI secret, 소유자 운영 권한, 30분 Cron, 정적 CSP·프레임 차단·보안 헤더
 - **Unit-verified**: 애플리케이션 테스트 65건과 운영 배포 경계 테스트 4건 통과. 로컬 D1 통합 경로와 production build 통과
-- **Live-service-verified**: 공용 DNS·TLS, 미로그인 루트/API의 Access 302 차단, 허용 계정 로그인, 국제정세·물리 깊은 SPA 경로, 실제 OpenAI 표준 분석 2회, 원격 D1의 완료 기록 2건·총 4,036 tokens, `workers.dev` 우회 주소 404, Cron 등록을 확인
-- **Not verified / 미검증**: `/api/v1/health`를 브라우저 주소로 직접 여는 경로는 Chrome 확장 차단으로 미확인. 수준·노트의 production UI 저장/재조회, Cron의 첫 자동 실행과 RSS 저장, 비허용 계정 거부, WAF·DDoS 부하 경로, 모바일 화면은 별도 확인 필요
+- **Live-service-verified**: 공용 DNS·TLS, 미로그인 루트/API의 Access 302 차단, HTTP→HTTPS 301, 허용 계정 로그인, 국제정세·물리 깊은 SPA 경로, 실제 OpenAI 표준 분석 2회, 원격 D1의 완료 기록 2건·총 4,036 tokens, `workers.dev` 우회 주소 404를 확인. 2026-08-22 11:00 UTC Cron 시간창에서 4개 공식 RSS가 모두 성공해 원격 D1에 메타데이터 99건을 저장함
+- **Not verified / 미검증**: `/api/v1/health` 직접 브라우저 경로, 새 수동 새로고침 버튼의 production Chrome 경로, 수준·노트 production UI 저장/재조회, 비허용 계정 거부, 인증 후 정적 응답의 CSP/HSTS, WAF·DDoS 부하 경로, 모바일 화면
 - **Simulator-verified**: **Not verified / 미검증**
 - **Physical-device-verified**: 실제 macOS Chrome에서 Access 로그인, 국제정세·물리 렌더, 실제 AI 응답 표시를 확인. 모바일 물리기기는 **Not verified / 미검증**
