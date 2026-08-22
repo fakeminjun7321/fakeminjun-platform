@@ -48,8 +48,8 @@
 - **Local-runtime-verified**: 실제 로컬 Wrangler와 임시 D1로 migration, HTTP 사건·수집함 조회, Access 개발 신원, 수준·노트 저장과 사용자 격리, 2~8개 불변 메타데이터 스냅샷 후보, 검토 메모 재조회, 지도 승격 차단을 확인
 - **Browser-verified**: 인앱 브라우저에서 실제 공식 자료 선택 → 실제 OpenAI 후보 생성 → 검토 메모 저장 → 새로고침 후 유지 경로를 확인. 콘솔 `warn`/`error` 0건, 390×844 브라우저 viewport 수평 overflow 없음
 - **Simulator-verified**: 미검증 — 모바일 시뮬레이터는 사용하지 않음
-- **Physical-device-verified**: 미검증 — 실제 Mac·모바일 기기 실행 없음
-- **Live-service-verified**: 로컬 Worker에서 외교부·통일부·백악관·UN 실제 RSS 99건을 수집해 로컬 D1과 API에서 조회. 실제 `gpt-5.6-luna` 단일 Responses 호출로 로컬 사건 후보 2건을 생성했고, 이전 실행의 OpenAI 일반·정밀 분석도 확인. 원격 Cloudflare D1·Access·Worker·Cron과 파일 저장소는 미검증
+- **Physical-device-verified**: 실제 macOS Chrome에서 production Access 로그인, 국제정세·물리 화면과 OpenAI 결과 표시 확인. 모바일 물리기기는 미검증
+- **Live-service-verified**: 원격 Cloudflare DNS·TLS·Access·프론트/API Worker·D1·OpenAI 국제정세/물리 표준 분석 2회·Cron 등록·`workers.dev` 404 확인. Cron 첫 자동 RSS 실행, production 수준·노트·후보/검토 경로와 파일 저장소는 미검증
 - **Antivirus-verified**: 미검증 — 변경분 보안 검토와 npm advisory·registry signature 검사는 수행했으나 백신·EDR 엔진은 실행하지 않음
 
 ## 5. 프론트와 백엔드의 다음 연결 기준

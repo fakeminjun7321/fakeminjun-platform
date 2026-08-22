@@ -761,6 +761,7 @@ textarea:focus-visible {
 .briefing-section-label h3 { margin: 3px 0 0; color: #e5eef1; font-size: 15px; }
 
 .source-boundary { display: flex; align-items: center; gap: 8px; }
+.source-header-actions { display: flex; align-items: center; gap: 10px; }
 .source-boundary span,
 .briefing-section-label > span {
   padding: 5px 7px;
@@ -773,6 +774,9 @@ textarea:focus-visible {
 }
 .source-boundary span:first-child { color: #8bc3a5; border-color: #315847; }
 .source-boundary span:nth-child(2) { color: #d0a96d; border-color: #5b4b33; }
+.source-refresh { min-height: 30px; padding: 0 10px; border: 1px solid #356581; color: #b9d4df; background: #102d3e; font-size: 9px; font-weight: 650; white-space: nowrap; }
+.source-refresh:hover { background: #173e54; }
+.source-refresh:disabled { cursor: wait; opacity: 0.55; }
 
 .source-empty { margin: 0; padding: 22px 16px; color: #7f99a5; font-size: 12px; }
 .source-empty.is-error { color: #c2a07d; }
@@ -1464,6 +1468,7 @@ textarea:focus-visible {
   .source-inbox > header,
   .candidate-review-desk > header,
   .briefing-section-label { align-items: flex-start; }
+  .source-header-actions { flex-direction: column; align-items: flex-end; }
   .source-boundary { max-width: 155px; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
   .candidate-boundary { max-width: 184px; flex-wrap: wrap; justify-content: flex-end; }
   .source-item-list li { padding-inline: 12px; }
