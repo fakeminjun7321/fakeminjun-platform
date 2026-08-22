@@ -75,7 +75,7 @@ Vite는 `/api`를 `127.0.0.1:8787`의 Worker로 전달한다. 로컬 Access 개�
 ## 검증 상태
 
 - **Implemented**: 기획 문서, 국제정세·물리 프론트엔드, 전용 API Worker, D1 schema/seed, 사건·노트·수준·AI 분석 API, 고정 공식 RSS 수집기와 출처 수집함이 저장소에 존재
-- **Unit-verified**: `npm test` 57건 통과. 별도 Sites worker 묶음 `npm run test:sites` 결과는 현재 검증 실행 기록 참조
+- **Unit-verified**: `npm test` 52건 통과. 별도 Sites worker 묶음 `npm run test:sites` 5건 통과
 - **Local-runtime-verified**: 실제 로컬 Wrangler와 임시 D1에서 migration, HTTP 사건·수집함 조회, Access 개발 신원, 수준 저장, 노트 생성·수정 충돌·재시작 후 재조회·다른 사용자 격리·삭제를 확인
 - **Browser-verified**: 인앱 브라우저에서 실제 공식 수집 자료 12개가 한국 공식→미국 공식→국제안보 관측 순으로 렌더링되고 `CURRENT / UNVERIFIED / EVENT PROMOTION OFF`, 안전한 원문 링크 속성, 콘솔 오류 없음 확인. 기존 OpenAI·지도·물리 경로 검증은 이전 실행 기록 참조
 - **Simulator-verified**: 미검증 — 모바일 크기는 데스크톱 Chrome 반응형 viewport로만 확인

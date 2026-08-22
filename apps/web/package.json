@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test tests/*.test.mjs",
+    "test": "node --test tests/backend-client.test.mjs tests/backend-unit.test.mjs tests/events.test.mjs tests/map-layers.test.mjs tests/routes-render.test.mjs tests/source-ingestion.test.mjs tests/workspaces.test.mjs",
     "dev": "vite",
     "dev:backend": "wrangler dev --local",
     "db:migrate:local": "wrangler d1 migrations apply fakeminjun-platform-local --local",

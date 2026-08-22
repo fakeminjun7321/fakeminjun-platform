@@ -43,7 +43,7 @@
 ## 4. 현재 상태
 
 - **Implemented**: 제품 문서, 국제정세·물리 프론트엔드, Worker BFF, D1 schema/seed, 사건·수집함·노트·수준·AI 분석 API와 프론트 API client
-- **Unit-verified**: `npm test` 57건 통과. Sites 전용 테스트는 현재 실행 결과 참조
+- **Unit-verified**: `npm test` 52건, 별도 `npm run test:sites` 5건 통과
 - **Local-runtime-verified**: 실제 로컬 Wrangler와 임시 D1로 migration, HTTP 사건·수집함 조회, Access 개발 신원, 수준 저장, 노트 생성·수정 충돌·재시작 후 재조회·다른 사용자 격리·삭제 확인
 - **Browser-verified**: 인앱 브라우저에서 실제 공식 출처 12건 표시, 편집 순서, 수집/검증/사건 승격 경계, 원문 링크 속성과 콘솔 오류 없음을 확인. 기존 AI·지도·물리 검증은 이전 실행 기록 참조
 - **Simulator-verified**: 미검증 — 모바일 시뮬레이터는 사용하지 않음

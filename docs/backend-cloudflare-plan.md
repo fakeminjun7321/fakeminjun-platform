@@ -220,7 +220,7 @@ preview와 production 바인딩은 자동 상속된다고 가정하지 않고 �
 ## 현재 검증 경계
 
 - **Implemented**: Worker BFF, D1 schema/seed, 사건·수집함·세션·노트·수준·OpenAI 분석 API, 고정 공식 RSS 수집기, same-origin 프론트 client와 로컬 개발 설정
-- **Unit-verified**: 전체 Node 테스트 57건 통과. Sites 전용 테스트는 현재 실행 결과 참조
+- **Unit-verified**: 일반 Node 테스트 52건 및 Sites 전용 테스트 5건 통과
 - **Local-runtime-verified**: 실제 로컬 Wrangler와 임시 D1에서 migration, 사건·수집함 HTTP 요청, 재시작 후 영속성, 다른 사용자 데이터 격리와 삭제 확인
 - **Browser-verified**: 실제 수집함 12건, 한국→미국→급변 편집 순서, 상태 경계와 안전한 원문 링크, 콘솔 오류 없음을 인앱 브라우저에서 확인
 - **Simulator-verified**: **Not verified / 미검증**
