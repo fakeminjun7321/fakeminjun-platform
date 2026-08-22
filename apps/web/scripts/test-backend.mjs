@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
+import { createServer } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,7 +10,15 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const wrangler = path.join(root, "node_modules", ".bin", "wrangler");
 const stateDirectory = await mkdtemp(path.join(os.tmpdir(), "fakeminjun-backend-test-"));
-const apiOrigin = "http://127.0.0.1:8787";
+const port = await new Promise((resolve, reject) => {
+  const server = createServer();
+  server.once("error", reject);
+  server.listen(0, "127.0.0.1", () => {
+    const address = server.address();
+    server.close((error) => (error ? reject(error) : resolve(address.port)));
+  });
+});
+const apiOrigin = `http://127.0.0.1:${port}`;
 const frontendOrigin = "http://127.0.0.1:5173";
 let workerProcess;
 
@@ -36,7 +45,7 @@ async function startWorker() {
     "dev",
     "--local",
     "--ip", "127.0.0.1",
-    "--port", "8787",
+    "--port", String(port),
     "--persist-to", stateDirectory,
   ], {
     cwd: root,
@@ -47,6 +56,7 @@ async function startWorker() {
   child.stdout.on("data", (chunk) => { output += chunk; });
   child.stderr.on("data", (chunk) => { output += chunk; });
   child.on("error", (error) => { output += `\n${error.stack ?? error}`; });
+  child.getCapturedOutput = () => output;
 
   const deadline = Date.now() + 20_000;
   while (Date.now() < deadline) {
@@ -96,12 +106,29 @@ try {
     "--local", "--persist-to", stateDirectory,
   ]);
 
+  await run(wrangler, [
+    "d1", "execute", "fakeminjun-platform-local",
+    "--local", "--persist-to", stateDirectory,
+    "--command",
+    "INSERT INTO source_items (source_id, provider_item_id, canonical_url, title, published_at, collected_at, content_hash, observed_at, last_seen_at, metadata_json) SELECT id, 'fixture-1', 'https://www.mofa.go.kr/test/fixture-1', '외교부 공식 수집 자료 테스트', '2026-08-22T02:00:00.000Z', '2026-08-22T02:05:00.000Z', 'fixture-hash', '2026-08-22T02:05:00.000Z', '2026-08-22T02:05:00.000Z', '{\"contentStatus\":\"source-metadata\",\"verificationStatus\":\"unverified\"}' FROM sources WHERE source_key = 'mofa-press'; INSERT INTO source_item_streams (source_item_id, stream_id, first_seen_at, last_seen_at) SELECT si.id, ss.id, '2026-08-22T02:05:00.000Z', '2026-08-22T02:05:00.000Z' FROM source_items si JOIN sources s ON s.id = si.source_id JOIN source_streams ss ON ss.source_id = s.id WHERE si.provider_item_id = 'fixture-1'; UPDATE source_streams SET last_attempt_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), last_success_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), last_error_code = NULL WHERE lane = 'korea-core';",
+  ]);
+
   workerProcess = await startWorker();
 
   const events = await request("/api/v1/events?bbox=110,0,140,45&layers=korea-core&limit=10");
   assert.equal(events.response.status, 200);
   assert.deepEqual(events.body.data.map(({ id }) => id), [1, 5]);
   assert.equal(events.body.meta.dataStatus, "non-live-demo");
+
+  const sourceItems = await request("/api/v1/source-items?lanes=korea-core&limit=10");
+  assert.equal(sourceItems.response.status, 200, `${JSON.stringify(sourceItems.body)}\n${workerProcess.getCapturedOutput()}`);
+  assert.equal(sourceItems.response.headers.get("cache-control"), "public, max-age=60, stale-while-revalidate=300");
+  assert.equal(sourceItems.body.meta.dataStatus, "collected-source-metadata-unverified");
+  assert.equal(sourceItems.body.meta.collectionStatus, "current");
+  assert.equal(sourceItems.body.data.length, 1);
+  assert.equal(sourceItems.body.data[0].title, "외교부 공식 수집 자료 테스트");
+  assert.equal(sourceItems.body.data[0].live, true);
+  assert.equal(sourceItems.body.data[0].verificationStatus, "unverified");
 
   const event = await request("/api/v1/events/1");
   assert.equal(event.response.status, 200);
@@ -166,13 +193,17 @@ try {
   assert.equal(persistedLevels.body.data.international, "I2");
   assert.equal(persistedLevels.body.data.physics, "P4");
 
+  const persistedSourceItems = await request("/api/v1/source-items?limit=10");
+  assert.equal(persistedSourceItems.response.status, 200);
+  assert.equal(persistedSourceItems.body.data.some(({ providerItemId }) => providerItemId === "fixture-1"), true);
+
   const removed = await request(`/api/v1/notes/${noteId}`, {
     method: "DELETE",
     headers: { origin: frontendOrigin },
   });
   assert.equal(removed.response.status, 204);
 
-  console.log("Backend integration passed: D1 migration, event query, Access identity, owner isolation, note persistence, optimistic locking, levels, and deletion.");
+  console.log("Backend integration passed: D1 migration, non-live events, live-unverified source metadata, Access identity, owner isolation, persistence, optimistic locking, levels, and deletion.");
 } finally {
   await stopWorker(workerProcess);
   await rm(stateDirectory, { recursive: true, force: true });

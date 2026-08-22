@@ -34,12 +34,12 @@ flowchart LR
 ## 2. 데이터 수집 파이프라인
 
 1. 예약 수집 또는 사용자의 명시적 검색 요청
-2. 공급자별 응답과 요청 메타데이터 보존
+2. 공급자별 권리 범위에 따라 응답 또는 최소 요청 메타데이터 보존
 3. 시간·기관·식별자 기준 중복 제거
 4. 공통 필드 및 분야별 필드 정규화
 5. 이용 권한에 따라 원문, 일부 발췌, 메타데이터·링크 중 하나만 저장
 6. 검색 인덱스 갱신
-7. 중요도 변화가 임계치를 넘으면 브리핑 후보 생성
+7. 복수 근거 검증을 통과한 경우에만 중요도·브리핑·지도 사건 후보 생성
 8. 여러 출처를 모은 뒤 AI 요약·분석 생성
 
 수집 실패와 ‘새 사건 없음’을 구분하고, 이전 데이터가 최신인 것처럼 보이지 않게 마지막 성공 시각을 노출한다.
@@ -115,9 +115,9 @@ AI 응답은 자유형 Markdown 한 덩어리가 아니라 다음 구조를 기�
 - 프론트엔드 프로토타입: React 19, Vite 6, MapLibre GL JS, OpenFreeMap, Phosphor Icons
 - 지도 운영 추천: Protomaps PMTiles + Cloudflare R2/Worker 캐시
 - 현재 로컬 백엔드: Workers Static Assets + Worker BFF + D1, `/api/v1` client
-- 구현된 데이터 경계: 공개 데모 사건 읽기, Access 기반 개인 신원, owner-scoped 노트와 수준 설정
+- 구현된 데이터 경계: 공개 데모 사건 읽기, 공식 RSS 4개 metadata-only 수집함, Access 기반 개인 신원, owner-scoped 노트와 수준 설정
 - 운영 확장 추천: R2 + Queues + Workflows
 - 후속 추천: Workflows, Vectorize, OpenAI-only 비동기 분석 작업
-- 아직 미확정: 실제 Cloudflare 리소스, production Access 정책, 인증 공개 범위, AI 모델, 첫 실제 수집 API, 비용 상한
+- 아직 미확정: 실제 Cloudflare 리소스, production Access/Cron 정책, 인증 공개 범위, 수집 자료의 사건 승격 규칙, 비용 상한
 
 선택 기준은 시각적 선호가 아니라 실제 데이터 수집, 캡처 업로드, 저장, 검색, 인용 검증을 가장 작은 비용으로 끝까지 실행할 수 있는지다. Firebase는 공개 회원가입·소셜 로그인·모바일 오프라인 동기화가 첫 출시의 핵심이 될 때 다시 비교한다.

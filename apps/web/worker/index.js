@@ -1,3 +1,5 @@
+import { runAllSourceStreams } from "./ingestion.js";
+
 const API_PREFIX = "/api/v1";
 const EVENT_LAYERS = new Set(["korea-core", "us-impact", "rapid-change"]);
 const SUBJECT_TYPES = new Set(["event", "issue"]);
@@ -265,6 +267,40 @@ export function parseEventsQuery(url) {
   return result;
 }
 
+export function parseSourceItemsQuery(url) {
+  const allowed = new Set(["lanes", "from", "limit"]);
+  const unknown = [...url.searchParams.keys()].filter((key) => !allowed.has(key));
+  if (unknown.length) {
+    throw new ApiError(400, "unknown_query", "지원하지 않는 조회 조건입니다.", { fields: [...new Set(unknown)] });
+  }
+
+  const result = { lanes: [], from: null, limit: 30 };
+  const lanesValue = url.searchParams.get("lanes");
+  if (lanesValue) {
+    const lanes = [...new Set(lanesValue.split(",").filter(Boolean))];
+    if (!lanes.length || lanes.length > EVENT_LAYERS.size || lanes.some((lane) => !EVENT_LAYERS.has(lane))) {
+      throw new ApiError(400, "invalid_lanes", "지원하지 않는 자료 분류가 포함되어 있습니다.");
+    }
+    result.lanes = lanes;
+  }
+
+  const fromValue = url.searchParams.get("from");
+  if (fromValue) {
+    const parsed = new Date(fromValue);
+    if (Number.isNaN(parsed.getTime())) throw new ApiError(400, "invalid_from", "from은 ISO 날짜여야 합니다.");
+    result.from = parsed.toISOString();
+  }
+
+  const limitValue = url.searchParams.get("limit");
+  if (limitValue) {
+    if (!/^\d+$/.test(limitValue)) throw new ApiError(400, "invalid_limit", "limit은 정수여야 합니다.");
+    const limit = Number(limitValue);
+    if (limit < 1 || limit > 100) throw new ApiError(400, "invalid_limit", "limit은 1에서 100 사이여야 합니다.");
+    result.limit = limit;
+  }
+  return result;
+}
+
 function parseJsonArray(value) {
   try {
     const parsed = JSON.parse(value ?? "[]");
@@ -351,6 +387,122 @@ async function getEvent(eventId, env, requestId) {
   const row = await db.prepare(`${EVENT_SELECT} WHERE e.id = ?`).bind(Number(eventId)).first();
   if (!row) throw new ApiError(404, "event_not_found", "사건을 찾을 수 없습니다.");
   return jsonResponse({ data: eventFromRow(row, true) }, 200, requestId);
+}
+
+function sourceItemFromRow(row) {
+  return {
+    id: row.id,
+    providerItemId: row.provider_item_id,
+    title: row.title,
+    originalUrl: row.canonical_url,
+    publishedAt: row.published_at,
+    collectedAt: row.collected_at,
+    firstSeenAt: row.first_seen_at,
+    lastSeenAt: row.stream_last_seen_at,
+    lane: row.lane,
+    live: true,
+    verificationStatus: "unverified",
+    contentStatus: "source-metadata",
+    source: {
+      key: row.source_key,
+      name: row.source_name,
+      role: row.source_role,
+      homepageUrl: row.homepage_url,
+    },
+  };
+}
+
+export function sourceStreamStatus(row, now = Date.now()) {
+  const successTime = row.last_success_at ? new Date(row.last_success_at).getTime() : null;
+  const attemptTime = row.last_attempt_at ? new Date(row.last_attempt_at).getTime() : null;
+  if (!Number.isFinite(successTime)) return "not-collected";
+  if (row.last_error_code && Number.isFinite(attemptTime) && attemptTime > successTime) return "degraded";
+  if (now - successTime > row.cadence_minutes * 3 * 60_000) return "stale";
+  return "current";
+}
+
+async function listSourceItems(request, env, requestId) {
+  const db = requireDatabase(env);
+  const query = parseSourceItemsQuery(new URL(request.url));
+  const clauses = ["s.enabled = 1", "ss.enabled = 1"];
+  const bindings = [];
+  if (query.lanes.length) {
+    clauses.push(`ss.lane IN (${query.lanes.map(() => "?").join(", ")})`);
+    bindings.push(...query.lanes);
+  }
+  if (query.from) {
+    clauses.push("COALESCE(si.published_at, sis.last_seen_at) >= ?");
+    bindings.push(query.from);
+  }
+  const { results = [] } = await db.prepare(`
+    SELECT
+      si.id, si.provider_item_id, si.canonical_url, si.title, si.published_at,
+      si.collected_at, sis.first_seen_at, sis.last_seen_at AS stream_last_seen_at,
+      ss.lane, s.source_key, s.name AS source_name, s.source_role, s.homepage_url
+    FROM source_items si
+    JOIN sources s ON s.id = si.source_id
+    JOIN source_item_streams sis ON sis.source_item_id = si.id
+    JOIN source_streams ss ON ss.id = sis.stream_id
+    WHERE ${clauses.join(" AND ")}
+    ORDER BY COALESCE(si.published_at, sis.last_seen_at) DESC, si.id DESC
+    LIMIT ?
+  `).bind(...bindings, query.limit).all();
+  const streamClauses = ["enabled = 1"];
+  const streamBindings = [];
+  if (query.lanes.length) {
+    streamClauses.push(`lane IN (${query.lanes.map(() => "?").join(", ")})`);
+    streamBindings.push(...query.lanes);
+  }
+  const { results: streamRows = [] } = await db.prepare(`
+    SELECT stream_key, lane, cadence_minutes, last_attempt_at, last_success_at, last_error_code
+    FROM source_streams
+    WHERE ${streamClauses.join(" AND ")}
+    ORDER BY id
+  `).bind(...streamBindings).all();
+  const streams = streamRows.map((row) => {
+    const status = sourceStreamStatus(row);
+    return {
+      streamKey: row.stream_key,
+      lane: row.lane,
+      status,
+      lastAttemptAt: row.last_attempt_at,
+      lastSuccessAt: row.last_success_at,
+      errorCode: status === "degraded" ? row.last_error_code : null,
+    };
+  });
+  const collectionStatus = streams.length === 0 ? "not-collected"
+    : streams.some(({ status }) => status === "degraded") ? "degraded"
+    : streams.some(({ status }) => status === "not-collected") ? "not-collected"
+      : streams.some(({ status }) => status === "stale") ? "stale"
+        : "current";
+  return jsonResponse({
+    data: results.map(sourceItemFromRow),
+    meta: {
+      count: results.length,
+      generatedAt: new Date().toISOString(),
+      dataStatus: "collected-source-metadata-unverified",
+      collectionStatus,
+      streams,
+    },
+  }, 200, requestId, { "cache-control": "public, max-age=60, stale-while-revalidate=300" });
+}
+
+async function runIngestion(request, env, ctx, requestId) {
+  requireMutationOrigin(request, env);
+  const principal = await requirePrincipal(ctx);
+  if (!env.INGESTION_ADMIN_SUBJECT) {
+    throw new ApiError(503, "ingestion_admin_unconfigured", "수집 실행 관리자가 설정되지 않았습니다.");
+  }
+  if (principal.subject !== env.INGESTION_ADMIN_SUBJECT) {
+    throw new ApiError(403, "ingestion_admin_forbidden", "수집 실행 권한이 없습니다.");
+  }
+  const results = await runAllSourceStreams(requireDatabase(env));
+  return jsonResponse({
+    data: {
+      results,
+      boundary: "수집된 공식 출처 메타데이터이며 사건 검증 결과가 아닙니다.",
+    },
+  }, 200, requestId);
 }
 
 export function validateNotePayload(payload, { patch = false } = {}) {
@@ -1215,6 +1367,16 @@ async function handleApiRequest(request, env, ctx) {
       if (request.method !== "GET") return methodNotAllowed(["GET"], requestId);
       return await listEvents(request, env, requestId);
     }
+
+    if (pathname === `${API_PREFIX}/source-items`) {
+      if (request.method !== "GET") return methodNotAllowed(["GET"], requestId);
+      return await listSourceItems(request, env, requestId);
+    }
+
+    if (pathname === `${API_PREFIX}/ingestion/runs`) {
+      if (request.method !== "POST") return methodNotAllowed(["POST"], requestId);
+      return await runIngestion(request, env, ctx, requestId);
+    }
     const eventMatch = pathname.match(/^\/api\/v1\/events\/([^/]+)$/);
     if (eventMatch) {
       if (request.method !== "GET") return methodNotAllowed(["GET"], requestId);
@@ -1282,5 +1444,8 @@ export default {
     const pathname = new URL(request.url).pathname;
     if (pathname.startsWith("/api/")) return handleApiRequest(request, env, ctx);
     return handleAssets(request, env);
+  },
+  async scheduled(_controller, env, ctx) {
+    ctx.waitUntil(runAllSourceStreams(requireDatabase(env)));
   },
 };

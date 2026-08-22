@@ -39,7 +39,7 @@ npm run dev
 }
 ```
 
-API 응답은 `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `X-Request-Id`를 사용한다.
+API 응답은 기본적으로 `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `X-Request-Id`를 사용한다. 공개 수집함은 `public, max-age=60, stale-while-revalidate=300`으로 짧게 캐시한다.
 
 ## 공개 읽기 API
 
@@ -48,6 +48,7 @@ API 응답은 `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `X-R
 | `GET` | `/api/v1/health` | D1 바인딩과 기본 쿼리 준비 상태 |
 | `GET` | `/api/v1/events` | 지도 사건 목록 |
 | `GET` | `/api/v1/events/:eventId` | 사건 상세 |
+| `GET` | `/api/v1/source-items` | 실제 수집된 공식 출처 메타데이터 목록(미검증) |
 
 사건 목록 조건:
 
@@ -57,6 +58,14 @@ API 응답은 `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `X-R
 - `limit=1..100`: 기본값 50
 
 목록의 `meta.dataStatus`는 현재 `non-live-demo`다. 화면 연결 후에도 이 값을 숨기거나 live로 바꾸지 않는다.
+
+수집함 조건:
+
+- `lanes=korea-core,us-impact,rapid-change`: 허용 목록만 사용
+- `from=ISO_DATE`: 발행 시각 또는 마지막 관측 시각 기준
+- `limit=1..100`: 기본값 30
+
+각 항목은 `live: true`, `verificationStatus: unverified`, `contentStatus: source-metadata`를 함께 반환한다. 여기서 live는 실제 공식 피드에서 수집됐다는 뜻이며 사건·주장 검증을 의미하지 않는다. 응답 meta의 `collectionStatus`는 `current`, `stale`, `degraded`, `not-collected` 중 하나이고, 공급원별 마지막 시도·성공 시각을 함께 제공한다.
 
 ## Access 보호 API
 
@@ -72,6 +81,7 @@ API 응답은 `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `X-R
 | `POST` | `/api/v1/analyses` | OpenAI 구조화 분석 생성 |
 | `GET` | `/api/v1/analyses/:analysisId` | 현재 사용자의 분석 상태·결과 조회 |
 | `DELETE` | `/api/v1/analyses/:analysisId` | 완료·실패 분석의 개인 내용 삭제 |
+| `POST` | `/api/v1/ingestion/runs` | 정확한 관리자 subject만 허용하는 수동 공식 피드 수집 |
 
 노트 생성 예시:
 
@@ -113,4 +123,15 @@ API 응답은 `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `X-R
 - 사용자 값은 D1 prepared statement에 bind
 - `/api/*` 오류는 정적 SPA로 fall through하지 않음
 
-production Access 정책과 원격 D1은 아직 구현·검증하지 않았다. R2 파일, 캡처·OCR와 외부 데이터 수집 API도 이 계약에 포함되지 않는다. OpenAI 경로는 로컬 실제 API로 검증했지만 production Cloudflare 경로는 별도 검증 대상이다.
+## 공식 피드 수집 경계
+
+- 공급자 URL과 원문 hostname은 서버 코드의 고정 allowlist이며 브라우저가 URL을 전달할 수 없음
+- redirect는 자동 추적하지 않고, 외교부의 같은 URL 1회 쿠키 확인만 제한적으로 허용
+- 응답 제한 15초·512 KiB·RSS 항목 50건, RSS/XML Content-Type만 허용
+- DTD와 ENTITY 선언 거부, 제어·bidi 문자 제거, URL scheme·host·credentials 검증
+- 제목·기관·원문 링크·발행/관측 시각만 D1 저장; 본문·이미지·첨부물 미저장
+- `(source_id, provider_item_id)` unique upsert와 수집 시간창 unique로 중복 실행 방어
+- 수집 실패는 기존 성공 자료를 삭제하지 않으며 오류 코드만 기록
+- scheduled handler는 구현했지만 production Cron Trigger는 아직 설정하지 않음
+
+production Access 정책과 원격 D1/Cron은 아직 구현·검증하지 않았다. R2 파일과 캡처·OCR도 이 계약에 포함되지 않는다. 공식 RSS와 OpenAI 경로는 로컬 Worker에서 실제 서비스 요청을 검증했지만 production Cloudflare 경로는 별도 검증 대상이다.

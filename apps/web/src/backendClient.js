@@ -67,18 +67,28 @@ function eventQuery(params = {}) {
   return encoded ? `?${encoded}` : "";
 }
 
+function sourceItemsQuery(params = {}) {
+  const query = new URLSearchParams();
+  if (params.lanes?.length) query.set("lanes", params.lanes.join(","));
+  if (params.from) query.set("from", params.from);
+  if (params.limit !== undefined) query.set("limit", String(params.limit));
+  const encoded = query.toString();
+  return encoded ? `?${encoded}` : "";
+}
+
 export function createBackendClient({ baseUrl = "", fetchImpl = globalThis.fetch } = {}) {
   if (typeof fetchImpl !== "function") throw new TypeError("fetchImpl must be a function");
   const base = normalizeBaseUrl(baseUrl);
 
   async function request(path, options = {}) {
+    const { returnEnvelope = false, ...fetchOptions } = options;
     const response = await fetchImpl(`${base}${path}`, {
       credentials: "same-origin",
-      ...options,
+      ...fetchOptions,
       headers: {
         accept: "application/json",
-        ...(options.body === undefined ? {} : { "content-type": "application/json" }),
-        ...options.headers,
+        ...(fetchOptions.body === undefined ? {} : { "content-type": "application/json" }),
+        ...fetchOptions.headers,
       },
     });
 
@@ -94,12 +104,16 @@ export function createBackendClient({ baseUrl = "", fetchImpl = globalThis.fetch
         error.requestId ?? response.headers.get("x-request-id"),
       );
     }
-    return body.data;
+    return returnEnvelope ? { data: body.data, meta: body.meta ?? {} } : body.data;
   }
 
   return Object.freeze({
     health: () => request("/api/v1/health"),
     listEvents: (params) => request(`/api/v1/events${eventQuery(params)}`),
+    listSourceItems: ({ signal, ...params } = {}) => request(
+      `/api/v1/source-items${sourceItemsQuery(params)}`,
+      { signal, returnEnvelope: true },
+    ),
     getEvent: (eventId) => request(`/api/v1/events/${encodeURIComponent(eventId)}`),
     session: () => request("/api/v1/session"),
     listNotes: ({ subjectType, subjectId }) => request(
