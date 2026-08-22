@@ -78,8 +78,16 @@ test("does not turn non-GET app requests into the app shell", async () => {
   assert.equal(calls, 1);
 });
 
-test("emits the files required by Sites packaging", async () => {
+test("emits an executable server module and the files required by Sites packaging", async () => {
+  const serverEntry = new URL("../dist/server/index.js", import.meta.url);
   await access(new URL("../dist/client/index.html", import.meta.url));
-  await access(new URL("../dist/server/index.js", import.meta.url));
+  await access(serverEntry);
+  await access(new URL("../dist/server/ingestion.js", import.meta.url));
+  await access(new URL("../dist/server/sourceRegistry.js", import.meta.url));
   await access(new URL("../dist/.openai/hosting.json", import.meta.url));
+
+  const builtWorker = (await import(`${serverEntry.href}?test=${Date.now()}`)).default;
+  const response = await builtWorker.fetch(new Request("https://example.test/api/missing"), {}, {});
+  assert.equal(response.status, 404);
+  assert.equal((await response.json()).error.code, "api_route_not_found");
 });
