@@ -1,0 +1,57 @@
+export const INTERNATIONAL_VIEW_REFRESH_MS = 60_000;
+export const SOURCE_INGESTION_CADENCE_MINUTES = 10;
+
+const COLLECTION_STATUS_PRIORITY = ["degraded", "not-collected", "stale"];
+
+function latestTimestamp(values, fallback = null) {
+  let latest = null;
+  let latestTime = Number.NEGATIVE_INFINITY;
+  for (const value of values) {
+    if (!value) continue;
+    const time = new Date(value).getTime();
+    if (Number.isFinite(time) && time > latestTime) {
+      latest = value;
+      latestTime = time;
+    }
+  }
+  return latest ?? fallback;
+}
+
+export function aggregateSourceGroups(groups, checkedAt = new Date().toISOString()) {
+  const statuses = groups.map(({ meta }) => meta?.collectionStatus ?? "unknown");
+  const collectionStatus = COLLECTION_STATUS_PRIORITY.find((status) => statuses.includes(status))
+    ?? (statuses.length > 0 && statuses.every((status) => status === "current") ? "current" : "unknown");
+  const streams = groups.flatMap(({ meta }) => Array.isArray(meta?.streams) ? meta.streams : []);
+
+  return {
+    items: groups.flatMap(({ data }) => Array.isArray(data) ? data : []),
+    collectionStatus,
+    checkedAt: latestTimestamp(groups.map(({ meta }) => meta?.generatedAt), checkedAt),
+    lastCollectedAt: latestTimestamp(streams.map(({ lastSuccessAt }) => lastSuccessAt)),
+    streams,
+  };
+}
+
+export function startVisibleRefresh({
+  documentObject = globalThis.document,
+  windowObject = globalThis.window,
+  intervalMs = INTERNATIONAL_VIEW_REFRESH_MS,
+  onRefresh,
+}) {
+  if (!documentObject || !windowObject || typeof onRefresh !== "function") {
+    throw new TypeError("A browser document, window, and refresh callback are required");
+  }
+  const refreshIfVisible = () => {
+    if (documentObject.visibilityState !== "hidden") onRefresh();
+  };
+  const handleVisibilityChange = () => {
+    if (documentObject.visibilityState === "visible") refreshIfVisible();
+  };
+  const intervalId = windowObject.setInterval(refreshIfVisible, intervalMs);
+  documentObject.addEventListener("visibilitychange", handleVisibilityChange);
+
+  return () => {
+    windowObject.clearInterval(intervalId);
+    documentObject.removeEventListener("visibilitychange", handleVisibilityChange);
+  };
+}

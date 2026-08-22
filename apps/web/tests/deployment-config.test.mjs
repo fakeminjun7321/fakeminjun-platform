@@ -48,7 +48,7 @@ test("production API is isolated to the API route without static assets", async 
     APP_ENV: "production",
     APP_ORIGIN: "https://fakeminjun.vip",
   });
-  assert.deepEqual(config.triggers?.crons, ["*/30 * * * *"]);
+  assert.deepEqual(config.triggers?.crons, ["*/10 * * * *"]);
 
   const database = config.d1_databases?.find((binding) => binding.binding === "DB");
   assert.equal(database?.database_name, "fakeminjun-platform-prod");

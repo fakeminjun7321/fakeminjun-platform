@@ -231,6 +231,12 @@ p { margin-block: 0; }
   white-space: nowrap;
 }
 
+.demo-stamp.is-live-source {
+  border-color: #426f58;
+  color: var(--green);
+  background: #0c1c18;
+}
+
 .ai-trigger {
   align-self: center;
   min-width: 150px;
@@ -845,6 +851,45 @@ p { margin-block: 0; }
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.source-header-actions { flex-wrap: wrap; justify-content: flex-end; }
+
+.source-sync-state {
+  display: grid;
+  grid-template-columns: 7px auto;
+  align-items: center;
+  column-gap: 7px;
+  min-height: 36px;
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  background: #0b1215;
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.035em;
+  white-space: nowrap;
+}
+
+.source-sync-state i {
+  grid-row: 1 / span 2;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+}
+
+.source-sync-state span { color: var(--green); }
+.source-sync-state strong { color: var(--text-soft); font-size: 9px; font-weight: 500; }
+.source-sync-state.is-refreshing i { animation: source-sync-pulse 1.25s ease-in-out infinite; }
+.source-sync-state.is-error i { background: var(--amber); }
+
+@keyframes source-sync-pulse {
+  50% { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .source-sync-state.is-refreshing i { animation: none; }
 }
 
 .source-boundary span,
@@ -2159,6 +2204,7 @@ mjx-container {
     font-size: 0;
   }
   .demo-stamp::after { content: "DEMO"; font-family: var(--mono); font-size: 10px; }
+  .demo-stamp.is-live-source::after { content: "SYNC"; }
   .ai-trigger { width: 52px; min-width: 52px; }
   .signals-panel { top: 12px; left: 12px; width: calc(100% - 76px); }
   .map-data-notice {
@@ -2204,6 +2250,7 @@ mjx-container {
   .candidate-review-desk > header,
   .briefing-section-label { align-items: flex-start; }
   .source-header-actions { flex-direction: column; align-items: flex-end; }
+  .source-sync-state { max-width: 100%; }
   .source-boundary,
   .candidate-boundary { max-width: 190px; flex-wrap: wrap; justify-content: flex-end; }
   .source-item-list li { grid-template-columns: 28px minmax(0, 1fr); }

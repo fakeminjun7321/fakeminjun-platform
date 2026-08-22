@@ -12,6 +12,12 @@ import {
   BackendApiError,
   backendClient,
 } from "./backendClient.js";
+import {
+  INTERNATIONAL_VIEW_REFRESH_MS,
+  SOURCE_INGESTION_CADENCE_MINUTES,
+  aggregateSourceGroups,
+  startVisibleRefresh,
+} from "./internationalRefresh.js";
 import { CATEGORY_META, STATUS_META, getTopSignals } from "./mapLayers.js";
 
 const AiDrawer = lazy(() => import("./AiDrawer.jsx"));
@@ -110,7 +116,17 @@ function DomainNavigation({ domain, onNavigate }) {
   );
 }
 
-function Header({ domain, onOpenAi, onNavigate, aiOpen, aiTriggerRef }) {
+function Header({ domain, route, sourceState, mapEventState, onOpenAi, onNavigate, aiOpen, aiTriggerRef }) {
+  const sourceWorkspace = domain === "international" && route === "briefing";
+  const headerTimestamp = sourceWorkspace
+    ? sourceState.checkedAt
+    : domain === "international" ? mapEventState.generatedAt : null;
+  const statusLabel = sourceWorkspace
+    ? "LIVE SOURCE · UNVERIFIED"
+    : domain === "physics"
+      ? "PRIVATE WORKSPACE"
+      : mapEventState.dataStatus === "mixed" ? "MIXED DATA" : "NON-LIVE DEMO";
+
   return (
     <header className="app-header">
       <button
@@ -124,8 +140,8 @@ function Header({ domain, onOpenAi, onNavigate, aiOpen, aiTriggerRef }) {
       <h1 className="sr-only">{DOMAIN_META[domain].title}</h1>
       <DomainNavigation domain={domain} onNavigate={onNavigate} />
       <div className="header-utilities">
-        <span className="as-of">기준 시각 <strong>20:04 KST</strong></span>
-        <span className="demo-stamp">NON-LIVE DEMO</span>
+        <span className="as-of">{domain === "physics" ? "개인 공간" : sourceWorkspace ? "API 확인" : "기준 시각"} <strong>{domain === "physics" ? "LOCAL" : headerTimestamp ? `${eventTimeLabel(headerTimestamp)} KST` : "--:--"}</strong></span>
+        <span className={`demo-stamp${sourceWorkspace ? " is-live-source" : ""}`}>{statusLabel}</span>
         <button
           className="ai-trigger"
           type="button"
@@ -290,6 +306,10 @@ function SourceInbox({
 }) {
   const selectedCount = selectedIds.size;
   const selectionReady = selectedCount >= 2 && selectedCount <= 8;
+  const resolved = ["ready", "refreshing"].includes(state.status);
+  const syncLabel = state.status === "refreshing"
+    ? "최신 자료 확인 중"
+    : state.checkedAt ? `API 확인 ${eventTimeLabel(state.checkedAt)} KST` : "첫 동기화 대기";
 
   return (
     <section className="source-inbox" aria-labelledby="source-inbox-title">
@@ -299,6 +319,11 @@ function SourceInbox({
           <h3 id="source-inbox-title">공식 출처 수집함</h3>
         </div>
         <div className="source-header-actions">
+          <div className={`source-sync-state is-${state.status}`} role="status" aria-live="polite">
+            <i aria-hidden="true" />
+            <span>AUTO SYNC · {INTERNATIONAL_VIEW_REFRESH_MS / 1_000} SEC</span>
+            <strong>{syncLabel}</strong>
+          </div>
           <div className="source-boundary" aria-label="자료 상태">
             <span>실제 수집</span><span>미검증 자료</span><span>사건·지도 미반영</span>
           </div>
@@ -318,7 +343,7 @@ function SourceInbox({
           수집 자료 API에 연결하지 못했습니다. {state.items.length ? "이전 성공 자료를 표시하며 최신성은 확인되지 않았습니다." : "데모 신호로 대체하지 않고 빈 상태로 둡니다."}
         </p>
       )}
-      {state.status === "ready" && state.items.length === 0 && (
+      {resolved && state.items.length === 0 && (
         <p className="source-empty">아직 저장된 공식 출처 자료가 없습니다. 수집 실행 후 이곳에 표시됩니다.</p>
       )}
       {state.items.length > 0 && (
@@ -696,11 +721,12 @@ function PassiveStatusBar({ domain, route, sourceState, mapEventState, physicsLe
     );
   }
   if (route === "briefing") {
+    const sourceReady = ["ready", "refreshing"].includes(sourceState.status);
     return (
       <footer className="system-status" aria-label="수집 자료 상태">
-        <span>SOURCE INBOX <strong>{sourceState.status === "ready" ? COLLECTION_STATUS_LABELS[sourceState.collectionStatus] : sourceState.status.toUpperCase()}</strong></span>
+        <span>SOURCE INBOX <strong>{sourceReady ? COLLECTION_STATUS_LABELS[sourceState.collectionStatus] : sourceState.status.toUpperCase()}</strong></span>
         <span>VISIBLE ITEMS <strong>{sourceState.items.length}</strong></span>
-        <span>VERIFICATION <strong>UNVERIFIED</strong></span><span>EVENT PROMOTION <strong>OFF</strong></span>
+        <span>AUTO SYNC <strong>{INTERNATIONAL_VIEW_REFRESH_MS / 1_000} SEC</strong></span><span>COLLECT <strong>{SOURCE_INGESTION_CADENCE_MINUTES} MIN</strong></span>
         <span className="system-health"><i aria-hidden="true" /> 공식 출처 메타데이터</span>
       </footer>
     );
@@ -754,7 +780,14 @@ export function App() {
   const [analysisContext, setAnalysisContext] = useState(null);
   const [physicsLevel, setPhysicsLevel] = useState(4);
   const [notice, setNotice] = useState("");
-  const [sourceState, setSourceState] = useState({ status: "idle", items: [], collectionStatus: "unknown" });
+  const [sourceState, setSourceState] = useState({
+    status: "idle",
+    items: [],
+    collectionStatus: "unknown",
+    checkedAt: null,
+    lastCollectedAt: null,
+    streams: [],
+  });
   const [selectedSourceIds, setSelectedSourceIds] = useState(() => new Set());
   const [candidateState, setCandidateState] = useState({ status: "idle", items: [] });
   const [createState, setCreateState] = useState({ status: "idle", message: "" });
@@ -762,7 +795,12 @@ export function App() {
   const [ingestionState, setIngestionState] = useState({ status: "idle", message: "" });
   const [sourceRefreshVersion, setSourceRefreshVersion] = useState(0);
   const [candidateNoteDrafts, setCandidateNoteDrafts] = useState({});
-  const [mapEventState, setMapEventState] = useState({ status: "idle", items: EVENTS, dataStatus: "non-live-demo" });
+  const [mapEventState, setMapEventState] = useState({
+    status: "idle",
+    items: EVENTS,
+    dataStatus: "non-live-demo",
+    generatedAt: null,
+  });
   const [mapRefreshVersion, setMapRefreshVersion] = useState(0);
   const noticeTimerRef = useRef(null);
   const aiTriggerRef = useRef(null);
@@ -822,9 +860,9 @@ export function App() {
   }, []);
   useEffect(() => () => window.clearTimeout(noticeTimerRef.current), []);
   useEffect(() => {
-    if (route !== "map") return undefined;
+    if (domain !== "international") return undefined;
     const controller = new AbortController();
-    setMapEventState((current) => ({ ...current, status: "loading" }));
+    setMapEventState((current) => ({ ...current, status: current.status === "idle" ? "loading" : "refreshing" }));
     void backendClient.listEventsEnvelope({ limit: 100, signal: controller.signal })
       .then(({ data, meta }) => {
         const items = (Array.isArray(data) ? data : []).map(normalizeApiMapEvent);
@@ -832,37 +870,41 @@ export function App() {
           status: "ready",
           items: items.length ? items : EVENTS,
           dataStatus: meta?.dataStatus ?? "unknown",
+          generatedAt: meta?.generatedAt ?? new Date().toISOString(),
         });
         if (items.length && selectedId !== null && !items.some(({ id }) => String(id) === String(selectedId))) {
           setSelectedId(items[0].id);
         }
       })
       .catch((error) => {
-        if (error?.name !== "AbortError") setMapEventState({ status: "error", items: EVENTS, dataStatus: "fallback-demo" });
+        if (error?.name !== "AbortError") {
+          setMapEventState((current) => ({
+            ...current,
+            status: "error",
+            dataStatus: current.generatedAt ? current.dataStatus : "fallback-demo",
+          }));
+        }
       });
     return () => controller.abort();
-  }, [route, mapRefreshVersion]);
+  }, [domain, mapRefreshVersion]);
   useEffect(() => {
     if (route !== "briefing") return undefined;
     const controller = new AbortController();
-    setSourceState((current) => ({ ...current, status: "loading" }));
-    setCandidateState((current) => ({ ...current, status: "loading" }));
+    setSourceState((current) => ({
+      ...current,
+      status: current.status === "idle" ? "loading" : "refreshing",
+    }));
     const sourceRequest = Promise.all([
       backendClient.listSourceItems({ lanes: ["korea-core"], limit: 4, signal: controller.signal }),
       backendClient.listSourceItems({ lanes: ["us-impact"], limit: 4, signal: controller.signal }),
       backendClient.listSourceItems({ lanes: ["rapid-change"], limit: 4, signal: controller.signal }),
     ]);
-    const candidateRequest = backendClient.listEventCandidates({ limit: 20, signal: controller.signal });
 
     void sourceRequest
       .then((groups) => {
-        const statuses = groups.map(({ meta }) => meta.collectionStatus ?? "unknown");
-        const collectionStatus = statuses.includes("degraded") ? "degraded"
-          : statuses.includes("not-collected") ? "not-collected"
-            : statuses.includes("stale") ? "stale"
-              : statuses.every((status) => status === "current") ? "current" : "unknown";
-        const items = groups.flatMap(({ data }) => data);
-        setSourceState({ status: "ready", items, collectionStatus });
+        const aggregated = aggregateSourceGroups(groups);
+        const { items } = aggregated;
+        setSourceState({ status: "ready", ...aggregated });
         const visibleIds = new Set(items.map(({ id }) => id));
         setSelectedSourceIds((current) => new Set([...current].filter((id) => visibleIds.has(id))));
       })
@@ -870,18 +912,32 @@ export function App() {
         if (error?.name !== "AbortError") setSourceState((current) => ({ ...current, status: "error", collectionStatus: "unknown" }));
       });
 
-    void candidateRequest
+    return () => controller.abort();
+  }, [route, sourceRefreshVersion]);
+  useEffect(() => {
+    if (route !== "briefing") return undefined;
+    const controller = new AbortController();
+    setCandidateState((current) => ({ ...current, status: "loading" }));
+    void backendClient.listEventCandidates({ limit: 20, signal: controller.signal })
       .then((items) => setCandidateState({ status: "ready", items }))
       .catch((error) => {
         if (error?.name !== "AbortError") setCandidateState((current) => ({ ...current, status: "error" }));
       });
-
-    return () => {
-      controller.abort();
-      candidateCreateRef.current?.abort();
-      candidateReviewRef.current?.abort();
-    };
-  }, [route, sourceRefreshVersion]);
+    return () => controller.abort();
+  }, [route]);
+  useEffect(() => {
+    if (domain !== "international") return undefined;
+    return startVisibleRefresh({
+      onRefresh: () => {
+        setMapRefreshVersion((version) => version + 1);
+        if (route === "briefing") setSourceRefreshVersion((version) => version + 1);
+      },
+    });
+  }, [domain, route]);
+  useEffect(() => () => {
+    candidateCreateRef.current?.abort();
+    candidateReviewRef.current?.abort();
+  }, []);
 
   async function runOfficialSourceIngestion() {
     if (ingestionState.status === "submitting") return;
@@ -1045,7 +1101,16 @@ export function App() {
   return (
     <div className="application-shell">
       <div className="app-surface" inert={aiOpen ? true : undefined}>
-        <Header domain={domain} onOpenAi={() => openAi()} onNavigate={navigate} aiOpen={aiOpen} aiTriggerRef={aiTriggerRef} />
+        <Header
+          domain={domain}
+          route={route}
+          sourceState={sourceState}
+          mapEventState={mapEventState}
+          onOpenAi={() => openAi()}
+          onNavigate={navigate}
+          aiOpen={aiOpen}
+          aiTriggerRef={aiTriggerRef}
+        />
         <WorkspaceSubnav domain={domain} route={route} onNavigate={navigate} />
 
         {route === "map" && (

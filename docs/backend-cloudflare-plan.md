@@ -26,7 +26,7 @@ Firebase는 첫 출시부터 공개 회원가입, 소셜 로그인, 비밀번호
 - `apps/web/src/backendClient.js`: 화면에서 사용할 same-origin API client와 구조화 오류 타입
 - Vite 개발 프록시: `127.0.0.1:5173/api` → `127.0.0.1:8787/api`
 
-국제정세·물리 AI 패널은 이 client를 실제로 사용한다. 오늘 브리핑의 공식 출처 수집함은 실제 RSS 메타데이터를 읽지만, 지도 사건 자체는 여전히 정적 `NON-LIVE DEMO` 자료다. 원격 D1, production Access, 분리 Worker와 30분 Cron은 배포됐고 2026-08-22 11:00 UTC 첫 자동 수집에서 공식 RSS 4개·메타데이터 99건 저장을 확인했다.
+국제정세·물리 AI 패널은 이 client를 실제로 사용한다. 오늘 브리핑의 공식 출처 수집함은 실제 RSS 메타데이터를 읽고, production Worker는 10분마다 수집하며 열린 국제정세 화면은 60초마다 API를 확인하고 탭 복귀 시 즉시 동기화한다. 지도 사건 자체는 검토·승격 전까지 정적 `NON-LIVE DEMO` 자료와 분리된다.
 
 ## 서비스 구성
 
@@ -201,7 +201,7 @@ preview와 production 바인딩은 자동 상속된다고 가정하지 않고 �
 
 ### 1. 실제 세로 조각 — 로컬 기반 일부 구현
 
-- Access 개발 신원과 서버 소유자 경계: 로컬 구현·검증, production 미구성
+- Access 신원과 서버 소유자 경계: 로컬·production 구현, 허용 계정 실제 로그인 검증
 - D1 migration과 `/api/v1/events` bbox 조회: 로컬 구현·검증
 - 개인 노트 저장 → Worker 재시작 후 재조회: 로컬 구현·검증
 - 고정 공식 RSS 4개 metadata-only 수집·중복 제거·D1 저장·브리핑 표시: 로컬 구현·실제 피드 검증
@@ -226,27 +226,25 @@ preview와 production 바인딩은 자동 상속된다고 가정하지 않고 �
 - `tiles.` 전용 custom domain, 정확한 CORS, 쓰기 차단
 - OpenStreetMap/OpenMapTiles/Protomaps 표시 요건 유지
 
-## 실제 연결 전 확인할 결정
+## 후속 운영에서 결정할 항목
 
-1. Cloudflare-first 채택 여부
-2. 첫 버전을 개인 Access 알파로 잠글지 공개 회원가입으로 시작할지
-3. `fakeminjun.com`, `app.fakeminjun.com`, preview 호스트 구성
-4. 월 비용 상한과 결제 계정
-5. production Cron 갱신 주기와 공식 RSS 이외의 교차검증 출처
-6. OpenAI 월 예산 상한과 production 모델 변경 정책
-7. 파일 최대 크기·허용 형식·실제 악성코드 검사 수단·원본 보관 기간
-8. 삭제·백업·복구와 감사 로그 보관 정책
-9. WAF·rate limit·비용 경보의 실제 운영 임계값과 부하 검증
+1. 개인 Access 알파를 공개 회원가입으로 확장할지 여부와 시점
+2. 월 비용 상한과 결제 계정
+3. 공식 RSS 4개 이후 추가할 교차검증 출처
+4. OpenAI 월 예산 상한과 production 모델 변경 정책
+5. 파일 최대 크기·허용 형식·실제 악성코드 검사 수단·원본 보관 기간
+6. 삭제·백업·복구와 감사 로그 보관 정책
+7. WAF·rate limit·비용 경보의 실제 운영 임계값과 부하 검증
 
 ## 현재 검증 경계
 
 - **Implemented**: Worker BFF, D1 schema/seed, 사건·수집함·세션·노트·수준·OpenAI 분석 API, 고정 공식 RSS 수집기, metadata-only 사건 후보·검토·승격 잠금, same-origin 프론트 client와 로컬 개발 설정
-- **Unit-verified**: 일반 Node 테스트 64건 및 Sites 전용 테스트 5건 통과
+- **Unit-verified**: 일반 Node 테스트 88건, Sites 전용 테스트 5건, 운영 배포 경계 테스트 4건 통과
 - **Local-runtime-verified**: 실제 로컬 Wrangler와 임시 D1에서 migration, 사건·수집함 HTTP 요청, 사건 후보 목록·검토 idempotency·사용자 격리·승격 0건 잠금, 재시작 후 영속성과 삭제 확인
 - **Browser-verified**: 실제 수집함 12건 표시와 안전한 원문 링크에 더해 자료 2건 선택 → 실제 OpenAI 후보 생성 → 검토 메모 저장 → 새로고침 후 유지 경로를 인앱 브라우저에서 확인. 콘솔 warning/error 0건, 390×844 브라우저 viewport 수평 overflow 없음
 - **Simulator-verified**: **Not verified / 미검증**
 - **Physical-device-verified**: 실제 macOS Chrome에서 production Access 로그인, 국제정세·물리 AI 결과 표시를 확인. 모바일 물리기기는 **Not verified / 미검증**
-- **Live-service-verified**: 원격 D1·Access·프론트/API Worker·DNS/TLS·OpenAI 분석 2회와 D1 완료 기록·`workers.dev` 404를 확인. 2026-08-22 11:00 UTC 자동 Cron에서 4개 stream이 모두 성공하고 메타데이터 99건이 저장됨
-- 수동 새로고침 버튼의 production Chrome 경로와 production 후보/검토/승격 잠금: **Not verified / 미검증**
+- **Live-service-verified**: 원격 D1·Access·프론트/API Worker·DNS/TLS·OpenAI 분석 2회와 D1 완료 기록·`workers.dev` 404를 확인. 10분 Cron 배포 직후 2026-08-22 15:00 UTC 자동 실행에서 4개 stream이 모두 성공해 원격 D1에 기록됨
+- 60초 자동 동기화·탭 복귀 즉시 갱신·수동 새로고침 버튼의 production Chrome 경로와 production 후보/검토/승격 잠금: **Not verified / 미검증**
 - R2, Queue, Workflows, Vectorize: **Not verified / 미검증**
 - 실제 업로드 악성코드 검사와 antivirus/EDR: **Not verified / 미검증**
