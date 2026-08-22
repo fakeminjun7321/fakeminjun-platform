@@ -145,6 +145,11 @@ export function createBackendClient({ baseUrl = "", fetchImpl = globalThis.fetch
       },
     ),
     getEvent: (eventId) => request(`/api/v1/events/${encodeURIComponent(eventId)}`),
+    runIngestion: ({ signal } = {}) => request("/api/v1/ingestion/runs", {
+      method: "POST",
+      body: JSON.stringify({}),
+      signal,
+    }),
     session: () => request("/api/v1/session"),
     listNotes: ({ subjectType, subjectId }) => request(
       `/api/v1/notes?${new URLSearchParams({ subjectType, subjectId: String(subjectId) })}`,

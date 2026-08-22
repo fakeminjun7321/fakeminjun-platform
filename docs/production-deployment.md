@@ -10,10 +10,11 @@
 
 ```text
 브라우저
-  ├─ fakeminjun.vip/*      → fakeminjun-platform-web (정적 SPA 전용)
-  └─ fakeminjun.vip/api/*  → Cloudflare Access → fakeminjun-platform-api
-                                                ├─ D1
-                                                └─ OpenAI Responses API
+  → Cloudflare Access (fakeminjun.vip 전체)
+    ├─ fakeminjun.vip/*      → fakeminjun-platform-web (정적 SPA 전용)
+    └─ fakeminjun.vip/api/*  → fakeminjun-platform-api
+                                ├─ D1
+                                └─ OpenAI Responses API
 ```
 
 - `fakeminjun-platform-web`에는 D1과 OpenAI 비밀키를 연결하지 않는다. 최소 Worker는 `/api/*` route가 빠졌을 때 SPA HTML을 대신 반환하지 않고 `503 api_route_unavailable`로 닫는 역할만 한다.
@@ -50,8 +51,9 @@
 
 ## 현재 상태
 
-- **Implemented**: 운영 프론트/API 분리 설정, D1 placeholder 방지 검사, 배포 명령, 검증 절차
-- **Unit-verified**: 운영 배포 경계 테스트 3건 통과
-- **Live-service-verified**: **Not verified / 미검증** — 원격 D1·Access·Workers·DNS를 아직 만들거나 배포하지 않음
+- **Implemented**: 프론트/API Worker 분리, 전체 도메인 Access, production D1, OpenAI secret, 소유자 운영 권한, 30분 Cron, 정적 CSP·프레임 차단·보안 헤더
+- **Unit-verified**: 애플리케이션 테스트 65건과 운영 배포 경계 테스트 4건 통과. 로컬 D1 통합 경로와 production build 통과
+- **Live-service-verified**: 공용 DNS·TLS, 미로그인 루트/API의 Access 302 차단, 허용 계정 로그인, 국제정세·물리 깊은 SPA 경로, 실제 OpenAI 표준 분석 2회, 원격 D1의 완료 기록 2건·총 4,036 tokens, `workers.dev` 우회 주소 404, Cron 등록을 확인
+- **Not verified / 미검증**: `/api/v1/health`를 브라우저 주소로 직접 여는 경로는 Chrome 확장 차단으로 미확인. 수준·노트의 production UI 저장/재조회, Cron의 첫 자동 실행과 RSS 저장, 비허용 계정 거부, WAF·DDoS 부하 경로, 모바일 화면은 별도 확인 필요
 - **Simulator-verified**: **Not verified / 미검증**
-- **Physical-device-verified**: **Not verified / 미검증**
+- **Physical-device-verified**: 실제 macOS Chrome에서 Access 로그인, 국제정세·물리 렌더, 실제 AI 응답 표시를 확인. 모바일 물리기기는 **Not verified / 미검증**

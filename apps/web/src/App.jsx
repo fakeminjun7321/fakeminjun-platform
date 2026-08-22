@@ -282,7 +282,16 @@ function safeExternalUrl(value) {
   }
 }
 
-function SourceInbox({ state, selectedIds, createState, onToggle, onCreate, onCancelCreate }) {
+function SourceInbox({
+  state,
+  selectedIds,
+  createState,
+  ingestionState,
+  onToggle,
+  onCreate,
+  onCancelCreate,
+  onRunIngestion,
+}) {
   const selectedCount = selectedIds.size;
   const selectionReady = selectedCount >= 2 && selectedCount <= 8;
 
@@ -293,10 +302,20 @@ function SourceInbox({ state, selectedIds, createState, onToggle, onCreate, onCa
           <p className="system-kicker">OFFICIAL SOURCE INBOX</p>
           <h3 id="source-inbox-title">공식 출처 수집함</h3>
         </div>
-        <div className="source-boundary" aria-label="자료 상태">
-          <span>실제 수집</span><span>미검증 자료</span><span>사건·지도 미반영</span>
+        <div className="source-header-actions">
+          <div className="source-boundary" aria-label="자료 상태">
+            <span>실제 수집</span><span>미검증 자료</span><span>사건·지도 미반영</span>
+          </div>
+          <button className="source-refresh" type="button" disabled={ingestionState.status === "submitting"} onClick={onRunIngestion}>
+            {ingestionState.status === "submitting" ? "수집 중…" : "공식 출처 새로고침"}
+          </button>
         </div>
       </header>
+      {ingestionState.message ? (
+        <p className={`candidate-request-notice${ingestionState.status === "error" ? " is-error" : ""}`} role={ingestionState.status === "error" ? "alert" : "status"}>
+          {ingestionState.message}
+        </p>
+      ) : null}
       {state.status === "loading" && <p className="source-empty">공식 피드 수집 자료를 확인 중입니다.</p>}
       {state.status === "error" && (
         <p className="source-empty is-error">
@@ -531,11 +550,13 @@ function BriefingPage({
   candidateState,
   noteDrafts,
   reviewState,
+  ingestionState,
   onToggleSource,
   onCreateCandidate,
   onCancelCandidate,
   onNoteChange,
   onReviewCandidate,
+  onRunIngestion,
 }) {
   return (
     <main className="focused-workspace briefing-workspace">
@@ -551,9 +572,11 @@ function BriefingPage({
         state={sourceState}
         selectedIds={selectedSourceIds}
         createState={createState}
+        ingestionState={ingestionState}
         onToggle={onToggleSource}
         onCreate={onCreateCandidate}
         onCancelCreate={onCancelCandidate}
+        onRunIngestion={onRunIngestion}
       />
       <CandidateReviewDesk
         state={candidateState}
@@ -908,6 +931,8 @@ export function App() {
   const [candidateState, setCandidateState] = useState({ status: "idle", items: [] });
   const [createState, setCreateState] = useState({ status: "idle", message: "" });
   const [reviewState, setReviewState] = useState({ status: "idle", candidateId: null, message: "" });
+  const [ingestionState, setIngestionState] = useState({ status: "idle", message: "" });
+  const [sourceRefreshVersion, setSourceRefreshVersion] = useState(0);
   const [candidateNoteDrafts, setCandidateNoteDrafts] = useState({});
   const noticeTimerRef = useRef(null);
   const aiTriggerRef = useRef(null);
@@ -1002,7 +1027,27 @@ export function App() {
       candidateCreateRef.current?.abort();
       candidateReviewRef.current?.abort();
     };
-  }, [route]);
+  }, [route, sourceRefreshVersion]);
+
+  async function runOfficialSourceIngestion() {
+    if (ingestionState.status === "submitting") return;
+    setIngestionState({ status: "submitting", message: "허용된 공식 출처의 최신 메타데이터를 수집하고 있습니다." });
+    try {
+      const result = await backendClient.runIngestion();
+      const runs = Array.isArray(result?.results) ? result.results : [];
+      const succeeded = runs.filter(({ status }) => status === "succeeded").length;
+      const skipped = runs.filter(({ status }) => status === "skipped").length;
+      const failed = runs.filter(({ status }) => status === "failed").length;
+      const status = failed > 0 ? "warning" : "success";
+      setIngestionState({
+        status,
+        message: `수집 실행 완료 · 성공 ${succeeded} · 중복 생략 ${skipped} · 실패 ${failed}. 저장 자료는 아직 미검증이며 지도에 반영되지 않습니다.`,
+      });
+      setSourceRefreshVersion((version) => version + 1);
+    } catch (error) {
+      setIngestionState({ status: "error", message: error?.message ?? "공식 출처 수집을 실행하지 못했습니다." });
+    }
+  }
 
   function toggleSourceSelection(sourceItemId) {
     setSelectedSourceIds((current) => {
@@ -1159,11 +1204,13 @@ export function App() {
             candidateState={candidateState}
             noteDrafts={candidateNoteDrafts}
             reviewState={reviewState}
+            ingestionState={ingestionState}
             onToggleSource={toggleSourceSelection}
             onCreateCandidate={createCandidate}
             onCancelCandidate={cancelCandidateCreation}
             onNoteChange={changeCandidateNote}
             onReviewCandidate={reviewCandidate}
+            onRunIngestion={runOfficialSourceIngestion}
           />
         )}
 

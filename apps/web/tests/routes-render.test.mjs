@@ -50,6 +50,7 @@ for (const [pathname, expectedText] of ROUTE_EXPECTATIONS) {
       assert.ok(html.includes("METADATA HYPOTHESIS"));
       assert.ok(html.includes("UNVERIFIED"));
       assert.ok(html.includes("MAP PROMOTION LOCKED"));
+      assert.ok(html.includes("공식 출처 새로고침"));
       assert.ok(html.includes("사건 후보 만들기"));
     }
   });

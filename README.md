@@ -21,7 +21,7 @@
 - 사건 후보와 보류·검토 완료·기각 기록은 소유자별로 분리하며, 검토 완료도 사실 검증으로 간주하지 않음. 원문 근거와 확인된 위치가 없는 후보의 지도 승격은 서버에서 차단함
 - 국제정세·물리의 호출형 AI 패널은 로컬 Worker를 거쳐 OpenAI Responses API에 연결되고, 결과·사용량·요청 중복 방지 기록을 소유자별 D1에 저장
 - 일반 분석은 비용 효율적인 OpenAI 단일 모델, 정밀 분석은 OpenAI 전문 검토 2회와 최종 통합 1회로 제한
-- 원격 Cloudflare·파일·캡처·OCR 파이프라인은 아직 연결하지 않음. 공식 RSS 수집과 사건 후보 생성·검토는 로컬 Worker/D1에서만 실제 연결됨
+- `fakeminjun.vip`는 Cloudflare Access 뒤의 프론트/API Worker, production D1, OpenAI secret과 30분 Cron에 연결됨. 파일·캡처·OCR 파이프라인은 아직 연결하지 않음
 
 ## 확정된 방향
 
@@ -78,10 +78,10 @@ Vite는 `/api`를 `127.0.0.1:8787`의 Worker로 전달한다. 로컬 Access 개�
 ## 검증 상태
 
 - **Implemented**: 기획 문서, 국제정세·물리 프론트엔드, 전용 API Worker, D1 schema/seed, 사건·노트·수준·AI 분석 API, 고정 공식 RSS 수집기, 출처 수집함, 소유자별 사건 후보·검토 API와 지도 승격 차단 경로가 저장소에 존재
-- **Unit-verified**: `npm test` 64건, Sites worker 5건, 운영 배포 경계 3건 통과
+- **Unit-verified**: `npm test` 65건, Sites worker 5건, 운영 배포 경계 4건 통과
 - **Local-runtime-verified**: 실제 로컬 Wrangler와 임시 D1에서 migration, HTTP 사건·수집함 조회, Access 개발 신원, 수준·노트 저장과 사용자 격리, 2~8개 불변 메타데이터 스냅샷 후보, 검토 메모의 재조회, 지도 승격 fail-closed를 확인
 - **Browser-verified**: 인앱 브라우저에서 실제 공식 자료 선택 → 실제 OpenAI 후보 생성 → 검토 메모 저장 → 새로고침 후 유지 경로를 확인. 콘솔 `warn`/`error`는 0건이었고 390×844 브라우저 viewport에서 수평 overflow가 없었음
 - **Simulator-verified**: 미검증 — 390×844는 데스크톱 브라우저 viewport 확인이며 모바일 시뮬레이터 실행이 아님
-- **Physical-device-verified**: 미검증 — 실제 기기에서 실행하지 않음
-- **Live-service-verified**: 로컬 Worker에서 외교부 29건·통일부 10건·백악관 30건·UN 30건을 실제 RSS로 가져와 로컬 D1 저장과 API 조회를 확인. 실제 OpenAI 호출로 로컬 사건 후보 2건을 생성했고, 이전 실행의 표준·정밀 분석 호출도 확인. 원격 Cloudflare D1·Access·Worker·Cron·배포와 파일 저장소는 미검증
+- **Physical-device-verified**: 실제 macOS Chrome에서 production Access 로그인, 국제정세·물리 화면과 OpenAI 응답을 확인. 모바일 물리기기는 미검증
+- **Live-service-verified**: `fakeminjun.vip` DNS·TLS·Access, 분리된 프론트/API Worker, production D1, OpenAI 국제정세·물리 표준 분석 2회와 D1 완료 기록, `workers.dev` 우회 404, Cron 등록을 확인. Cron 첫 자동 RSS 실행, production 수준·노트 UI 저장, 파일 저장소는 미검증
 - **Antivirus-verified**: 미검증 — 백신·EDR 엔진은 실행하지 못했으며, 변경분 보안 검토와 npm advisory·registry signature 검사만 수행

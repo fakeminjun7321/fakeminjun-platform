@@ -68,6 +68,25 @@ test("backend client serializes the source inbox query and forwards abort", asyn
   assert.equal(calls[0].options.signal, controller.signal);
 });
 
+test("backend client runs the owner-only official source refresh as a JSON mutation", async () => {
+  const calls = [];
+  const controller = new AbortController();
+  const client = createBackendClient({
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return jsonResponse({ data: { results: [{ sourceKey: "mofa-press", status: "succeeded" }] } });
+    },
+  });
+
+  const result = await client.runIngestion({ signal: controller.signal });
+  assert.equal(result.results[0].status, "succeeded");
+  assert.equal(calls[0].url, "/api/v1/ingestion/runs");
+  assert.equal(calls[0].options.method, "POST");
+  assert.equal(calls[0].options.signal, controller.signal);
+  assert.equal(calls[0].options.headers["content-type"], "application/json");
+  assert.deepEqual(JSON.parse(calls[0].options.body), {});
+});
+
 test("backend client lists event candidates with review filters and abort support", async () => {
   const calls = [];
   const controller = new AbortController();

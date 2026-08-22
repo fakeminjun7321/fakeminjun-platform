@@ -26,7 +26,7 @@ Firebase는 첫 출시부터 공개 회원가입, 소셜 로그인, 비밀번호
 - `apps/web/src/backendClient.js`: 화면에서 사용할 same-origin API client와 구조화 오류 타입
 - Vite 개발 프록시: `127.0.0.1:5173/api` → `127.0.0.1:8787/api`
 
-국제정세·물리 AI 패널은 이 client를 실제로 사용한다. 오늘 브리핑의 공식 출처 수집함은 실제 RSS 메타데이터를 읽지만, 지도 사건 자체는 여전히 정적 `NON-LIVE DEMO` 자료다. 원격 D1, production Access/Cron 정책과 배포는 만들지 않았다.
+국제정세·물리 AI 패널은 이 client를 실제로 사용한다. 오늘 브리핑의 공식 출처 수집함은 실제 RSS 메타데이터를 읽지만, 지도 사건 자체는 여전히 정적 `NON-LIVE DEMO` 자료다. 원격 D1, production Access, 분리 Worker와 30분 Cron은 배포됐으며 첫 자동 RSS 실행은 아직 검증 전이다.
 
 ## 서비스 구성
 
@@ -245,7 +245,7 @@ preview와 production 바인딩은 자동 상속된다고 가정하지 않고 �
 - **Local-runtime-verified**: 실제 로컬 Wrangler와 임시 D1에서 migration, 사건·수집함 HTTP 요청, 사건 후보 목록·검토 idempotency·사용자 격리·승격 0건 잠금, 재시작 후 영속성과 삭제 확인
 - **Browser-verified**: 실제 수집함 12건 표시와 안전한 원문 링크에 더해 자료 2건 선택 → 실제 OpenAI 후보 생성 → 검토 메모 저장 → 새로고침 후 유지 경로를 인앱 브라우저에서 확인. 콘솔 warning/error 0건, 390×844 브라우저 viewport 수평 overflow 없음
 - **Simulator-verified**: **Not verified / 미검증**
-- **Physical-device-verified**: **Not verified / 미검증**
-- **Live-service-verified**: 로컬 Worker에서 공식 RSS 4개 총 99건 수집과 로컬 D1 조회 확인. 실제 OpenAI 일반·정밀 분석과 사건 후보 2건의 구조화 응답·D1 저장을 확인했고, 같은 근거 재요청이 새 후보·사용량을 만들지 않는 것과 검토 receipt 재사용, 지도 승격 `eventsWritten: 0`을 확인. Cloudflare 계정의 원격 D1·Access·Worker 배포는 **Not verified / 미검증**
-- R2, Queue, Workflows, Vectorize, DNS, production Cron: **Not verified / 미검증**
+- **Physical-device-verified**: 실제 macOS Chrome에서 production Access 로그인, 국제정세·물리 AI 결과 표시를 확인. 모바일 물리기기는 **Not verified / 미검증**
+- **Live-service-verified**: 원격 D1·Access·프론트/API Worker·DNS/TLS·OpenAI 분석 2회와 D1 완료 기록·Cron 등록·`workers.dev` 404를 확인. Cron 첫 자동 RSS 실행과 production 후보/검토/승격 잠금은 **Not verified / 미검증**
+- R2, Queue, Workflows, Vectorize와 실제 Cron 실행 결과: **Not verified / 미검증**
 - 실제 업로드 악성코드 검사와 antivirus/EDR: **Not verified / 미검증**

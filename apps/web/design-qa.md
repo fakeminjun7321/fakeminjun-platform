@@ -51,7 +51,7 @@
 - **Unit-verified**: 43 application/contract/worker tests passed; Sites worker tests 5건도 통과.
 - **Browser-verified**: 국제정세 AI 실제 결과, 일반/정밀 모드 카드, 비선택 카드 배경, 패널 닫기와 포커스 복귀, `/physics/learn` P5 맥락을 확인했다. 다른 세 물리 경로와 통제된 반응형 viewport 비교는 **Not verified / 미검증**.
 - **Simulator-verified**: **Not verified / 미검증**.
-- **Physical-device-verified**: **Not verified / 미검증**.
-- **Live-service-verified**: 로컬 Worker→실제 OpenAI→로컬 D1 분석 경로는 확인. production Cloudflare Access/D1/배포, uploads, 외부 데이터는 **Not verified / 미검증**.
+- **Physical-device-verified**: 실제 macOS Chrome에서 production Access 로그인, 국제정세·물리 화면과 AI 결과를 확인. 모바일 물리기기는 **Not verified / 미검증**.
+- **Live-service-verified**: production Cloudflare Access→API Worker→OpenAI→원격 D1의 국제정세·물리 표준 분석 2회를 확인. uploads, Cron 첫 RSS 실행과 원격 후보/검토 경로는 **Not verified / 미검증**.
 
 final result: partial
