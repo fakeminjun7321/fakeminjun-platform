@@ -49,7 +49,8 @@
 - **Browser-verified**: 인앱 브라우저에서 실제 공식 자료 선택 → 실제 OpenAI 후보 생성 → 검토 메모 저장 → 새로고침 후 유지 경로를 확인. 콘솔 `warn`/`error` 0건, 390×844 브라우저 viewport 수평 overflow 없음
 - **Simulator-verified**: 미검증 — 모바일 시뮬레이터는 사용하지 않음
 - **Physical-device-verified**: 실제 macOS Chrome에서 production Access 로그인, 국제정세·물리 화면과 OpenAI 결과 표시 확인. 모바일 물리기기는 미검증
-- **Live-service-verified**: 원격 Cloudflare DNS·TLS·Access·프론트/API Worker·D1·OpenAI 국제정세/물리 표준 분석 2회·Cron 등록·`workers.dev` 404 확인. Cron 첫 자동 RSS 실행, production 수준·노트·후보/검토 경로와 파일 저장소는 미검증
+- **Live-service-verified**: 원격 Cloudflare DNS·TLS·Access·프론트/API Worker·D1·OpenAI 국제정세/물리 표준 분석 2회·`workers.dev` 404를 확인. 2026-08-22 11:00 UTC 자동 Cron 실행에서 4개 공식 RSS가 모두 성공했고 원격 D1에 메타데이터 99건이 저장됨
+- **Not verified / 미검증**: 수동 새로고침 버튼의 production Chrome 경로, production 수준·노트·후보/검토 경로, 파일 저장소, 인증 후 정적 CSP/HSTS 응답
 - **Antivirus-verified**: 미검증 — 변경분 보안 검토와 npm advisory·registry signature 검사는 수행했으나 백신·EDR 엔진은 실행하지 않음
 
 ## 5. 프론트와 백엔드의 다음 연결 기준

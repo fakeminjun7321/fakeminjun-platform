@@ -2,7 +2,7 @@
 
 작성일: 2026-08-22
 
-상태는 실제 연결 여부를 구분해 기록한다. 현재 공식 RSS 4개는 로컬 Worker/D1에서 실제 응답과 저장을 확인했고, 선택한 자료로 실제 OpenAI 사건 후보를 생성·검토·재조회하는 로컬 경로도 확인했다. 원격 Cloudflare 운영 연결은 아직 아니다.
+상태는 실제 연결 여부를 구분해 기록한다. 공식 RSS 4개는 로컬 Worker/D1뿐 아니라 2026-08-22 11:00 UTC production Cron에서도 모두 성공했고 원격 D1에 메타데이터 99건이 저장됐다. 선택한 자료로 실제 OpenAI 사건 후보를 생성·검토·재조회하는 경로는 아직 로컬 검증까지만 완료했다.
 
 ## 상태 표기
 
@@ -15,10 +15,10 @@
 
 | 출처 | 편집 역할 | 저장 범위 | 현재 검증 |
 |---|---|---|---|
-| [대한민국 외교부 RSS](https://www.mofa.go.kr/www/wpge/m_20347/contents.do) | 한국 공식 | 제목·기관·원문 링크·발행/수집 시각 | 실제 RSS 29건 → 로컬 D1 저장·조회 확인 |
-| [대한민국 통일부 RSS](https://www.unikorea.go.kr/web/unikorea/contents/Information_rss) | 한국 공식 | 동일 | 실제 RSS 10건 → 로컬 D1 저장·조회 확인 |
-| [White House Briefings RSS](https://www.whitehouse.gov/briefings-statements/feed/) | 미국 공식(한국 영향 판단 전) | 동일 | 실제 RSS 30건 → 로컬 D1 저장·조회 확인 |
-| [UN News Peace and Security RSS](https://news.un.org/feed/subscribe/en/news/topic/peace-and-security/feed/rss.xml) | 국제안보 관측(급변 판단 전) | 동일 | 실제 RSS 30건 → 로컬 D1 저장·조회 확인 |
+| [대한민국 외교부 RSS](https://www.mofa.go.kr/www/wpge/m_20347/contents.do) | 한국 공식 | 제목·기관·원문 링크·발행/수집 시각 | 실제 RSS 29건 → 로컬·production D1 저장 확인 |
+| [대한민국 통일부 RSS](https://www.unikorea.go.kr/web/unikorea/contents/Information_rss) | 한국 공식 | 동일 | 실제 RSS 10건 → 로컬·production D1 저장 확인 |
+| [White House Briefings RSS](https://www.whitehouse.gov/briefings-statements/feed/) | 미국 공식(한국 영향 판단 전) | 동일 | 실제 RSS 30건 → 로컬·production D1 저장 확인 |
+| [UN News Peace and Security RSS](https://news.un.org/feed/subscribe/en/news/topic/peace-and-security/feed/rss.xml) | 국제안보 관측(급변 판단 전) | 동일 | 실제 RSS 30건 → 로컬·production D1 저장 확인 |
 | [GDELT](https://www.gdeltproject.org/) | 전 세계 사건·보도량 변화 탐지 | 후속 후보 | 현재 환경 실제 호출 시간초과, 미채택 |
 | [ReliefWeb API](https://apidoc.reliefweb.int/index.html) | 분쟁·재난·인도주의 보고서 | 보류 | 사전 승인된 `appname` 필요, 테스트 403으로 미채택 |
 | [UCDP API](https://ucdp.uu.se/apidocs/index.html) | 무력 충돌의 구조화된 역사 데이터 | 후속 후보 | 공식 문서 확인, 실제 호출 미검증 |
@@ -53,7 +53,7 @@
 
 AI는 OpenAI Responses API만 사용한다. 일반 분석은 비용 효율적인 단일 모델, 정밀 분석은 제한된 전문 검토와 통합 흐름을 사용한다.
 
-국제정세 사건 후보는 선택된 공식 자료 2~8개의 제목·기관·시각·수집 레인만 `gpt-5.6-luna` 단일 Responses 호출에 전달한다. 모델은 기사 본문을 읽었다고 가정할 수 없으며, 결과는 메타데이터 관계 가설·불확실성·다음 확인 항목으로 표시한다. 로컬 후보 2건은 실제 OpenAI 호출로 확인했다. 원격 Cloudflare 분석 경로는 국제정세·물리 표준 분석 2회까지 확인했으며, 원격 공식 RSS 수집과 후보 생성은 아직 미검증이다.
+국제정세 사건 후보는 선택된 공식 자료 2~8개의 제목·기관·시각·수집 레인만 `gpt-5.6-luna` 단일 Responses 호출에 전달한다. 모델은 기사 본문을 읽었다고 가정할 수 없으며, 결과는 메타데이터 관계 가설·불확실성·다음 확인 항목으로 표시한다. 로컬 후보 2건은 실제 OpenAI 호출로 확인했다. 원격 Cloudflare 분석 경로는 국제정세·물리 표준 분석 2회, 원격 공식 RSS는 자동 Cron 수집 4개 stream·99건 저장까지 확인했다. 원격 사건 후보 생성·검토는 아직 미검증이다.
 
 - 텍스트·이미지 입력 분석
 - 구조화된 결과 생성
@@ -109,7 +109,7 @@ AI는 OpenAI Responses API만 사용한다. 일반 분석은 비용 효율적인
 
 ## 7. 첫 연결 전에 결정할 항목
 
-- production Cron 주기와 원격 Cloudflare 리소스 생성 시점
+- production Cron 실패 알림·재시도 정책과 장기 보관 기간
 - 후속 세로 조각에서 비교할 물리·학술 API 후보
 - 원문 전체 저장과 메타데이터·링크만 저장하는 기준
 - 외부 API 사용량 및 월 비용 상한
