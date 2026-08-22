@@ -1,8 +1,8 @@
 # 기술 아키텍처 초안
 
-작성일: 2026-08-21
+작성일: 2026-08-22
 
-이 문서는 Cloudflare-first 저장·API 구조와 OpenAI-only AI 구조를 설명한다. 프론트엔드 프로토타입은 React 19, Vite 6, MapLibre GL JS로 구성한다. Worker BFF와 D1의 로컬 기반, OpenAI Responses API 분석 경로를 구현했으며, 실제 Cloudflare 외부 리소스 생성 전에는 사용자 승인을 받는다. 구체 계획과 구현 경계는 [backend-cloudflare-plan.md](./backend-cloudflare-plan.md)에 기록한다.
+이 문서는 Cloudflare-first 저장·API 구조와 OpenAI-only AI 구조를 설명한다. 프론트엔드 프로토타입은 React 19, Vite 6, MapLibre GL JS로 구성한다. Worker BFF와 D1의 로컬 기반, OpenAI Responses API 분석 경로, 공식 출처 메타데이터 사건 후보와 소유자별 검토 경로를 구현했다. 실제 Cloudflare 외부 리소스 생성 전에는 사용자 승인을 받는다. 구체 계획과 구현 경계는 [backend-cloudflare-plan.md](./backend-cloudflare-plan.md)에 기록한다.
 
 ## 1. 전체 흐름
 
@@ -21,6 +21,11 @@ flowchart LR
     E --> A
     A --> R[Structured analysis]
     R --> B
+    M --> C[2-8 immutable metadata snapshots]
+    C --> A
+    A --> H[(Owner-scoped event candidate)]
+    H --> Q[Owner review record]
+    Q -. fail closed .-> G[Map promotion gate]
 ```
 
 ### 경계
@@ -39,8 +44,10 @@ flowchart LR
 4. 공통 필드 및 분야별 필드 정규화
 5. 이용 권한에 따라 원문, 일부 발췌, 메타데이터·링크 중 하나만 저장
 6. 검색 인덱스 갱신
-7. 복수 근거 검증을 통과한 경우에만 중요도·브리핑·지도 사건 후보 생성
-8. 여러 출처를 모은 뒤 AI 요약·분석 생성
+7. 사용자가 공식 자료 2~8개를 선택하면 당시 제목·기관·원문 링크·시각·해시를 변경 불가능한 근거 스냅샷으로 저장
+8. `gpt-5.6-luna` 단일 OpenAI Responses 호출로 동일 전개 가능성, 배경 맥락, 관련성 불확실성을 구조화한 `미검증 메타데이터 사건 후보` 생성
+9. 후보와 보류·검토 완료·기각 기록을 소유자별로 저장. 검토 완료는 사실 검증을 뜻하지 않음
+10. 원문 근거와 사용자 확인 위치가 없는 후보는 지도 사건으로 승격하지 않고 서버에서 fail-closed
 
 수집 실패와 ‘새 사건 없음’을 구분하고, 이전 데이터가 최신인 것처럼 보이지 않게 마지막 성공 시각을 노출한다.
 
@@ -81,6 +88,14 @@ AI 응답은 자유형 Markdown 한 덩어리가 아니라 다음 구조를 기�
 
 국제정세 분석에서는 예측을 사실처럼 표시하지 않는다. 물리 분석에서는 차원, 부호, 가정, 근사 범위와 원식의 출처를 검토 항목으로 둔다.
 
+### 메타데이터 사건 후보 계약
+
+- 입력은 사용자가 선택한 공식 자료 2~8개의 불변 메타데이터 스냅샷이며 기사 본문을 읽었다고 가정하지 않는다.
+- 한 후보 생성에는 `gpt-5.6-luna` 단일 Responses 호출만 사용한다.
+- 결과는 제목·요약·묶은 이유·지역 라벨·편집 레인 제안·출처별 관계 평가·불확실성·다음 확인 항목으로 제한한다.
+- 후보와 검토는 Access 주체에서 파생한 소유자 범위로 조회·저장한다.
+- `reviewed`는 사용자 검토 상태일 뿐 `verified`가 아니며, 지도 승격 잠금은 유지한다.
+
 ## 5. 수준 적응
 
 사실과 근거는 모든 수준에서 동일하게 유지하고, 표현만 바꾼다.
@@ -106,6 +121,7 @@ AI 응답은 자유형 Markdown 한 덩어리가 아니라 다음 구조를 기�
 첫 버전은 개인용이지만 모든 개인 데이터에는 소유자 경계를 둔다.
 
 - 사용자별 자료·분석·설정 분리
+- 사용자별 사건 후보·검토 기록 분리
 - 공개 데이터 캐시와 개인 자료 저장소 분리
 - 서버에서 접근 권한 검사
 - 공유 기능은 나중에 명시적으로 추가하며 기본값은 비공개
@@ -115,9 +131,9 @@ AI 응답은 자유형 Markdown 한 덩어리가 아니라 다음 구조를 기�
 - 프론트엔드 프로토타입: React 19, Vite 6, MapLibre GL JS, OpenFreeMap, Phosphor Icons
 - 지도 운영 추천: Protomaps PMTiles + Cloudflare R2/Worker 캐시
 - 현재 로컬 백엔드: Workers Static Assets + Worker BFF + D1, `/api/v1` client
-- 구현된 데이터 경계: 공개 데모 사건 읽기, 공식 RSS 4개 metadata-only 수집함, Access 기반 개인 신원, owner-scoped 노트와 수준 설정
+- 구현된 데이터 경계: 공개 데모 사건 읽기, 공식 RSS 4개 metadata-only 수집함, 2~8개 불변 메타데이터 스냅샷 사건 후보, Access 기반 개인 신원, owner-scoped 후보·검토·노트·수준 설정
 - 운영 확장 추천: R2 + Queues + Workflows
 - 후속 추천: Workflows, Vectorize, OpenAI-only 비동기 분석 작업
-- 아직 미확정: 실제 Cloudflare 리소스, production Access/Cron 정책, 인증 공개 범위, 수집 자료의 사건 승격 규칙, 비용 상한
+- 아직 미확정: 실제 Cloudflare 리소스, production Access/Cron 정책, 인증 공개 범위, 원문 검증을 거친 지도 사건 승격 규칙, 비용 상한
 
 선택 기준은 시각적 선호가 아니라 실제 데이터 수집, 캡처 업로드, 저장, 검색, 인용 검증을 가장 작은 비용으로 끝까지 실행할 수 있는지다. Firebase는 공개 회원가입·소셜 로그인·모바일 오프라인 동기화가 첫 출시의 핵심이 될 때 다시 비교한다.

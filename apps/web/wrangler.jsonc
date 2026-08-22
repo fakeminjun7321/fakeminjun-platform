@@ -15,7 +15,8 @@
   "vars": {
     "APP_ENV": "local",
     "APP_ORIGIN": "http://127.0.0.1:5173",
-    "INGESTION_ADMIN_SUBJECT": "local-development-user"
+    "INGESTION_ADMIN_SUBJECT": "local-development-user",
+    "EVENT_EDITOR_SUBJECT": "local-development-user"
   },
   "access": {
     "dev": {

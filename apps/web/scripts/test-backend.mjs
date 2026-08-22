@@ -47,6 +47,7 @@ async function startWorker() {
     "--ip", "127.0.0.1",
     "--port", String(port),
     "--persist-to", stateDirectory,
+    "--var", "EVENT_EDITOR_SUBJECT:local-development-user",
   ], {
     cwd: root,
     env: { ...process.env, CI: "1", NO_COLOR: "1" },
@@ -89,13 +90,15 @@ async function request(pathname, options = {}) {
   return { response, body };
 }
 
-function jsonMutation(method, body) {
+function jsonMutation(method, body, idempotencyKey = null) {
+  const headers = {
+    "content-type": "application/json",
+    origin: frontendOrigin,
+  };
+  if (idempotencyKey) headers["idempotency-key"] = idempotencyKey;
   return {
     method,
-    headers: {
-      "content-type": "application/json",
-      origin: frontendOrigin,
-    },
+    headers,
     body: JSON.stringify(body),
   };
 }
@@ -111,6 +114,102 @@ try {
     "--local", "--persist-to", stateDirectory,
     "--command",
     "INSERT INTO source_items (source_id, provider_item_id, canonical_url, title, published_at, collected_at, content_hash, observed_at, last_seen_at, metadata_json) SELECT id, 'fixture-1', 'https://www.mofa.go.kr/test/fixture-1', '외교부 공식 수집 자료 테스트', '2026-08-22T02:00:00.000Z', '2026-08-22T02:05:00.000Z', 'fixture-hash', '2026-08-22T02:05:00.000Z', '2026-08-22T02:05:00.000Z', '{\"contentStatus\":\"source-metadata\",\"verificationStatus\":\"unverified\"}' FROM sources WHERE source_key = 'mofa-press'; INSERT INTO source_item_streams (source_item_id, stream_id, first_seen_at, last_seen_at) SELECT si.id, ss.id, '2026-08-22T02:05:00.000Z', '2026-08-22T02:05:00.000Z' FROM source_items si JOIN sources s ON s.id = si.source_id JOIN source_streams ss ON ss.source_id = s.id WHERE si.provider_item_id = 'fixture-1'; UPDATE source_streams SET last_attempt_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), last_success_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), last_error_code = NULL WHERE lane = 'korea-core';",
+  ]);
+
+  await run(wrangler, [
+    "d1", "execute", "fakeminjun-platform-local",
+    "--local", "--persist-to", stateDirectory,
+    "--command",
+    `
+      INSERT INTO source_items (
+        source_id, provider_item_id, canonical_url, title, published_at, collected_at,
+        content_hash, observed_at, last_seen_at, metadata_json
+      )
+      SELECT id, 'fixture-2', 'https://www.whitehouse.gov/briefings-statements/fixture-2',
+        'White House official metadata fixture', '2026-08-22T02:02:00.000Z',
+        '2026-08-22T02:06:00.000Z', 'fixture-hash-2', '2026-08-22T02:06:00.000Z',
+        '2026-08-22T02:06:00.000Z', '{"contentStatus":"source-metadata","verificationStatus":"unverified"}'
+      FROM sources WHERE source_key = 'whitehouse-briefings';
+
+      INSERT INTO source_item_streams (source_item_id, stream_id, first_seen_at, last_seen_at)
+      SELECT si.id, ss.id, '2026-08-22T02:06:00.000Z', '2026-08-22T02:06:00.000Z'
+      FROM source_items si
+      JOIN sources s ON s.id = si.source_id
+      JOIN source_streams ss ON ss.source_id = s.id
+      WHERE si.provider_item_id = 'fixture-2';
+
+      INSERT INTO users (external_subject, email)
+      VALUES
+        ('local-development-user', 'local@fakeminjun.invalid'),
+        ('other-candidate-user', 'other-candidate@fakeminjun.invalid');
+
+      INSERT INTO event_candidates (
+        id, owner_id, status, review_decision, revision, source_count,
+        source_item_ids_json, evidence_digest, model_contract, result_json, candidate_hash, model_id,
+        usage_json, prompt_version, idempotency_key, request_hash, completed_at
+      )
+      SELECT
+        'candidate-local', u.id, 'ready', 'unreviewed', 1, 2,
+        json_array(
+          (SELECT id FROM source_items WHERE provider_item_id = 'fixture-1'),
+          (SELECT id FROM source_items WHERE provider_item_id = 'fixture-2')
+        ),
+        '${"e".repeat(64)}', 'responses:gpt-fixture:strict:event_candidate_metadata_review:v1',
+        json_object(
+          'title', '공식 발표 메타데이터 후보',
+          'summary', '두 공식 제목의 관계를 검토하는 미검증 후보입니다.',
+          'whyGrouped', '가까운 시각에 수집된 공식 외교 발표입니다.',
+          'regionLabel', '한미',
+          'laneRecommendation', 'uncertain',
+          'sourceAssessments', json_array(
+            json_object(
+              'evidenceId', (SELECT id FROM source_items WHERE provider_item_id = 'fixture-1'),
+              'relationship', 'context',
+              'note', '원문 확인 전에는 같은 전개인지 판단할 수 없습니다.'
+            ),
+            json_object(
+              'evidenceId', (SELECT id FROM source_items WHERE provider_item_id = 'fixture-2'),
+              'relationship', 'context',
+              'note', '제목 수준의 맥락 자료입니다.'
+            )
+          ),
+          'uncertainties', json_array('원문 본문을 수집하지 않았습니다.'),
+          'nextChecks', json_array('두 원문을 직접 열어 발표 대상을 대조합니다.')
+        ),
+        '${"a".repeat(64)}', 'gpt-fixture', '{}', 'event-candidate-metadata-v1',
+        'fixture-candidate-local', '${"b".repeat(64)}', strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+      FROM users u WHERE u.external_subject = 'local-development-user';
+
+      INSERT INTO event_candidate_sources (
+        candidate_id, source_item_id, evidence_id, position, title_snapshot,
+        canonical_url_snapshot, published_at_snapshot, collected_at_snapshot,
+        content_hash_snapshot, source_key_snapshot, source_name_snapshot,
+        source_role_snapshot, source_lane_snapshot
+      )
+      SELECT
+        'candidate-local', si.id, si.id,
+        CASE si.provider_item_id WHEN 'fixture-1' THEN 0 ELSE 1 END,
+        si.title, si.canonical_url, si.published_at, si.collected_at, si.content_hash,
+        s.source_key, s.name, s.source_role, ss.lane
+      FROM source_items si
+      JOIN sources s ON s.id = si.source_id
+      JOIN source_item_streams sis ON sis.source_item_id = si.id
+      JOIN source_streams ss ON ss.id = sis.stream_id
+      WHERE si.provider_item_id IN ('fixture-1', 'fixture-2');
+
+      INSERT INTO event_candidates (
+        id, owner_id, status, review_decision, revision, source_count,
+        source_item_ids_json, evidence_digest, model_contract, result_json, candidate_hash, model_id,
+        usage_json, prompt_version, idempotency_key, request_hash, completed_at
+      )
+      SELECT
+        'candidate-other', u.id, 'ready', 'unreviewed', 1, 2,
+        '[]', '${"f".repeat(64)}', 'responses:gpt-fixture:strict:event_candidate_metadata_review:v1',
+        '{}', '${"c".repeat(64)}', 'gpt-fixture', '{}',
+        'event-candidate-metadata-v1', 'fixture-candidate-other', '${"d".repeat(64)}',
+        strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+      FROM users u WHERE u.external_subject = 'other-candidate-user';
+    `,
   ]);
 
   workerProcess = await startWorker();
@@ -129,6 +228,79 @@ try {
   assert.equal(sourceItems.body.data[0].title, "외교부 공식 수집 자료 테스트");
   assert.equal(sourceItems.body.data[0].live, true);
   assert.equal(sourceItems.body.data[0].verificationStatus, "unverified");
+
+  const candidates = await request("/api/v1/event-candidates?status=ready&reviewStatus=unreviewed&limit=10");
+  assert.equal(candidates.response.status, 200, `${JSON.stringify(candidates.body)}\n${workerProcess.getCapturedOutput()}`);
+  assert.equal(candidates.body.meta.dataStatus, "private-source-metadata-candidates-unverified");
+  assert.deepEqual(candidates.body.data.map(({ id }) => id), ["candidate-local"]);
+  assert.equal(candidates.body.data[0].title, "공식 발표 메타데이터 후보");
+  assert.equal(candidates.body.data[0].reviewStatus, "unreviewed");
+  assert.equal(candidates.body.data[0].evidenceSnapshots.length, 2);
+  assert.equal(candidates.body.data[0].sourceAssessments.length, 2);
+  assert.equal(candidates.body.data[0].verificationStatus, "unverified");
+  assert.equal(candidates.body.data[0].mapReadiness.ready, false);
+
+  const reviewBody = {
+    decision: "reviewed",
+    expectedRevision: 1,
+    candidateHash: "a".repeat(64),
+    note: "원문을 추가로 대조해야 함",
+  };
+  const reviewedCandidate = await request(
+    "/api/v1/event-candidates/candidate-local/reviews",
+    jsonMutation("POST", reviewBody, "candidate-review-local-1"),
+  );
+  assert.equal(reviewedCandidate.response.status, 201, JSON.stringify(reviewedCandidate.body));
+  assert.equal(reviewedCandidate.body.data.reviewStatus, "reviewed");
+  assert.equal(reviewedCandidate.body.data.revision, 2);
+  assert.equal(reviewedCandidate.body.data.verificationStatus, "unverified");
+  assert.equal(reviewedCandidate.body.data.reviewReceipt.decision, "reviewed");
+  const reviewReceiptId = reviewedCandidate.body.data.reviewReceipt.id;
+
+  const replayedReview = await request(
+    "/api/v1/event-candidates/candidate-local/reviews",
+    jsonMutation("POST", reviewBody, "candidate-review-local-1"),
+  );
+  assert.equal(replayedReview.response.status, 200);
+  assert.equal(replayedReview.body.data.revision, 2);
+  assert.equal(replayedReview.body.data.reviewReceipt.id, reviewReceiptId);
+
+  const conflictedReviewKey = await request(
+    "/api/v1/event-candidates/candidate-local/reviews",
+    jsonMutation("POST", {
+      ...reviewBody,
+      decision: "hold",
+    }, "candidate-review-local-1"),
+  );
+  assert.equal(conflictedReviewKey.response.status, 409);
+  assert.equal(conflictedReviewKey.body.error.code, "idempotency_conflict");
+
+  const staleReview = await request(
+    "/api/v1/event-candidates/candidate-local/reviews",
+    jsonMutation("POST", {
+      ...reviewBody,
+      decision: "hold",
+    }, "candidate-review-local-2"),
+  );
+  assert.equal(staleReview.response.status, 409);
+  assert.equal(staleReview.body.error.code, "candidate_revision_conflict");
+
+  const reviewedList = await request("/api/v1/event-candidates?reviewStatus=reviewed&limit=10");
+  assert.equal(reviewedList.response.status, 200);
+  assert.deepEqual(reviewedList.body.data.map(({ id }) => id), ["candidate-local"]);
+
+  const promoted = await request("/api/v1/event-candidates/candidate-local/promote", {
+    method: "POST",
+    headers: { origin: frontendOrigin },
+  });
+  assert.equal(promoted.response.status, 409);
+  assert.equal(promoted.body.error.code, "candidate_not_map_ready");
+  assert.equal(promoted.body.error.details.eventsWritten, 0);
+  const eventsAfterPromotionAttempt = await request("/api/v1/events?limit=100");
+  assert.deepEqual(
+    eventsAfterPromotionAttempt.body.data.map(({ id }) => id).sort((left, right) => left - right),
+    [1, 2, 3, 4, 5, 6],
+  );
 
   const event = await request("/api/v1/events/1");
   assert.equal(event.response.status, 200);
@@ -197,13 +369,19 @@ try {
   assert.equal(persistedSourceItems.response.status, 200);
   assert.equal(persistedSourceItems.body.data.some(({ providerItemId }) => providerItemId === "fixture-1"), true);
 
+  const persistedCandidates = await request("/api/v1/event-candidates?limit=10");
+  assert.equal(persistedCandidates.response.status, 200);
+  assert.deepEqual(persistedCandidates.body.data.map(({ id }) => id), ["candidate-local"]);
+  assert.equal(persistedCandidates.body.data[0].reviewStatus, "reviewed");
+  assert.equal(persistedCandidates.body.data[0].revision, 2);
+
   const removed = await request(`/api/v1/notes/${noteId}`, {
     method: "DELETE",
     headers: { origin: frontendOrigin },
   });
   assert.equal(removed.response.status, 204);
 
-  console.log("Backend integration passed: D1 migration, non-live events, live-unverified source metadata, Access identity, owner isolation, persistence, optimistic locking, levels, and deletion.");
+  console.log("Backend integration passed: D1 migrations, non-live events, live-unverified source metadata, private metadata candidates, idempotent review receipts, owner isolation, promotion lock, persistence, optimistic locking, levels, and deletion.");
 } finally {
   await stopWorker(workerProcess);
   await rm(stateDirectory, { recursive: true, force: true });

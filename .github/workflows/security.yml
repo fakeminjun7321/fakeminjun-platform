@@ -31,5 +31,10 @@ jobs:
         if: always()
         run: npm run security:signatures
       - run: npm test
+      - run: npm run test:deployment
       - run: npm run test:backend
+      - name: Bundle production Workers without publishing
+        run: |
+          npx wrangler deploy --dry-run --config wrangler.frontend.production.jsonc
+          npx wrangler deploy --dry-run --config wrangler.api.production.jsonc
       - run: npm run test:sites

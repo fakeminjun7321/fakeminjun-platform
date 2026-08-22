@@ -76,6 +76,14 @@ function sourceItemsQuery(params = {}) {
   return encoded ? `?${encoded}` : "";
 }
 
+function eventCandidatesQuery(params = {}) {
+  const query = new URLSearchParams();
+  if (params.limit !== undefined) query.set("limit", String(params.limit));
+  if (params.reviewStatus) query.set("reviewStatus", params.reviewStatus);
+  const encoded = query.toString();
+  return encoded ? `?${encoded}` : "";
+}
+
 export function createBackendClient({ baseUrl = "", fetchImpl = globalThis.fetch } = {}) {
   if (typeof fetchImpl !== "function") throw new TypeError("fetchImpl must be a function");
   const base = normalizeBaseUrl(baseUrl);
@@ -113,6 +121,28 @@ export function createBackendClient({ baseUrl = "", fetchImpl = globalThis.fetch
     listSourceItems: ({ signal, ...params } = {}) => request(
       `/api/v1/source-items${sourceItemsQuery(params)}`,
       { signal, returnEnvelope: true },
+    ),
+    listEventCandidates: ({ signal, ...params } = {}) => request(
+      `/api/v1/event-candidates${eventCandidatesQuery(params)}`,
+      { signal },
+    ),
+    createEventCandidate: ({ sourceItemIds }, { signal, idempotencyKey = crypto.randomUUID() } = {}) => request(
+      "/api/v1/event-candidates",
+      {
+        method: "POST",
+        body: JSON.stringify({ sourceItemIds }),
+        headers: { "idempotency-key": idempotencyKey },
+        signal,
+      },
+    ),
+    reviewEventCandidate: (candidateId, review, { signal, idempotencyKey = crypto.randomUUID() } = {}) => request(
+      `/api/v1/event-candidates/${encodeURIComponent(candidateId)}/reviews`,
+      {
+        method: "POST",
+        body: JSON.stringify(review),
+        headers: { "idempotency-key": idempotencyKey },
+        signal,
+      },
     ),
     getEvent: (eventId) => request(`/api/v1/events/${encodeURIComponent(eventId)}`),
     session: () => request("/api/v1/session"),
