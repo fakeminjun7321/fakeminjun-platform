@@ -65,7 +65,11 @@ for (const [pathname, expectedText] of ROUTE_EXPECTATIONS) {
     } else {
       assert.ok(html.includes(expectedText));
     }
-    assert.ok(html.includes("NON-LIVE DEMO"));
+    if (pathname === "/international/briefing") {
+      assert.ok(html.includes("LIVE SOURCE · UNVERIFIED"));
+    } else {
+      assert.ok(html.includes("PRIVATE WORKSPACE"));
+    }
     assert.ok(!html.includes("정치"));
     assert.ok(!html.includes("/politics"));
     assert.ok(!html.includes('id="ai-analysis-drawer"'));
@@ -76,6 +80,8 @@ for (const [pathname, expectedText] of ROUTE_EXPECTATIONS) {
       assert.ok(html.includes("MAP PROMOTION LOCKED"));
       assert.ok(html.includes("공식 출처 새로고침"));
       assert.ok(html.includes("사건 후보 만들기"));
+      assert.ok(html.includes("AUTO SYNC · 60 SEC"));
+      assert.ok(html.includes("첫 동기화 대기"));
     }
   });
 }

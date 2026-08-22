@@ -16,12 +16,13 @@
 - 물리 자료 찾기는 MIT OpenCourseWare, 한국물리올림피아드, IPhO 공식 공개 링크만 사용하며 실제 검색 API는 아직 연결하지 않음
 - 상황지도와 분석용 데모 신호는 모두 `NON-LIVE DEMO`이며 실제 수집 자료나 사건 후보와 분리함
 - 공식 RSS 4개(외교부·통일부·백악관·UN 평화·안보)의 제목·기관·원문 링크·시각을 로컬 D1에 수집하고 오늘 브리핑의 별도 `실제 수집 · 미검증` 영역에 표시
+- production Worker는 공식 RSS를 10분마다 수집하고, 국제정세 화면은 열려 있을 때 60초마다 API를 다시 확인하며 브라우저 탭 복귀 시 즉시 동기화함
 - 수집 자료는 사건·지도·검증 상태로 자동 승격하지 않으며 기사 본문과 이미지를 저장하지 않음
 - 사용자가 공식 자료 2~8개를 선택하면 변경 불가능한 메타데이터 스냅샷을 만들고, `gpt-5.6-luna` 단일 OpenAI Responses 호출로 `미검증 사건 후보`를 생성함
 - 사건 후보와 보류·검토 완료·기각 기록은 소유자별로 분리하며, 검토 완료도 사실 검증으로 간주하지 않음. 원문 근거와 확인된 위치가 없는 후보의 지도 승격은 서버에서 차단함
 - 국제정세·물리의 호출형 AI 패널은 로컬 Worker를 거쳐 OpenAI Responses API에 연결되고, 결과·사용량·요청 중복 방지 기록을 소유자별 D1에 저장
 - 일반 분석은 비용 효율적인 OpenAI 단일 모델, 정밀 분석은 OpenAI 전문 검토 2회와 최종 통합 1회로 제한
-- `fakeminjun.vip`는 Cloudflare Access 뒤의 프론트/API Worker, production D1, OpenAI secret과 30분 Cron에 연결됨. 파일·캡처·OCR 파이프라인은 아직 연결하지 않음
+- `fakeminjun.vip`는 Cloudflare Access 뒤의 프론트/API Worker, production D1, OpenAI secret과 10분 Cron에 연결됨. 파일·캡처·OCR 파이프라인은 아직 연결하지 않음
 
 ## 확정된 방향
 
@@ -78,11 +79,11 @@ Vite는 `/api`를 `127.0.0.1:8787`의 Worker로 전달한다. 로컬 Access 개�
 ## 검증 상태
 
 - **Implemented**: 기획 문서, 국제정세·물리 프론트엔드, 전용 API Worker, D1 schema/seed, 사건·노트·수준·AI 분석 API, 고정 공식 RSS 수집기, 출처 수집함, 소유자별 사건 후보·검토 API와 지도 승격 차단 경로가 저장소에 존재
-- **Unit-verified**: `npm test` 65건, Sites worker 5건, 운영 배포 경계 4건 통과
+- **Unit-verified**: `npm test` 88건, Sites worker 5건, 운영 배포 경계 4건 통과
 - **Local-runtime-verified**: 실제 로컬 Wrangler와 임시 D1에서 migration, HTTP 사건·수집함 조회, Access 개발 신원, 수준·노트 저장과 사용자 격리, 2~8개 불변 메타데이터 스냅샷 후보, 검토 메모의 재조회, 지도 승격 fail-closed를 확인
 - **Browser-verified**: 인앱 브라우저에서 실제 공식 자료 선택 → 실제 OpenAI 후보 생성 → 검토 메모 저장 → 새로고침 후 유지 경로를 확인. 콘솔 `warn`/`error`는 0건이었고 390×844 브라우저 viewport에서 수평 overflow가 없었음
 - **Simulator-verified**: 미검증 — 390×844는 데스크톱 브라우저 viewport 확인이며 모바일 시뮬레이터 실행이 아님
 - **Physical-device-verified**: 실제 macOS Chrome에서 production Access 로그인, 국제정세·물리 화면과 OpenAI 응답을 확인. 모바일 물리기기는 미검증
-- **Live-service-verified**: `fakeminjun.vip` DNS·TLS·Access, 분리된 프론트/API Worker, production D1, OpenAI 국제정세·물리 표준 분석 2회와 D1 완료 기록, `workers.dev` 우회 404를 확인. 2026-08-22 11:00 UTC Cron 시간창에서 공식 RSS 4개가 모두 성공해 메타데이터 99건이 원격 D1에 저장됨
-- **Not verified / 미검증**: 새 수동 새로고침 버튼의 production Chrome 사용자 경로, 수준·노트 UI 저장, 원격 사건 후보/검토, 파일 저장소, 인증 후 정적 응답의 CSP/HSTS
+- **Live-service-verified**: `fakeminjun.vip` DNS·TLS·Access, 분리된 프론트/API Worker, production D1, OpenAI 국제정세·물리 표준 분석 2회와 D1 완료 기록, `workers.dev` 우회 404를 확인. 10분 Cron 배포 직후 2026-08-22 15:00 UTC 시간창에서 공식 RSS 4개가 모두 성공해 원격 D1에 기록됨
+- **Not verified / 미검증**: 60초 자동 동기화와 탭 복귀 즉시 갱신의 production Chrome 사용자 경로, 수동 새로고침 버튼, 수준·노트 UI 저장, 원격 사건 후보/검토, 파일 저장소, 인증 후 정적 응답의 CSP/HSTS
 - **Antivirus-verified**: 미검증 — 백신·EDR 엔진은 실행하지 못했으며, 변경분 보안 검토와 npm advisory·registry signature 검사만 수행

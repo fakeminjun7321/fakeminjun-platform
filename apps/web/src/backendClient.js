@@ -181,11 +181,11 @@ export function createBackendClient({ baseUrl = "", fetchImpl = globalThis.fetch
     listEvents: (params) => request(`/api/v1/events${eventQuery(params)}`),
     listEventsEnvelope: ({ signal, ...params } = {}) => request(
       `/api/v1/events${eventQuery(params)}`,
-      { signal, returnEnvelope: true },
+      { signal, cache: "no-cache", returnEnvelope: true },
     ),
     listSourceItems: ({ signal, ...params } = {}) => request(
       `/api/v1/source-items${sourceItemsQuery(params)}`,
-      { signal, returnEnvelope: true },
+      { signal, cache: "no-cache", returnEnvelope: true },
     ),
     listEventCandidates: ({ signal, ...params } = {}) => request(
       `/api/v1/event-candidates${eventCandidatesQuery(params)}`,

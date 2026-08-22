@@ -44,18 +44,19 @@
 ## 4. 현재 상태
 
 - **Implemented**: 제품 문서, 국제정세·물리 프론트엔드, Worker BFF, D1 schema/seed, 사건·수집함·노트·수준·AI 분석·사건 후보·검토 API와 프론트 API client. 메타데이터 후보의 지도 승격은 fail-closed
-- **Unit-verified**: `npm test` 64건, 별도 `npm run test:sites` 5건 통과
+- **Unit-verified**: `npm test` 88건, `npm run test:sites` 5건, 운영 배포 경계 4건 통과
 - **Local-runtime-verified**: 실제 로컬 Wrangler와 임시 D1로 migration, HTTP 사건·수집함 조회, Access 개발 신원, 수준·노트 저장과 사용자 격리, 2~8개 불변 메타데이터 스냅샷 후보, 검토 메모 재조회, 지도 승격 차단을 확인
 - **Browser-verified**: 인앱 브라우저에서 실제 공식 자료 선택 → 실제 OpenAI 후보 생성 → 검토 메모 저장 → 새로고침 후 유지 경로를 확인. 콘솔 `warn`/`error` 0건, 390×844 브라우저 viewport 수평 overflow 없음
 - **Simulator-verified**: 미검증 — 모바일 시뮬레이터는 사용하지 않음
 - **Physical-device-verified**: 실제 macOS Chrome에서 production Access 로그인, 국제정세·물리 화면과 OpenAI 결과 표시 확인. 모바일 물리기기는 미검증
-- **Live-service-verified**: 원격 Cloudflare DNS·TLS·Access·프론트/API Worker·D1·OpenAI 국제정세/물리 표준 분석 2회·`workers.dev` 404를 확인. 2026-08-22 11:00 UTC 자동 Cron 실행에서 4개 공식 RSS가 모두 성공했고 원격 D1에 메타데이터 99건이 저장됨
-- **Not verified / 미검증**: 수동 새로고침 버튼의 production Chrome 경로, production 수준·노트·후보/검토 경로, 파일 저장소, 인증 후 정적 CSP/HSTS 응답
+- **Live-service-verified**: 원격 Cloudflare DNS·TLS·Access·프론트/API Worker·D1·OpenAI 국제정세/물리 표준 분석 2회·`workers.dev` 404를 확인. 10분 Cron 배포 직후 2026-08-22 15:00 UTC 자동 실행에서 4개 공식 RSS가 모두 성공해 원격 D1에 기록됨
+- **Not verified / 미검증**: 60초 자동 동기화와 탭 복귀 즉시 갱신의 production Chrome 경로, 수동 새로고침 버튼, production 수준·노트·후보/검토 경로, 파일 저장소, 인증 후 정적 CSP/HSTS 응답
 - **Antivirus-verified**: 미검증 — 변경분 보안 검토와 npm advisory·registry signature 검사는 수행했으나 백신·EDR 엔진은 실행하지 않음
 
 ## 5. 프론트와 백엔드의 다음 연결 기준
 
 - 물리의 모든 하위 경로를 실제 데스크톱 브라우저에서 열고 탭 전환·선택·검색·수준 변경·AI 패널 진입 확인
+- 오늘 브리핑을 60초 이상 열어 자동 API 재확인을 확인하고, 다른 탭에서 복귀했을 때 즉시 다시 확인하는지 production Chrome 네트워크와 화면 시각으로 검증
 - 390×844 브라우저 viewport는 수평 overflow 없음까지 확인했으며, 태블릿 폭과 실제 모바일 시뮬레이터는 별도 확인
 - 상황지도 사건 목록·상세를 D1 API에서 읽되 `non-live-demo` 상태를 그대로 표시하는지 확인
 - 노트·수준 설정을 화면에서 저장한 뒤 새로고침하고 다시 표시되는지 확인

@@ -68,6 +68,7 @@ test("backend client serializes the source inbox query and forwards abort", asyn
   assert.equal(calledUrl.pathname, "/api/v1/source-items");
   assert.equal(calledUrl.searchParams.get("lanes"), "korea-core,us-impact");
   assert.equal(calls[0].options.signal, controller.signal);
+  assert.equal(calls[0].options.cache, "no-cache");
 });
 
 test("backend client runs the owner-only official source refresh as a JSON mutation", async () => {
@@ -379,6 +380,7 @@ test("backend client preserves the events envelope and forwards map request canc
   assert.equal(result.data[0].id, 9);
   assert.equal(result.meta.dataStatus, "mixed");
   assert.equal(calls[0].options.signal, controller.signal);
+  assert.equal(calls[0].options.cache, "no-cache");
 });
 
 test("backend client serializes evidence, location, readiness, and promotion contracts", async () => {
