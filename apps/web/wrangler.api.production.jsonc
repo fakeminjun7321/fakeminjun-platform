@@ -9,10 +9,6 @@
     {
       "pattern": "fakeminjun.vip/api/*",
       "zone_name": "fakeminjun.vip"
-    },
-    {
-      "pattern": "fakeminjun.vip/oauth/google-drive/*",
-      "zone_name": "fakeminjun.vip"
     }
   ],
   "d1_databases": [

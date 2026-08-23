@@ -1,5 +1,4 @@
 const API_PREFIX = "/api/";
-const GOOGLE_DRIVE_OAUTH_PREFIX = "/oauth/google-drive/";
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
   "base-uri 'none'",
@@ -59,8 +58,7 @@ function unavailableApiResponse(request) {
 
 export default {
   async fetch(request, env) {
-    const pathname = new URL(request.url).pathname;
-    if (pathname.startsWith(API_PREFIX) || pathname.startsWith(GOOGLE_DRIVE_OAUTH_PREFIX)) {
+    if (new URL(request.url).pathname.startsWith(API_PREFIX)) {
       return unavailableApiResponse(request);
     }
 

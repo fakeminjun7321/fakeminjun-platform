@@ -210,6 +210,15 @@ export function createBackendClient({ baseUrl = "", fetchImpl = globalThis.fetch
       "/api/v1/integrations/google-drive/connect",
       { method: "POST", body: JSON.stringify({}), signal },
     ),
+    finishGoogleDriveConnection: ({ state, code, error }, { signal } = {}) => request(
+      "/api/v1/integrations/google-drive/callback",
+      {
+        method: "POST",
+        body: JSON.stringify({ state, ...(code ? { code } : {}), ...(error ? { error } : {}) }),
+        keepalive: true,
+        signal,
+      },
+    ),
     listPhysicsDriveItems: ({ signal } = {}) => request(
       "/api/v1/physics/drive/items",
       { signal, returnEnvelope: true },

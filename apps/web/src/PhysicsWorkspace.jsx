@@ -24,6 +24,8 @@ import {
 
 const RESOURCE_TYPES = ["전체", "강의·문제", "강의 영상", "동료평가 논문", "프리프린트", "기출문제", "공식 문서"];
 const DRIVE_COMPLETION_STORAGE_KEY = "studio7321.drive-upload-completion.v1";
+let googleDriveCapturedCallback = null;
+let googleDriveCallbackRelay = null;
 
 function readSessionValue(key) {
   try {
@@ -280,7 +282,43 @@ function safeGoogleDriveViewUrl(value) {
   }
 }
 
+export function parseGoogleDriveCallbackSearch(search) {
+  const params = new URLSearchParams(search ?? "");
+  const state = params.get("state")?.trim() ?? "";
+  const code = params.get("code")?.trim() ?? "";
+  const error = params.get("error")?.trim() ?? "";
+  if (!/^[A-Za-z0-9_-]{43}$/u.test(state)) return null;
+  if (error && /^[A-Za-z0-9_.-]{1,100}$/u.test(error) && !code) return { state, error };
+  if (code && code.length <= 4096 && !error) return { state, code };
+  return null;
+}
+
+function takeGoogleDriveCallbackOnce() {
+  if (googleDriveCapturedCallback) return googleDriveCapturedCallback;
+  if (typeof window === "undefined") return null;
+  const callback = parseGoogleDriveCallbackSearch(window.location.search);
+  if (!callback) return null;
+  googleDriveCapturedCallback = callback;
+  window.history.replaceState({}, "", "/physics/library?drive=connecting");
+  return callback;
+}
+
+function clearGoogleDriveCallback(callback) {
+  if (googleDriveCapturedCallback === callback) googleDriveCapturedCallback = null;
+}
+
+function relayGoogleDriveCallback(callback) {
+  if (googleDriveCallbackRelay?.state === callback.state) return googleDriveCallbackRelay.promise;
+  const promise = backendClient.finishGoogleDriveConnection(callback);
+  googleDriveCallbackRelay = { state: callback.state, promise };
+  void promise.finally(() => {
+    if (googleDriveCallbackRelay?.promise === promise) googleDriveCallbackRelay = null;
+  }).catch(() => {});
+  return promise;
+}
+
 function GoogleDriveVault({ onNotice }) {
+  const callback = takeGoogleDriveCallbackOnce();
   const [state, setState] = useState({
     status: "loading",
     configured: false,
@@ -322,15 +360,80 @@ function GoogleDriveVault({ onNotice }) {
 
   useEffect(() => {
     const controller = new AbortController();
+    let active = true;
     requestRef.current = controller;
     const outcome = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("drive");
-    void load(controller.signal, outcome)
-      .catch((error) => {
-        if (error?.name !== "AbortError") {
-          setState((current) => ({ ...current, status: "error", message: "Google Drive 연결 상태를 불러오지 못했습니다." }));
+    void (async () => {
+      try {
+        if (callback) {
+          setState((current) => ({ ...current, status: "connecting", message: "Google Drive 연결을 안전하게 확인하고 있습니다." }));
+          const result = await relayGoogleDriveCallback(callback);
+          if (!active) return;
+          const nextOutcome = result.outcome === "cancelled" ? "cancelled" : "connected";
+          clearGoogleDriveCallback(callback);
+          window.history.replaceState({}, "", `/physics/library?drive=${nextOutcome}`);
+          try {
+            await load(controller.signal, nextOutcome);
+          } catch (error) {
+            if (error?.name !== "AbortError" && nextOutcome === "connected") {
+              setState((current) => ({
+                ...current,
+                status: "ready",
+                configured: true,
+                connected: true,
+                message: "Google Drive 연결은 저장됐지만 최신 자료 목록을 다시 불러오지 못했습니다.",
+              }));
+            } else if (error?.name !== "AbortError") throw error;
+          }
+          return;
         }
-      });
+        await load(controller.signal, outcome);
+      } catch (error) {
+        if (error?.name !== "AbortError" && active) {
+          let latestStatus = null;
+          if (callback) {
+            for (let attempt = 0; attempt < 4; attempt += 1) {
+              try {
+                latestStatus = await backendClient.getGoogleDriveStatus();
+                if (latestStatus.connected) break;
+              } catch {
+                // A lost callback response is resolved against the server-owned connection state.
+              }
+              if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 350 * (attempt + 1)));
+            }
+          }
+          if (!active) return;
+          if (latestStatus?.connected) {
+            clearGoogleDriveCallback(callback);
+            window.history.replaceState({}, "", "/physics/library?drive=connected");
+            setState((current) => ({
+              ...current,
+              status: "ready",
+              configured: true,
+              connected: true,
+              catalogItemCount: Number(latestStatus.catalogItemCount ?? current.catalogItemCount),
+              message: "Google Drive 연결이 완료되었습니다. 최신 목록은 잠시 후 다시 확인할 수 있습니다.",
+            }));
+          } else {
+            if (callback) {
+              clearGoogleDriveCallback(callback);
+              window.history.replaceState({}, "", "/physics/library?drive=error");
+            }
+            setState((current) => ({
+              ...current,
+              status: "error",
+              configured: callback ? true : Boolean(latestStatus?.configured ?? current.configured),
+              connected: false,
+              message: callback
+                ? "Google Drive 연결을 완료하지 못했습니다. 연결 버튼으로 새 연결을 시작해 주세요."
+                : "Google Drive 연결 상태를 불러오지 못했습니다.",
+            }));
+          }
+        }
+      }
+    })();
     return () => {
+      active = false;
       requestRef.current?.abort();
       requestRef.current = null;
     };

@@ -60,26 +60,6 @@ test("does not turn missing API routes into the app shell", async () => {
   assert.equal((await response.json()).error.code, "api_route_not_found");
 });
 
-test("dispatches the Drive OAuth finish route to the API handler", async () => {
-  let calls = 0;
-  const response = await worker.fetch(
-    new Request("https://example.test/oauth/google-drive/finish"),
-    {
-      ASSETS: {
-        fetch: async () => {
-          calls += 1;
-          return new Response("asset");
-        },
-      },
-    },
-    {},
-  );
-
-  assert.equal(response.status, 503);
-  assert.equal(calls, 0);
-  assert.equal((await response.json()).error.code, "database_unavailable");
-});
-
 test("does not turn non-GET app requests into the app shell", async () => {
   let calls = 0;
   const response = await worker.fetch(

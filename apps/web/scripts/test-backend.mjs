@@ -885,18 +885,19 @@ try {
   const driveAuthorizationUrl = new URL(driveConnect.body.data.authorizationUrl);
   assert.equal(driveAuthorizationUrl.origin, "https://accounts.google.com");
   const driveState = driveAuthorizationUrl.searchParams.get("state");
-  const cancelledDriveCallback = await fetch(
-    `${apiOrigin}/oauth/google-drive/finish?${new URLSearchParams({ state: driveState, error: "access_denied" })}`,
-    { redirect: "manual" },
+  assert.equal(driveAuthorizationUrl.searchParams.get("redirect_uri"), `${frontendOrigin}/physics/library`);
+  const cancelledDriveCallback = await request(
+    "/api/v1/integrations/google-drive/callback",
+    jsonMutation("POST", { state: driveState, error: "access_denied" }),
   );
-  assert.equal(cancelledDriveCallback.status, 303);
-  assert.equal(cancelledDriveCallback.headers.get("location"), `${frontendOrigin}/physics/library?drive=cancelled`);
-  const replayedDriveCallback = await fetch(
-    `${apiOrigin}/oauth/google-drive/finish?${new URLSearchParams({ state: driveState, error: "access_denied" })}`,
-    { redirect: "manual" },
+  assert.equal(cancelledDriveCallback.response.status, 200);
+  assert.equal(cancelledDriveCallback.body.data.outcome, "cancelled");
+  const replayedDriveCallback = await request(
+    "/api/v1/integrations/google-drive/callback",
+    jsonMutation("POST", { state: driveState, error: "access_denied" }),
   );
-  assert.equal(replayedDriveCallback.status, 400);
-  assert.equal((await replayedDriveCallback.json()).error.code, "google_oauth_state_expired");
+  assert.equal(replayedDriveCallback.response.status, 400);
+  assert.equal(replayedDriveCallback.body.error.code, "google_oauth_state_expired");
   const disconnectedDriveUpload = await request(
     "/api/v1/physics/drive/uploads",
     jsonMutation("POST", { name: "Mechanics.pdf", byteSize: 4096 }, "drive-upload-no-connection"),

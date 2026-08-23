@@ -24,7 +24,7 @@ const vite = await createServer({
   logLevel: "silent",
 });
 const { App, CandidateReviewDesk } = await vite.ssrLoadModule("/src/App.jsx");
-const { PhysicsWorkspace } = await vite.ssrLoadModule("/src/PhysicsWorkspace.jsx");
+const { PhysicsWorkspace, parseGoogleDriveCallbackSearch } = await vite.ssrLoadModule("/src/PhysicsWorkspace.jsx");
 const { PHYSICS_ANALYSIS_LEVEL, PHYSICS_PROFILE_SUMMARY } = await vite.ssrLoadModule("/src/physicsProfile.js");
 const { AiDrawer, getMandosProfile } = await vite.ssrLoadModule("/src/AiDrawer.jsx");
 const { CandidatePromotionPanel } = await vite.ssrLoadModule("/src/CandidatePromotionPanel.jsx");
@@ -92,6 +92,18 @@ for (const [pathname, expectedText] of ROUTE_EXPECTATIONS) {
 test("physics uses one personal olympiad analysis profile without a level selector", () => {
   assert.equal(PHYSICS_ANALYSIS_LEVEL, "P4");
   assert.equal(PHYSICS_PROFILE_SUMMARY, "수학적 구조·이론·유도 중심 · KPhO에서 IPhO까지 준비");
+});
+
+test("Drive callback relay keeps only one bounded Google result", () => {
+  const state = "s".repeat(43);
+  assert.deepEqual(parseGoogleDriveCallbackSearch(`?state=${state}&code=authorization-code`), {
+    state, code: "authorization-code",
+  });
+  assert.deepEqual(parseGoogleDriveCallbackSearch(`?state=${state}&error=access_denied`), {
+    state, error: "access_denied",
+  });
+  assert.equal(parseGoogleDriveCallbackSearch(`?state=${state}&code=code&error=access_denied`), null);
+  assert.equal(parseGoogleDriveCallbackSearch("?state=short&code=code"), null);
 });
 
 test("renders candidate evidence and review controls without claiming verification", () => {
