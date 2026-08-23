@@ -127,7 +127,7 @@ function LearningHub({ onOpenAi }) {
               level: PHYSICS_ANALYSIS_LEVEL, contextKind: "physics-mode", contextId: selected.id, title: selected.title,
               taskType: PHYSICS_TASK_TYPES[selected.id] ?? "general",
               meta: `물리 학습 모드 ${selected.code} · ${PHYSICS_PROFILE_SUMMARY}`, placeholder: selected.example,
-            })}><Brain size={18} /> {selected.title}로 Mandos 열기</button>
+            })}><Brain size={18} /> Mandos로 분석하기</button>
           </section>
         </article>
         <aside className="physics-quick-resources">
