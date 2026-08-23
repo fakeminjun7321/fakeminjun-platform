@@ -206,7 +206,7 @@ export function CaptureComposer({ onConfirm, onCancel }) {
       setState("error");
       setMessage(error?.name === "NotAllowedError"
         ? "캡처가 취소되었거나 권한이 허용되지 않았습니다. 이미지가 전송되지는 않았습니다."
-        : error?.message ?? "화면 캡처를 시작하지 못했습니다.");
+        : "화면 캡처를 시작하지 못했습니다. 잠시 후 다시 시도해 주세요.");
     } finally {
       stopMediaStream(stream);
       if (streamRef.current === stream) streamRef.current = null;
@@ -273,7 +273,7 @@ export function CaptureComposer({ onConfirm, onCancel }) {
     } catch (error) {
       if (!isCurrentOperation(operationId)) return;
       setState("error");
-      setMessage(error?.message ?? "선택 영역을 만들지 못했습니다.");
+      setMessage("선택 영역을 만들지 못했습니다. 다시 영역을 선택해 주세요.");
     }
   }
 
@@ -288,10 +288,10 @@ export function CaptureComposer({ onConfirm, onCancel }) {
   return (
     <section className={`capture-composer is-${state}`} aria-labelledby="capture-composer-title">
       <header>
-        <div><p className="system-kicker">BUILT-IN VISUAL CONTEXT</p><h3 id="capture-composer-title">화면 영역 캡처</h3></div>
+        <div><p className="system-kicker">화면에서 가져오기</p><h3 id="capture-composer-title">화면 영역 캡처</h3></div>
         <button className="icon-button" type="button" onClick={onCancel} aria-label="캡처 취소"><X size={18} /></button>
       </header>
-      <p className="capture-privacy-note">브라우저가 선택한 대상의 한 프레임만 가져옵니다. 공유는 즉시 종료되며, 확정하기 전에는 서버로 전송하지 않습니다.</p>
+      <p className="capture-privacy-note">브라우저가 선택한 대상의 한 프레임만 가져옵니다. 공유는 즉시 종료되며, 확정하기 전에는 분석 요청으로 보내지 않습니다.</p>
       {state === "idle" || state === "error" ? (
         <button className="capture-start" type="button" onClick={requestCapture}><Desktop size={18} /> 캡처 대상 선택</button>
       ) : null}
