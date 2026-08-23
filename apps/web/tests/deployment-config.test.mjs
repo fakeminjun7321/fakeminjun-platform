@@ -38,12 +38,14 @@ test("production static assets carry restrictive security headers without blocki
 test("map engine assets stay off non-map routes and use the available OpenFreeMap font stack", async () => {
   const mainSource = await readFile(new URL("../src/main.jsx", import.meta.url), "utf8");
   const mapSource = await readFile(new URL("../src/WorldSituationMap.jsx", import.meta.url), "utf8");
+  const styles = await readFile(new URL("../src/styles.css", import.meta.url), "utf8");
   const viteConfig = await readFile(new URL("../vite.config.mjs", import.meta.url), "utf8");
   const indexHtml = await readFile(new URL("../index.html", import.meta.url), "utf8");
 
   assert.doesNotMatch(mainSource, /maplibre-gl\/dist\/maplibre-gl\.css/);
   assert.match(mapSource, /import "maplibre-gl\/dist\/maplibre-gl\.css"/);
   assert.match(mapSource, /const MAP_FONT_STACK = \["Noto Sans Regular"\]/);
+  assert.match(styles, /\.map-frame > \.maplibre-map\.maplibregl-map\s*{[^}]*position:\s*absolute;[^}]*width:\s*100%;[^}]*height:\s*100%;/s);
   assert.match(viteConfig, /return "map-engine"/);
   assert.match(indexHtml, /rel="preconnect" href="https:\/\/tiles\.openfreemap\.org"/);
 });
