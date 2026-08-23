@@ -2745,6 +2745,9 @@ body {
   overflow: hidden;
 }
 .layer-heading { font-family: var(--body); font-size: 10px; letter-spacing: 0; }
+@media (max-width: 900px) {
+  .layer-heading { font-size: 0; }
+}
 .map-controls { border-radius: 9px; overflow: hidden; }
 .map-camera-readout { color: #8f9da2; }
 .map-camera-readout small { color: #6f7c81; }
