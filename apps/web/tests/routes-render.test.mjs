@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { createServer } from "vite";
 
 globalThis.window = {
-  location: { pathname: "/physics/learn" },
+  location: { pathname: "/physics/drive", search: "", hash: "" },
   history: {},
   addEventListener() {},
   removeEventListener() {},
@@ -31,7 +31,7 @@ const {
   parseGoogleDriveCallbackSearch,
 } = await vite.ssrLoadModule("/src/PhysicsWorkspace.jsx");
 const { PHYSICS_ANALYSIS_LEVEL, PHYSICS_PROFILE_SUMMARY } = await vite.ssrLoadModule("/src/physicsProfile.js");
-const { AiDrawer, analysisErrorNotice, getMandosProfile } = await vite.ssrLoadModule("/src/AiDrawer.jsx");
+const { AiDrawer, analysisErrorNotice, getAnalysisProfile, getMandosProfile } = await vite.ssrLoadModule("/src/AiDrawer.jsx");
 const { CandidatePromotionPanel } = await vite.ssrLoadModule("/src/CandidatePromotionPanel.jsx");
 const aiDrawerSource = await readFile(new URL("../src/AiDrawer.jsx", import.meta.url), "utf8");
 const appSource = await readFile(new URL("../src/App.jsx", import.meta.url), "utf8");
@@ -45,10 +45,10 @@ after(async () => {
 const ROUTE_EXPECTATIONS = [
   ["/international/briefing", "사건 후보 검토대"],
   ["/international/issues", "이슈 추적"],
-  ["/physics/learn", "물리 학습 허브"],
-  ["/physics/library", "물리 자료 보관소"],
-  ["/physics/find", "물리 자료 찾기"],
-  ["/physics/ipho", "KPhO · IPhO 준비"],
+  ["/physics/drive", "통합 자료 워크스페이스"],
+  ["/physics/ps", "AXIOM S1"],
+  ["/physics/te", "THEORIA T1"],
+  ["/physics/library", "통합 자료 워크스페이스"],
 ];
 
 for (const [pathname, expectedText] of ROUTE_EXPECTATIONS) {
@@ -57,7 +57,7 @@ for (const [pathname, expectedText] of ROUTE_EXPECTATIONS) {
     const html = renderToStaticMarkup(React.createElement(App));
     if (pathname.startsWith("/physics/")) {
       assert.ok(html.includes("물리 작업공간을 불러오는 중입니다.") || html.includes(expectedText));
-      const view = { "/physics/library": "library", "/physics/find": "finder", "/physics/ipho": "ipho" }[pathname] ?? "learn";
+      const view = { "/physics/ps": "ps", "/physics/te": "te" }[pathname] ?? "drive";
       const physicsHtml = renderToStaticMarkup(React.createElement(PhysicsWorkspace, {
         view,
         onOpenAi() {},
@@ -67,11 +67,19 @@ for (const [pathname, expectedText] of ROUTE_EXPECTATIONS) {
       assert.ok(physicsHtml.includes(PHYSICS_PROFILE_SUMMARY));
       assert.ok(!physicsHtml.includes("물리 설명 수준"));
       assert.ok(!physicsHtml.includes('class="level-selector"'));
-      if (pathname === "/physics/library") {
+      assert.ok(!physicsHtml.includes("학습 허브"));
+      assert.ok(!physicsHtml.includes("KPhO"));
+      assert.ok(!physicsHtml.includes("IPhO"));
+      if (view === "drive") {
         assert.ok(physicsHtml.includes("Google Drive 원본 보관소"));
         assert.ok(physicsHtml.includes("Drive 전체 권한을 요청하지 않습니다."));
         assert.ok(physicsHtml.includes("Google Drive 연결"));
         assert.ok(!physicsHtml.includes("Google Drive 연결됨"));
+        assert.ok(physicsHtml.includes("통합 자료 검색"));
+        assert.ok(physicsHtml.includes("보관 링크"));
+      } else {
+        assert.ok(physicsHtml.includes("CODE-NATIVE VISUAL"));
+        assert.ok(physicsHtml.includes("SVG NATIVE"));
       }
     } else {
       assert.ok(html.includes(expectedText));
@@ -103,9 +111,9 @@ for (const [pathname, expectedText] of ROUTE_EXPECTATIONS) {
   });
 }
 
-test("physics uses one personal olympiad analysis profile without a level selector", () => {
+test("physics uses one personal P4 analysis profile without a level selector", () => {
   assert.equal(PHYSICS_ANALYSIS_LEVEL, "P4");
-  assert.equal(PHYSICS_PROFILE_SUMMARY, "수학적 구조·이론·유도 중심 · KPhO에서 IPhO까지 준비");
+  assert.equal(PHYSICS_PROFILE_SUMMARY, "수학적 구조·이론·유도·검산 중심 · 개인 맞춤 P4");
 });
 
 test("Drive callback relay keeps only one bounded Google result", () => {
@@ -223,6 +231,27 @@ test("Mandos drawer defaults to Core and keeps advanced controls compact", () =>
   assert.equal(getMandosProfile("deep").title, "Mandos 3 Deep");
 });
 
+test("physics engine drawer uses dedicated branding and execution profiles", () => {
+  const html = renderToStaticMarkup(React.createElement(AiDrawer, {
+    analysisContext: {
+      domain: "physics",
+      level: "P4",
+      taskType: "physics-problem-solving",
+      title: "P.S. 문제풀이",
+      meta: "AXIOM S1 · 개인 맞춤 P4",
+      placeholder: "문제를 입력하세요.",
+      initialPrompt: "경사면 문제를 풀어줘.",
+      defaultMode: "deep",
+    },
+    onClose() {},
+  }));
+  assert.ok(html.includes("AXIOM S1"));
+  assert.ok(html.includes("정밀 검산"));
+  assert.ok(html.includes("경사면 문제를 풀어줘."));
+  assert.equal(getAnalysisProfile("auto", "physics-theory-explanation").title, "THEORIA T1");
+  assert.equal(getAnalysisProfile("standard", "physics-problem-solving").task, "빠른 풀이");
+});
+
 test("Mandos keeps requested profile history and localizes recoverable errors", () => {
   assert.match(aiDrawerSource, /setMode\(loaded\.requestedMode \?\? loaded\.mode \?\? "auto"\)/);
   assert.match(aiDrawerSource, /item\.requestedMode \?\? item\.mode/);
@@ -243,24 +272,13 @@ test("Mandos keeps requested profile history and localizes recoverable errors", 
   }
 });
 
-test("international routes and physics modes select explicit task contracts", () => {
+test("international routes and physics engines select explicit task contracts", () => {
   assert.match(appSource, /route === "briefing" \? "evidence-crosscheck" : "causal-synthesis"/);
-  const expectedPhysicsTasks = [
-    ["concept", "general"],
-    ["derivation", "full-derivation"],
-    ["visual-analysis", "solution-audit"],
-    ["research", "evidence-crosscheck"],
-    ["network", "general"],
-    ["thought-experiment", "general"],
-    ["research-log", "general"],
-  ];
-  for (const [mode, taskType] of expectedPhysicsTasks) {
-    const escapedMode = mode.replaceAll("-", "\\-");
-    assert.match(physicsWorkspaceSource, new RegExp(`["']?${escapedMode}["']?\\s*:\\s*["']${taskType}["']`));
-  }
-  assert.match(physicsWorkspaceSource, /taskType: PHYSICS_TASK_TYPES\[selected\.id\] \?\? "general"/);
-  assert.match(physicsWorkspaceSource, /Mandos로 분석하기/);
-  assert.doesNotMatch(physicsWorkspaceSource, /selected\.title\}로 Mandos 열기/);
+  assert.match(physicsWorkspaceSource, /PHYSICS_AI_ENGINES\.ps/);
+  assert.match(physicsWorkspaceSource, /PHYSICS_AI_ENGINES\.te/);
+  assert.match(physicsWorkspaceSource, /taskType: engine\.taskType/);
+  assert.match(physicsWorkspaceSource, /autoSubmit: true/);
+  assert.match(physicsWorkspaceSource, /<EngineDiagram engine=\{engine\}/);
 });
 
 test("pinned Mandos is complementary and cannot block or close the workspace", () => {

@@ -586,6 +586,28 @@ test("analysis validation keeps model and owner controls on the server", () => {
     () => validateAnalysisPayload({ domain: "physics", prompt: "유도해줘.", eventId: 1 }),
     (error) => error.code === "invalid_analysis_event",
   );
+  assert.equal(validateAnalysisPayload({
+    domain: "physics",
+    mode: "auto",
+    taskType: "physics-problem-solving",
+    prompt: "경사면 문제를 풀어줘.",
+    level: "P4",
+  }).taskType, "physics-problem-solving");
+  assert.equal(validateAnalysisPayload({
+    domain: "physics",
+    mode: "deep",
+    taskType: "physics-theory-explanation",
+    prompt: "노터 정리를 설명해줘.",
+    level: "P4",
+  }).taskType, "physics-theory-explanation");
+  assert.throws(
+    () => validateAnalysisPayload({
+      domain: "international",
+      taskType: "physics-problem-solving",
+      prompt: "잘못된 분야 호출",
+    }),
+    (error) => error.code === "invalid_analysis_task_type",
+  );
 
   assert.deepEqual(resolveAnalysisMode(validateAnalysisPayload({
     domain: "physics",
@@ -639,6 +661,15 @@ test("Deep recovery has a longer stale window than single-pass Mandos runs", () 
   assert.equal(analysisStaleAfterMs("deep"), 11 * 60 * 1000);
 });
 
+test("physics reports allow only structured code-native diagram types", () => {
+  const diagramTypes = ANALYSIS_REPORT_SCHEMA.properties.visual.properties.type.enum;
+  assert.ok(diagramTypes.includes("free-body-diagram"));
+  assert.ok(diagramTypes.includes("concept-map"));
+  assert.ok(diagramTypes.includes("equation-map"));
+  assert.ok(!diagramTypes.includes("raw-svg"));
+  assert.ok(!diagramTypes.includes("image-html"));
+});
+
 test("Mandos request contracts preserve profile, task, domain, and input kind", () => {
   const cases = [
     {
@@ -680,6 +711,22 @@ test("Mandos request contracts preserve profile, task, domain, and input kind", 
       inputKind: "file",
       profile: "deep",
       promptPattern: /검산|오류/,
+    },
+    {
+      mode: "auto",
+      domain: "physics",
+      taskType: "physics-problem-solving",
+      inputKind: "text",
+      profile: "core",
+      promptPattern: /AXIOM S1|독립 검산|free-body-diagram/,
+    },
+    {
+      mode: "deep",
+      domain: "physics",
+      taskType: "physics-theory-explanation",
+      inputKind: "text",
+      profile: "deep",
+      promptPattern: /THEORIA T1|정확한 정의|concept-map/,
     },
   ];
 
