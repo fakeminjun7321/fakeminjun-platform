@@ -33,6 +33,8 @@ import worker, {
   validateNotePayload,
   parsePhysicsSearchResourceIds,
   validatePhysicsSearchPayload,
+  validateGoogleDriveUploadCompletionPayload,
+  validateGoogleDriveUploadPayload,
 } from "../worker/index.js";
 
 function jsonResponse(body, init = {}) {
@@ -275,6 +277,8 @@ test("candidate mutations reject an untrusted origin before identity, D1, or Ope
     ["/api/v1/visual-analyses", "POST"],
     ["/api/v1/physics/library", "POST"],
     ["/api/v1/integrations/google-drive/connect", "POST"],
+    ["/api/v1/physics/drive/uploads", "POST"],
+    ["/api/v1/physics/drive/uploads/9f165cbb-0315-4a0e-bf07-0c8c602e3da5/complete", "POST"],
   ]) {
     const response = await worker.fetch(new Request(`https://example.test${pathname}`, {
       method,
@@ -292,6 +296,28 @@ test("candidate mutations reject an untrusted origin before identity, D1, or Ope
     assert.equal(response.status, 403);
     assert.equal((await response.json()).error.code, "origin_forbidden");
   }
+});
+
+test("Drive upload contracts accept only bounded PDFs and server-verifiable file IDs", () => {
+  assert.deepEqual(validateGoogleDriveUploadPayload({
+    name: "  Mechanics.pdf  ",
+    byteSize: 512 * 1024 * 1024,
+  }), { name: "Mechanics.pdf", byteSize: 512 * 1024 * 1024 });
+  assert.deepEqual(validateGoogleDriveUploadCompletionPayload({
+    driveFileId: "drive-file-123456",
+  }), { driveFileId: "drive-file-123456" });
+  assert.throws(
+    () => validateGoogleDriveUploadPayload({ name: "Mechanics.zip", byteSize: 100 }),
+    (error) => error.code === "google_drive_filename_invalid",
+  );
+  assert.throws(
+    () => validateGoogleDriveUploadPayload({ name: "Mechanics.pdf", byteSize: 512 * 1024 * 1024 + 1 }),
+    (error) => error.code === "google_drive_file_too_large",
+  );
+  assert.throws(
+    () => validateGoogleDriveUploadCompletionPayload({ driveFileId: "short", ownerId: 7 }),
+    (error) => error.code === "unknown_fields",
+  );
 });
 
 test("candidate evidence, location, and promotion contracts keep verification server-owned", () => {

@@ -2,14 +2,21 @@ import { runAllSourceStreams } from "./ingestion.js";
 import { searchExternalPhysicsProviders } from "./physicsProviders.js";
 import {
   GOOGLE_DRIVE_FILE_SCOPE,
+  GOOGLE_DRIVE_MAX_PDF_BYTES,
   GoogleDriveIntegrationError,
   buildGoogleDriveAuthorizationUrl,
   createGoogleOAuthAttempt,
+  decryptGoogleDriveUploadSessionUrl,
   decryptGoogleToken,
+  encryptGoogleDriveUploadSessionUrl,
   encryptGoogleToken,
   exchangeGoogleAuthorizationCode,
+  findOrCreateGoogleDrivePhysicsFolder,
+  getGoogleDrivePdfMetadata,
   getGoogleDriveConfiguration,
   googleOAuthStateHash,
+  initiateGoogleDrivePdfUpload,
+  refreshGoogleAccessToken,
   requireGoogleDriveConfiguration,
 } from "./googleDrive.js";
 
@@ -63,6 +70,7 @@ const MAX_PHYSICS_STORAGE_BYTES_PER_OWNER = 2 * 1024 * 1024 * 1024;
 const PHYSICS_UPLOAD_WINDOW_LIMIT = 20;
 const DAILY_PHYSICS_UPLOAD_LIMIT = 100;
 const MONTHLY_PHYSICS_UPLOAD_LIMIT = 1_000;
+const MAX_ACTIVE_GOOGLE_DRIVE_UPLOADS = 10;
 
 const ANALYSIS_CITATION_SCHEMA = {
   type: "object",
@@ -4743,6 +4751,330 @@ async function finishGoogleDriveConnection(request, env, ctx, requestId) {
   return googleDriveRedirectResponse(env, "connected", requestId);
 }
 
+export function validateGoogleDriveUploadPayload(value) {
+  assertOnlyKeys(value, new Set(["name", "byteSize"]));
+  const name = typeof value.name === "string" ? value.name.normalize("NFKC").trim() : "";
+  const byteSize = Number(value.byteSize);
+  if (!name || name.length > 240 || /[\u0000-\u001f\u007f/\\]/u.test(name) || !/\.pdf$/iu.test(name)) {
+    throw new ApiError(400, "google_drive_filename_invalid", "PDF 확장자를 가진 올바른 파일 이름이 필요합니다.");
+  }
+  if (!Number.isSafeInteger(byteSize) || byteSize < 1 || byteSize > GOOGLE_DRIVE_MAX_PDF_BYTES) {
+    throw new ApiError(413, "google_drive_file_too_large", "Google Drive PDF는 512MiB 이하여야 합니다.");
+  }
+  return { name, byteSize };
+}
+
+export function validateGoogleDriveUploadCompletionPayload(value) {
+  assertOnlyKeys(value, new Set(["driveFileId"]));
+  const driveFileId = typeof value.driveFileId === "string" ? value.driveFileId.trim() : "";
+  if (!/^[A-Za-z0-9_-]{10,200}$/u.test(driveFileId)) {
+    throw new ApiError(400, "google_drive_file_invalid", "Google Drive 파일 식별자가 올바르지 않습니다.");
+  }
+  return { driveFileId };
+}
+
+async function requireGoogleDriveAccess(env, db, ownerId) {
+  let configuration;
+  try {
+    configuration = requireGoogleDriveConfiguration(env);
+  } catch (error) {
+    rethrowGoogleDriveError(error);
+  }
+  const connection = await db.prepare(`
+    SELECT refresh_token_ciphertext, refresh_token_iv, key_version, scope, status, root_folder_id
+    FROM google_drive_connections WHERE owner_id = ?
+  `).bind(ownerId).first();
+  if (!connection || connection.status !== "connected" || connection.scope !== GOOGLE_DRIVE_FILE_SCOPE) {
+    throw new ApiError(409, "google_drive_not_connected", "먼저 Google Drive를 연결해 주세요.");
+  }
+  try {
+    const refreshToken = await decryptGoogleToken({
+      ciphertext: connection.refresh_token_ciphertext,
+      iv: connection.refresh_token_iv,
+    }, configuration.tokenEncryptionKey);
+    const token = await refreshGoogleAccessToken({
+      refreshToken,
+      clientId: configuration.clientId,
+      clientSecret: configuration.clientSecret,
+      fetchImpl: env.GOOGLE_DRIVE_FETCH ?? env.GOOGLE_OAUTH_FETCH ?? globalThis.fetch,
+    });
+    return {
+      accessToken: token.accessToken,
+      configuration,
+      connection,
+      fetchImpl: env.GOOGLE_DRIVE_FETCH ?? env.GOOGLE_OAUTH_FETCH ?? globalThis.fetch,
+    };
+  } catch (error) {
+    if (error instanceof GoogleDriveIntegrationError && error.code === "google_drive_reauthorization_required") {
+      await db.prepare(`
+        UPDATE google_drive_connections
+        SET status = 'reauthorization-required', last_error_code = ?,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        WHERE owner_id = ?
+      `).bind(error.code, ownerId).run();
+    }
+    rethrowGoogleDriveError(error);
+  }
+}
+
+async function driveUploadSessionResponse(row, configuration, db, ownerId) {
+  if (row.status === "completed") {
+    const item = await db.prepare("SELECT * FROM physics_drive_items WHERE owner_id = ? AND drive_file_id = ?")
+      .bind(ownerId, row.drive_file_id).first();
+    if (!item) throw new ApiError(500, "google_drive_catalog_missing", "완료된 Drive 자료의 목록 정보를 찾지 못했습니다.");
+    return { status: "completed", item: physicsDriveItemFromRow(item) };
+  }
+  if (row.status !== "ready") {
+    const code = row.status === "expired" ? "google_drive_upload_expired" : "google_drive_upload_not_ready";
+    throw new ApiError(row.status === "expired" ? 410 : 409, code, row.status === "expired"
+      ? "Google Drive 업로드 시간이 만료됐습니다. 파일을 다시 선택해 주세요."
+      : "Google Drive 업로드를 새로 시작해 주세요.");
+  }
+  if (Date.parse(row.expires_at) <= Date.now()) {
+    await db.prepare(`
+      UPDATE google_drive_upload_sessions
+      SET status = 'expired', session_url_ciphertext = NULL, session_url_iv = NULL,
+          updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+      WHERE id = ? AND owner_id = ? AND status = 'ready'
+    `).bind(row.id, ownerId).run();
+    throw new ApiError(410, "google_drive_upload_expired", "Google Drive 업로드 시간이 만료됐습니다. 파일을 다시 선택해 주세요.");
+  }
+  let uploadUrl;
+  try {
+    uploadUrl = await decryptGoogleDriveUploadSessionUrl({
+      ciphertext: row.session_url_ciphertext,
+      iv: row.session_url_iv,
+    }, configuration.tokenEncryptionKey);
+  } catch (error) {
+    rethrowGoogleDriveError(error);
+  }
+  return {
+    id: row.id,
+    status: "ready",
+    name: row.file_name,
+    byteSize: Number(row.byte_size),
+    uploadUrl,
+    expiresAt: row.expires_at,
+  };
+}
+
+async function startPhysicsDriveUpload(request, env, ctx, requestId) {
+  requireMutationOrigin(request, env);
+  const db = requireDatabase(env);
+  const principal = await requirePrincipal(ctx);
+  const ownerId = await ensureUser(db, principal);
+  const idempotencyKey = requireIdempotencyKey(request);
+  const payload = validateGoogleDriveUploadPayload(await readJson(request));
+  const requestHash = await sha256Text(JSON.stringify(payload));
+  const existing = await db.prepare(`
+    SELECT * FROM google_drive_upload_sessions WHERE owner_id = ? AND idempotency_key = ?
+  `).bind(ownerId, idempotencyKey).first();
+  if (existing) {
+    assertIdempotentPayload(existing, requestHash);
+    let configuration;
+    try {
+      configuration = requireGoogleDriveConfiguration(env);
+    } catch (error) {
+      rethrowGoogleDriveError(error);
+    }
+    return jsonResponse({ data: await driveUploadSessionResponse(existing, configuration, db, ownerId) }, 200, requestId);
+  }
+
+  // The personal workspace intentionally supports one selected PDF upload at a time.
+  // A new idempotency key therefore replaces any abandoned resumable session so a
+  // cancelled upload cannot consume the owner's active-session allowance for 24h.
+  await db.prepare(`
+    UPDATE google_drive_upload_sessions
+    SET status = 'expired', session_url_ciphertext = NULL, session_url_iv = NULL,
+        updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+    WHERE owner_id = ? AND status IN ('initializing', 'ready')
+  `).bind(ownerId).run();
+
+  await db.prepare(`
+    DELETE FROM google_drive_upload_sessions
+    WHERE owner_id = ? AND status IN ('completed', 'error', 'expired')
+      AND updated_at < strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-30 days')
+  `).bind(ownerId).run();
+
+  const id = crypto.randomUUID();
+  let inserted;
+  try {
+    inserted = await db.prepare(`
+      INSERT INTO google_drive_upload_sessions (
+        id, owner_id, file_name, byte_size, status, idempotency_key, request_hash, expires_at
+      )
+      SELECT ?, ?, ?, ?, 'initializing', ?, ?, strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+24 hours')
+      WHERE (
+        SELECT COUNT(*) FROM google_drive_upload_sessions
+        WHERE owner_id = ? AND status IN ('initializing', 'ready')
+          AND expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+      ) < ?
+    `).bind(
+      id, ownerId, payload.name, payload.byteSize, idempotencyKey, requestHash,
+      ownerId, MAX_ACTIVE_GOOGLE_DRIVE_UPLOADS,
+    ).run();
+  } catch (error) {
+    const raced = await db.prepare(`
+      SELECT * FROM google_drive_upload_sessions WHERE owner_id = ? AND idempotency_key = ?
+    `).bind(ownerId, idempotencyKey).first();
+    if (!raced) throw error;
+    assertIdempotentPayload(raced, requestHash);
+    let configuration;
+    try {
+      configuration = requireGoogleDriveConfiguration(env);
+    } catch (configurationError) {
+      rethrowGoogleDriveError(configurationError);
+    }
+    return jsonResponse({ data: await driveUploadSessionResponse(raced, configuration, db, ownerId) }, 200, requestId);
+  }
+  if (!inserted.meta?.changes) {
+    throw new ApiError(429, "google_drive_upload_limit", "동시에 진행할 수 있는 Google Drive 업로드는 10개입니다.");
+  }
+
+  try {
+    const drive = await requireGoogleDriveAccess(env, db, ownerId);
+    const folder = await findOrCreateGoogleDrivePhysicsFolder({ accessToken: drive.accessToken, fetchImpl: drive.fetchImpl });
+    await db.prepare(`
+      UPDATE google_drive_connections
+      SET root_folder_id = ?, last_error_code = NULL,
+          updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+      WHERE owner_id = ? AND status = 'connected'
+    `).bind(folder.id, ownerId).run();
+    const upload = await initiateGoogleDrivePdfUpload({
+      accessToken: drive.accessToken,
+      folderId: folder.id,
+      uploadSessionId: id,
+      name: payload.name,
+      byteSize: payload.byteSize,
+      fetchImpl: drive.fetchImpl,
+    });
+    const encryptedUrl = await encryptGoogleDriveUploadSessionUrl(upload.sessionUrl, drive.configuration.tokenEncryptionKey);
+    const updated = await db.prepare(`
+      UPDATE google_drive_upload_sessions
+      SET root_folder_id = ?, status = 'ready', session_url_ciphertext = ?, session_url_iv = ?,
+          last_error_code = NULL, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+      WHERE id = ? AND owner_id = ? AND status = 'initializing'
+    `).bind(folder.id, encryptedUrl.ciphertext, encryptedUrl.iv, id, ownerId).run();
+    if (!updated.meta?.changes) throw new ApiError(409, "google_drive_upload_conflict", "Drive 업로드 상태가 다른 요청과 충돌했습니다.");
+    const row = await db.prepare("SELECT * FROM google_drive_upload_sessions WHERE id = ? AND owner_id = ?")
+      .bind(id, ownerId).first();
+    return jsonResponse({ data: await driveUploadSessionResponse(row, drive.configuration, db, ownerId) }, 201, requestId);
+  } catch (error) {
+    await db.prepare(`
+      UPDATE google_drive_upload_sessions
+      SET status = 'error', session_url_ciphertext = NULL, session_url_iv = NULL,
+          last_error_code = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+      WHERE id = ? AND owner_id = ? AND status = 'initializing'
+    `).bind(error?.code ?? "google_drive_upload_start_failed", id, ownerId).run().catch(() => {});
+    rethrowGoogleDriveError(error);
+  }
+}
+
+async function completePhysicsDriveUpload(sessionId, request, env, ctx, requestId) {
+  requireMutationOrigin(request, env);
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(sessionId)) {
+    throw new ApiError(400, "google_drive_upload_session_invalid", "Google Drive 업로드 식별자가 올바르지 않습니다.");
+  }
+  const db = requireDatabase(env);
+  const principal = await requirePrincipal(ctx);
+  const ownerId = await ensureUser(db, principal);
+  const payload = validateGoogleDriveUploadCompletionPayload(await readJson(request));
+  const session = await db.prepare(`
+    SELECT * FROM google_drive_upload_sessions WHERE id = ? AND owner_id = ?
+  `).bind(sessionId, ownerId).first();
+  if (!session) throw new ApiError(404, "google_drive_upload_not_found", "Google Drive 업로드 기록을 찾지 못했습니다.");
+  if (session.status === "completed") {
+    if (session.drive_file_id !== payload.driveFileId) {
+      throw new ApiError(409, "google_drive_upload_conflict", "완료된 업로드의 파일 식별자와 다릅니다.");
+    }
+    const item = await db.prepare("SELECT * FROM physics_drive_items WHERE owner_id = ? AND drive_file_id = ?")
+      .bind(ownerId, payload.driveFileId).first();
+    if (!item) throw new ApiError(500, "google_drive_catalog_missing", "완료된 Drive 자료의 목록 정보를 찾지 못했습니다.");
+    return jsonResponse({ data: physicsDriveItemFromRow(item) }, 200, requestId);
+  }
+  if (session.status !== "ready") {
+    throw new ApiError(409, "google_drive_upload_not_ready", "완료할 수 있는 Google Drive 업로드가 아닙니다.");
+  }
+  if (Date.parse(session.expires_at) <= Date.now()) {
+    await db.prepare(`
+      UPDATE google_drive_upload_sessions
+      SET status = 'expired', session_url_ciphertext = NULL, session_url_iv = NULL,
+          updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+      WHERE id = ? AND owner_id = ? AND status = 'ready'
+    `).bind(sessionId, ownerId).run();
+    throw new ApiError(410, "google_drive_upload_expired", "Google Drive 업로드 시간이 만료됐습니다. 파일을 다시 선택해 주세요.");
+  }
+
+  const drive = await requireGoogleDriveAccess(env, db, ownerId);
+  let metadata;
+  try {
+    metadata = await getGoogleDrivePdfMetadata({
+      accessToken: drive.accessToken,
+      fileId: payload.driveFileId,
+      fetchImpl: drive.fetchImpl,
+    });
+  } catch (error) {
+    rethrowGoogleDriveError(error);
+  }
+  if (metadata.id !== payload.driveFileId || metadata.name !== session.file_name
+    || metadata.byteSize !== Number(session.byte_size)
+    || !metadata.parents.includes(session.root_folder_id)
+    || metadata.appProperties.studio7321Kind !== "physics-original"
+    || metadata.appProperties.studio7321UploadSession !== session.id) {
+    throw new ApiError(409, "google_drive_upload_verification_failed", "실제 Drive 파일의 이름·크기·폴더가 업로드 요청과 일치하지 않습니다.");
+  }
+
+  const existingItem = await db.prepare(`
+    SELECT id FROM physics_drive_items WHERE owner_id = ? AND drive_file_id = ?
+  `).bind(ownerId, metadata.id).first();
+  const itemId = existingItem?.id ?? crypto.randomUUID();
+  const [claimResult] = await db.batch([
+    db.prepare(`
+      UPDATE google_drive_upload_sessions
+      SET status = 'completed', drive_file_id = ?, session_url_ciphertext = NULL,
+          session_url_iv = NULL, last_error_code = NULL,
+          updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+      WHERE id = ? AND owner_id = ? AND status = 'ready'
+    `).bind(metadata.id, sessionId, ownerId),
+    db.prepare(`
+      INSERT INTO physics_drive_items (
+        id, owner_id, drive_file_id, name, mime_type, byte_size, modified_time,
+        md5_checksum, web_view_link, availability_status, index_status, ai_access_allowed
+      )
+      SELECT ?, ?, ?, ?, 'application/pdf', ?, ?, ?, ?, 'available', 'not-indexed', 0
+      WHERE EXISTS (
+        SELECT 1 FROM google_drive_upload_sessions
+        WHERE id = ? AND owner_id = ? AND status = 'completed' AND drive_file_id = ?
+      )
+      ON CONFLICT(owner_id, drive_file_id) DO UPDATE SET
+        name = excluded.name,
+        mime_type = excluded.mime_type,
+        byte_size = excluded.byte_size,
+        modified_time = excluded.modified_time,
+        md5_checksum = excluded.md5_checksum,
+        web_view_link = excluded.web_view_link,
+        availability_status = 'available',
+        updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+    `).bind(
+      itemId, ownerId, metadata.id, metadata.name, metadata.byteSize,
+      metadata.modifiedTime, metadata.md5Checksum, metadata.webViewLink,
+      sessionId, ownerId, metadata.id,
+    ),
+  ]);
+  const completedSession = await db.prepare(`
+    SELECT status, drive_file_id FROM google_drive_upload_sessions WHERE id = ? AND owner_id = ?
+  `).bind(sessionId, ownerId).first();
+  if (completedSession?.status !== "completed" || completedSession.drive_file_id !== metadata.id) {
+    throw new ApiError(409, "google_drive_upload_conflict", "업로드 완료 요청이 다른 파일과 충돌했습니다.");
+  }
+  const item = await db.prepare("SELECT * FROM physics_drive_items WHERE owner_id = ? AND drive_file_id = ?")
+    .bind(ownerId, metadata.id).first();
+  if (!item) throw new ApiError(500, "google_drive_catalog_missing", "Drive 자료 목록 저장을 확인하지 못했습니다.");
+  return jsonResponse({ data: physicsDriveItemFromRow(item) }, existingItem || !claimResult.meta?.changes ? 200 : 201, requestId, {
+    location: `${API_PREFIX}/physics/drive/items`,
+  });
+}
+
 async function listPhysicsDriveItems(env, ctx, requestId) {
   const db = requireDatabase(env);
   const principal = await requirePrincipal(ctx);
@@ -4854,6 +5186,15 @@ async function handleApiRequest(request, env, ctx) {
     if (pathname === `${API_PREFIX}/physics/drive/items`) {
       if (request.method !== "GET") return methodNotAllowed(["GET"], requestId);
       return await listPhysicsDriveItems(env, ctx, requestId);
+    }
+    if (pathname === `${API_PREFIX}/physics/drive/uploads`) {
+      if (request.method !== "POST") return methodNotAllowed(["POST"], requestId);
+      return await startPhysicsDriveUpload(request, env, ctx, requestId);
+    }
+    const physicsDriveUploadMatch = pathname.match(/^\/api\/v1\/physics\/drive\/uploads\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/complete$/iu);
+    if (physicsDriveUploadMatch) {
+      if (request.method !== "POST") return methodNotAllowed(["POST"], requestId);
+      return await completePhysicsDriveUpload(physicsDriveUploadMatch[1], request, env, ctx, requestId);
     }
     const physicsFileMatch = pathname.match(/^\/api\/v1\/physics\/files\/([0-9a-f-]+)(?:\/(download|analyses))?$/i);
     if (physicsFileMatch) {

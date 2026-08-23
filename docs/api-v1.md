@@ -89,6 +89,8 @@ API 응답은 기본적으로 `Cache-Control: no-store`, `X-Content-Type-Options
 | `POST` | `/api/v1/integrations/google-drive/connect` | 선택 파일 전용 Google OAuth 시작 URL 발급 |
 | `GET` | `/api/v1/integrations/google-drive/callback` | 일회용 state와 PKCE를 검증하고 암호화된 장기 연결 토큰 저장 |
 | `GET` | `/api/v1/physics/drive/items` | 현재 사용자의 Drive PDF 카탈로그 조회 |
+| `POST` | `/api/v1/physics/drive/uploads` | 전용 폴더와 암호화된 재개 가능 업로드 세션을 준비하고 브라우저용 Google 업로드 주소 발급 |
+| `POST` | `/api/v1/physics/drive/uploads/:sessionId/complete` | 실제 Drive 파일 메타데이터를 서버에서 재검증한 뒤 카탈로그 등록 |
 | `POST` | `/api/v1/physics/files` | PDF·PNG·JPEG 개인 파일을 비공개 R2 격리 구역에 저장하고 `202` 반환 |
 | `GET` | `/api/v1/physics/files` | 현재 사용자의 개인 파일 목록 |
 | `GET` | `/api/v1/physics/files/:fileId/download` | 첨부 강제 다운로드 |
@@ -125,8 +127,10 @@ API 응답은 기본적으로 `Cache-Control: no-store`, `X-Content-Type-Options
 
 - OAuth 권한은 `https://www.googleapis.com/auth/drive.file` 하나로 고정한다. 연결 시작은 정확한 앱 Origin과 Access 신원을 요구한다.
 - callback 주소는 `${APP_ORIGIN}/api/v1/integrations/google-drive/callback`으로 고정한다. `state`는 소유자별·10분·일회용이고 PKCE `S256`을 사용한다.
-- D1에는 암호화된 refresh token과 파일 카탈로그만 저장한다. 브라우저에는 OAuth 시작 URL과 연결 상태만 반환하며 secret·refresh token·access token은 반환하지 않는다.
-- 현재 구현은 연결·카탈로그 기반까지만 제공한다. 전용 폴더 선택, 기존 PDF 등록, 재개 가능한 대용량 업로드, 페이지 추출과 파일별 AI 허용 API는 후속 단계다.
+- D1에는 암호화된 refresh token, 용도를 분리해 암호화한 24시간 업로드 세션 주소, 파일 카탈로그를 저장한다. secret·refresh token·access token은 브라우저에 반환하지 않는다.
+- 업로드 시작 본문은 `name`, `byteSize`만 받고 512MiB 이하 PDF로 제한한다. `Idempotency-Key`가 필수이며 활성 세션은 소유자별 10개다.
+- 브라우저는 Google의 고정 재개 가능 업로드 주소에 8MiB 단위로 직접 전송한다. 완료 API는 Drive에서 파일을 다시 조회해 ID·이름·크기·PDF MIME·전용 부모 폴더·앱 속성이 모두 일치할 때만 카탈로그에 넣는다.
+- 기존 Drive PDF 선택, 페이지 추출, 파일별 AI 허용 API는 후속 단계다.
 
 ### 메타데이터 사건 후보
 

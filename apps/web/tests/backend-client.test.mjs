@@ -467,7 +467,7 @@ test("backend client searches, saves, removes, and exports private physics resou
   assert.deepEqual(JSON.parse(calls[5].options.body), { query: "역학", limit: 20 });
 });
 
-test("backend client reads Drive status and starts the server-owned OAuth flow", async () => {
+test("backend client reads Drive status and runs the server-verified resumable upload contract", async () => {
   const calls = [];
   const client = createBackendClient({
     fetchImpl: async (url, options) => {
@@ -476,6 +476,8 @@ test("backend client reads Drive status and starts the server-owned OAuth flow",
         return jsonResponse({ data: { authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth?state=safe" } }, { status: 201 });
       }
       if (url.endsWith("/items")) return jsonResponse({ data: [], meta: { sourceOfTruth: "google-drive" } });
+      if (url.endsWith("/uploads")) return jsonResponse({ data: { id: "upload-session-id", status: "ready" } }, { status: 201 });
+      if (url.endsWith("/complete")) return jsonResponse({ data: { id: "catalog-item-id", driveFileId: "drive-file-123456" } }, { status: 201 });
       return jsonResponse({ data: { configured: true, connected: false, permission: "selected-files-only" } });
     },
   });
@@ -483,6 +485,15 @@ test("backend client reads Drive status and starts the server-owned OAuth flow",
   const status = await client.getGoogleDriveStatus({ signal: controller.signal });
   const connection = await client.startGoogleDriveConnection({ signal: controller.signal });
   const items = await client.listPhysicsDriveItems({ signal: controller.signal });
+  const upload = await client.startPhysicsDriveUpload(
+    { name: "Mechanics.pdf", byteSize: 4096 },
+    { signal: controller.signal, idempotencyKey: "drive-upload-1234" },
+  );
+  const completed = await client.completePhysicsDriveUpload(
+    "9f165cbb-0315-4a0e-bf07-0c8c602e3da5",
+    { driveFileId: "drive-file-123456" },
+    { signal: controller.signal },
+  );
 
   assert.equal(status.permission, "selected-files-only");
   assert.match(connection.authorizationUrl, /^https:\/\/accounts\.google\.com\//);
@@ -493,6 +504,13 @@ test("backend client reads Drive status and starts the server-owned OAuth flow",
   assert.equal(calls[1].options.method, "POST");
   assert.deepEqual(JSON.parse(calls[1].options.body), {});
   assert.equal(calls[2].url, "/api/v1/physics/drive/items");
+  assert.equal(upload.status, "ready");
+  assert.equal(calls[3].url, "/api/v1/physics/drive/uploads");
+  assert.equal(calls[3].options.headers["idempotency-key"], "drive-upload-1234");
+  assert.deepEqual(JSON.parse(calls[3].options.body), { name: "Mechanics.pdf", byteSize: 4096 });
+  assert.equal(completed.driveFileId, "drive-file-123456");
+  assert.equal(calls[4].url, "/api/v1/physics/drive/uploads/9f165cbb-0315-4a0e-bf07-0c8c602e3da5/complete");
+  assert.deepEqual(JSON.parse(calls[4].options.body), { driveFileId: "drive-file-123456" });
 });
 
 test("visual analysis uses browser multipart boundaries instead of forcing JSON content type", async () => {
