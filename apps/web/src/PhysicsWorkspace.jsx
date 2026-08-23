@@ -15,6 +15,7 @@ import {
 import { backendClient } from "./backendClient.js";
 import { IPHO_TOPICS, PHYSICS_RESOURCES, PHYSICS_TOOLS, filterPhysicsResources } from "./physicsData.js";
 import { PHYSICS_ANALYSIS_LEVEL, PHYSICS_PROFILE_SUMMARY } from "./physicsProfile.js";
+import { startPhysicsScanPolling } from "./physicsScanPolling.js";
 
 const RESOURCE_TYPES = ["전체", "강의·문제", "강의 영상", "동료평가 논문", "프리프린트", "기출문제", "공식 문서"];
 
@@ -256,8 +257,7 @@ function PhysicsFileVault({ onOpenAi, onNotice }) {
     .join(",");
   useEffect(() => {
     if (!pendingScanKey) return undefined;
-    const timer = setTimeout(() => void loadFiles(), 3_000);
-    return () => clearTimeout(timer);
+    return startPhysicsScanPolling(loadFiles);
   }, [pendingScanKey]);
 
   async function upload(event) {
