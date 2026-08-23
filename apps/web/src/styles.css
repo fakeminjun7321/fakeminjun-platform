@@ -2849,19 +2849,33 @@ body {
 
 @media (max-width: 620px) {
   :root { --chrome-height: 56px; --subnav-height: 44px; }
-  .app-header { grid-template-columns: 46px minmax(168px, 1fr) 92px; }
+  .app-header { grid-template-columns: 44px minmax(124px, 1fr) 132px; }
   .brand-lockup { padding: 0; }
   .brand-lockup::after { content: "S7"; }
-  .demo-stamp::after { content: "데모"; font-family: var(--body); font-size: 10px; font-weight: 700; }
-  .demo-stamp.is-live-source::after { content: "자료"; }
+  .domain-navigation { gap: 0; padding-left: 0; overflow-x: hidden; }
+  .domain-tab { min-width: 62px; padding-inline: 8px; font-size: 12px; }
+  .domain-tab.is-active::after { right: 8px; left: 8px; }
+  .header-utilities { gap: 0; padding: 0; }
+  .demo-stamp { display: none; }
+  .ai-trigger {
+    width: 124px;
+    min-width: 124px;
+    height: 40px;
+    margin-right: 8px;
+    padding-inline: 12px;
+    border: 0;
+    border-radius: 10px;
+    font-size: 12px;
+  }
   .international-subnav { padding-inline: 8px; }
+  .international-subnav a { min-width: max-content; padding-inline: 14px; }
   .signals-panel { top: 10px; left: 10px; width: calc(100% - 72px); }
   .briefing-workspace,
   .domain-workspace { padding: 22px 14px 44px; }
   .source-inbox > header,
   .candidate-review-desk > header,
-  .briefing-section-label { gap: 12px; }
-  .source-header-actions { align-items: stretch; }
+  .briefing-section-label { align-items: stretch; flex-direction: column; gap: 12px; }
+  .source-header-actions { align-items: stretch; flex-direction: row; justify-content: space-between; }
   .source-boundary,
   .candidate-boundary { max-width: none; justify-content: flex-start; }
   .issues-workspace { display: block; }
@@ -2875,4 +2889,9 @@ body {
   .olympiad-path,
   .ipho-topic-matrix,
   .official-olympiad-links { padding: 18px 16px; }
+}
+
+@media (max-width: 360px) {
+  .international-subnav { padding-inline: 4px; }
+  .international-subnav a { padding-inline: 10px; font-size: 11px; }
 }

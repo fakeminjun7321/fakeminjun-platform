@@ -124,7 +124,7 @@ function Header({ domain, route, sourceState, mapEventState, onOpenAi, onNavigat
   const statusLabel = sourceWorkspace
     ? "공식 자료 · 검증 전"
     : domain === "physics"
-      ? "개인 공간"
+      ? "개인 공간 · 비공개"
       : mapEventState.dataStatus === "mixed" ? "실제·데모 혼합" : "데모 자료";
 
   return (
@@ -140,7 +140,9 @@ function Header({ domain, route, sourceState, mapEventState, onOpenAi, onNavigat
       <h1 className="sr-only">{DOMAIN_META[domain].title}</h1>
       <DomainNavigation domain={domain} onNavigate={onNavigate} />
       <div className="header-utilities">
-        <span className="as-of">{domain === "physics" ? "개인 공간" : sourceWorkspace ? "마지막 확인" : "기준 시각"} <strong>{domain === "physics" ? "비공개" : headerTimestamp ? `${eventTimeLabel(headerTimestamp)} KST` : "--:--"}</strong></span>
+        {domain !== "physics" ? (
+          <span className="as-of">{sourceWorkspace ? "마지막 확인" : "기준 시각"} <strong>{headerTimestamp ? `${eventTimeLabel(headerTimestamp)} KST` : "--:--"}</strong></span>
+        ) : null}
         <span className={`demo-stamp${sourceWorkspace ? " is-live-source" : ""}`}>{statusLabel}</span>
         <button
           className="ai-trigger"
@@ -662,7 +664,7 @@ function IssuesPage({ selectedEvent, onSelect, onOpenAi }) {
       </aside>
       <article className="issue-dossier">
         <header>
-          <p className="system-kicker">{activeIssue.code} · 장기 추적</p>
+          <p className="system-kicker">장기 추적</p>
           <h2>{activeIssue.title}</h2><p>{activeIssue.summary}</p>
           <div className="dossier-meta">
             <span><Database size={15} /> 출처 {selectedEvent.sources}</span>
