@@ -12,6 +12,16 @@ export class BackendApiError extends Error {
 const ANALYSIS_ATTEMPT_TTL_MS = 10 * 60 * 1000;
 const MAX_RETAINED_ANALYSIS_ATTEMPTS = 24;
 const analysisAttempts = new Map();
+const TERMINAL_ANALYSIS_ERROR_CODES = new Set([
+  "analysis_citation_required",
+  "analysis_evidence_mismatch",
+  "analysis_failed",
+  "analysis_request_consumed",
+  "analysis_stale",
+  "internal_error",
+  "physics_file_analysis_failed",
+  "visual_analysis_failed",
+]);
 
 async function sha256Hex(value) {
   const bytes = typeof value === "string" ? new TextEncoder().encode(value) : value;
@@ -51,7 +61,11 @@ export function clearAnalysisAttempt(fingerprint) {
 }
 
 export function shouldClearAnalysisAttempt(error, { hasCreatedAnalysis = false } = {}) {
-  if (hasCreatedAnalysis || !(error instanceof BackendApiError)) return false;
+  if (!(error instanceof BackendApiError)) return false;
+  const terminalAnalysisFailure = TERMINAL_ANALYSIS_ERROR_CODES.has(error.code)
+    || error.code?.startsWith("ai_");
+  if (terminalAnalysisFailure) return true;
+  if (hasCreatedAnalysis) return false;
   return error.status >= 400
     && error.status < 500
     && ![408, 425, 429].includes(error.status);

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { after, test } from "node:test";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -26,8 +27,11 @@ const vite = await createServer({
 const { App, CandidateReviewDesk } = await vite.ssrLoadModule("/src/App.jsx");
 const { PhysicsWorkspace, parseGoogleDriveCallbackSearch } = await vite.ssrLoadModule("/src/PhysicsWorkspace.jsx");
 const { PHYSICS_ANALYSIS_LEVEL, PHYSICS_PROFILE_SUMMARY } = await vite.ssrLoadModule("/src/physicsProfile.js");
-const { AiDrawer, getMandosProfile } = await vite.ssrLoadModule("/src/AiDrawer.jsx");
+const { AiDrawer, analysisErrorNotice, getMandosProfile } = await vite.ssrLoadModule("/src/AiDrawer.jsx");
 const { CandidatePromotionPanel } = await vite.ssrLoadModule("/src/CandidatePromotionPanel.jsx");
+const aiDrawerSource = await readFile(new URL("../src/AiDrawer.jsx", import.meta.url), "utf8");
+const appSource = await readFile(new URL("../src/App.jsx", import.meta.url), "utf8");
+const physicsWorkspaceSource = await readFile(new URL("../src/PhysicsWorkspace.jsx", import.meta.url), "utf8");
 
 after(async () => {
   await vite.close();
@@ -188,10 +192,47 @@ test("Mandos drawer defaults to Core and keeps advanced controls compact", () =>
   assert.ok(!html.includes("TOKEN USAGE"));
 
   assert.deepEqual(getMandosProfile("standard"), {
-    mode: "standard", title: "Mandos 3 Swift", task: "요약·정리", trait: "빠른 응답",
+    mode: "standard", title: "Mandos 3 Swift", task: "빠른 답변", trait: "요약·개념 확인",
   });
   assert.equal(getMandosProfile("auto").title, "Mandos 3 Core");
   assert.equal(getMandosProfile("deep").title, "Mandos 3 Deep");
+});
+
+test("Mandos keeps requested profile history and localizes recoverable errors", () => {
+  assert.match(aiDrawerSource, /setMode\(loaded\.requestedMode \?\? loaded\.mode \?\? "auto"\)/);
+  assert.match(aiDrawerSource, /item\.requestedMode \?\? item\.mode/);
+  assert.match(aiDrawerSource, /analysis\.requestedMode \?\? analysis\.mode \?\? requestedMode/);
+
+  const cases = [
+    ["ai_incomplete", "답변을 끝까지 만들지 못했습니다. 다시 요청해 주세요."],
+    ["ai_timeout", "분석 시간이 초과됐습니다. 다시 요청해 주세요."],
+    ["ai_rate_limited", "현재 분석 요청이 많습니다. 잠시 후 다시 시도해 주세요."],
+    ["ai_refused", "이 요청은 분석할 수 없습니다. 질문을 바꿔 주세요."],
+    ["analysis_evidence_mismatch", "근거 확인을 통과하지 못했습니다. 다시 요청해 주세요."],
+  ];
+  for (const [code, expected] of cases) {
+    const notice = analysisErrorNotice({ code, status: code === "ai_rate_limited" ? 429 : 502 });
+    assert.equal(notice, expected);
+    assert.doesNotMatch(notice, /OpenAI|provider|schema|incomplete/i);
+  }
+});
+
+test("international routes and physics modes select explicit task contracts", () => {
+  assert.match(appSource, /route === "briefing" \? "evidence-crosscheck" : "causal-synthesis"/);
+  const expectedPhysicsTasks = [
+    ["concept", "general"],
+    ["derivation", "full-derivation"],
+    ["visual-analysis", "solution-audit"],
+    ["research", "evidence-crosscheck"],
+    ["network", "general"],
+    ["thought-experiment", "general"],
+    ["research-log", "general"],
+  ];
+  for (const [mode, taskType] of expectedPhysicsTasks) {
+    const escapedMode = mode.replaceAll("-", "\\-");
+    assert.match(physicsWorkspaceSource, new RegExp(`["']?${escapedMode}["']?\\s*:\\s*["']${taskType}["']`));
+  }
+  assert.match(physicsWorkspaceSource, /taskType: PHYSICS_TASK_TYPES\[selected\.id\] \?\? "general"/);
 });
 
 test("pinned Mandos is complementary and cannot block or close the workspace", () => {

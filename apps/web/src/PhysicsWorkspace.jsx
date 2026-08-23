@@ -26,6 +26,15 @@ const RESOURCE_TYPES = ["전체", "강의·문제", "강의 영상", "동료평�
 const DRIVE_COMPLETION_STORAGE_KEY = "studio7321.drive-upload-completion.v1";
 let googleDriveCapturedCallback = null;
 let googleDriveCallbackRelay = null;
+const PHYSICS_TASK_TYPES = {
+  concept: "general",
+  derivation: "full-derivation",
+  "visual-analysis": "solution-audit",
+  research: "evidence-crosscheck",
+  network: "general",
+  "thought-experiment": "general",
+  "research-log": "general",
+};
 
 function readSessionValue(key) {
   try {
@@ -116,7 +125,7 @@ function LearningHub({ onOpenAi }) {
             <p>그림·그래프 자료는 자료 보관소에 추가해 Mandos와 분석할 수 있습니다. 분석 기록은 소유자별로 보관됩니다.</p>
             <button type="button" onClick={() => onOpenAi({
               level: PHYSICS_ANALYSIS_LEVEL, contextKind: "physics-mode", contextId: selected.id, title: selected.title,
-              ...(selected.id === "derivation" ? { taskType: "full-derivation" } : {}),
+              taskType: PHYSICS_TASK_TYPES[selected.id] ?? "general",
               meta: `물리 학습 모드 ${selected.code} · ${PHYSICS_PROFILE_SUMMARY}`, placeholder: selected.example,
             })}><Brain size={18} /> {selected.title}로 Mandos 열기</button>
           </section>

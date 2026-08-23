@@ -267,6 +267,25 @@ test("analysis attempts survive ambiguous server and polling failures", () => {
   ), false);
 });
 
+test("terminal Mandos failures start a fresh request while pending polling keeps the same attempt", () => {
+  assert.equal(shouldClearAnalysisAttempt(
+    new BackendApiError(502, "ai_incomplete", "incomplete"),
+    { hasCreatedAnalysis: true },
+  ), true);
+  assert.equal(shouldClearAnalysisAttempt(
+    new BackendApiError(502, "ai_schema_mismatch", "invalid output"),
+    { hasCreatedAnalysis: true },
+  ), true);
+  assert.equal(shouldClearAnalysisAttempt(
+    new BackendApiError(408, "analysis_poll_timeout", "still pending"),
+    { hasCreatedAnalysis: true },
+  ), false);
+  assert.equal(shouldClearAnalysisAttempt(
+    new BackendApiError(502, "analysis_evidence_mismatch", "terminal"),
+    { hasCreatedAnalysis: true },
+  ), true);
+});
+
 test("backend client retrieves a private analysis by ID", async () => {
   const calls = [];
   const client = createBackendClient({
