@@ -7,6 +7,7 @@ import {
   filterPhysicsResources,
 } from "../src/physicsData.js";
 import { fitWithin, normalizeCropRect, scaleCropRect } from "../src/captureGeometry.js";
+import { PHYSICS_SCAN_POLL_INTERVAL_MS, startPhysicsScanPolling } from "../src/physicsScanPolling.js";
 
 test("physics workspace exposes all seven selected exploration modes", () => {
   assert.equal(PHYSICS_TOOLS.length, 7);
@@ -34,6 +35,28 @@ test("physics resource filters combine query, type, and saved state", () => {
     ["ipho-problems"],
   );
   assert.ok(filterPhysicsResources(PHYSICS_RESOURCES, { savedOnly: true }).every(({ saved }) => saved));
+});
+
+test("pending physics scans keep polling until the component clears the interval", async () => {
+  let intervalCallback = null;
+  let intervalDelay = null;
+  let clearedId = null;
+  let refreshes = 0;
+  const stop = startPhysicsScanPolling(async () => { refreshes += 1; }, {
+    setIntervalFn(callback, delay) {
+      intervalCallback = callback;
+      intervalDelay = delay;
+      return 73;
+    },
+    clearIntervalFn(id) { clearedId = id; },
+  });
+
+  assert.equal(intervalDelay, PHYSICS_SCAN_POLL_INTERVAL_MS);
+  await intervalCallback();
+  await intervalCallback();
+  assert.equal(refreshes, 2);
+  stop();
+  assert.equal(clearedId, 73);
 });
 
 test("capture crop geometry clamps reverse drags and scales to source pixels", () => {
