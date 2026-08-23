@@ -104,8 +104,21 @@ test("provider fetch rejects redirects and enforces the byte bound while streami
     }),
     /provider_response_too_large/,
   );
-  assert.equal(redirectPolicy, "error");
+  assert.equal(redirectPolicy, "manual");
   assert.equal(canceled, true);
+
+  let redirectBodyCanceled = false;
+  await assert.rejects(
+    () => searchArxiv("redirect", {
+      fetchImpl: async () => new Response(new ReadableStream({
+        cancel() {
+          redirectBodyCanceled = true;
+        },
+      }), { status: 302, headers: { location: "https://attacker.invalid/" } }),
+    }),
+    /provider_redirect_rejected/,
+  );
+  assert.equal(redirectBodyCanceled, true);
 });
 
 test("provider timeout remains active until the response body finishes", async () => {

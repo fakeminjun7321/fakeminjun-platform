@@ -197,8 +197,15 @@ async function fetchProviderText(fetchImpl, url, options = {}, timeoutMs = PROVI
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort("provider_timeout"), timeoutMs);
   try {
-    const response = await fetchImpl(url, { ...options, redirect: "error", signal: controller.signal });
-    if (response.redirected) throw new Error("provider_redirect_rejected");
+    // Cloudflare Workers implements manual/follow, but not redirect: "error".
+    // Manual mode plus explicit 3xx/opaqueredirect rejection keeps the original
+    // cross-origin and credential-forwarding boundary without relying on an
+    // unsupported runtime option.
+    const response = await fetchImpl(url, { ...options, redirect: "manual", signal: controller.signal });
+    if (response.redirected || response.type === "opaqueredirect" || (response.status >= 300 && response.status < 400)) {
+      await response.body?.cancel("provider_redirect_rejected").catch(() => {});
+      throw new Error("provider_redirect_rejected");
+    }
     if (response.url && new URL(response.url).origin !== url.origin) {
       throw new Error("provider_origin_mismatch");
     }

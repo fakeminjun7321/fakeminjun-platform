@@ -43,7 +43,7 @@
       "class_name": "ClamAvContainer",
       "image": "./scanner/Dockerfile",
       "max_instances": 1,
-      "instance_type": "standard-1"
+      "instance_type": "standard-2"
     }
   ],
   "durable_objects": {

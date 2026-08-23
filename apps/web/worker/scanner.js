@@ -1,4 +1,5 @@
 import { Container, getContainer } from "@cloudflare/containers";
+export { ContainerProxy } from "@cloudflare/containers";
 import {
   ScanContractError,
   interpretClamAvResult,
@@ -12,14 +13,17 @@ import {
 
 const SCAN_TIMEOUT_MS = 120_000;
 const VERSION_TIMEOUT_MS = 15_000;
+const DEFINITION_REFRESH_TIMEOUT_MS = 180_000;
+const DEFINITION_REFRESH_INTERVAL_MS = 30 * 60_000;
 const SCAN_LEASE_SECONDS = 600;
 const PRIMARY_QUEUE = "fakeminjun-physics-scan";
 const DEAD_LETTER_QUEUE = "fakeminjun-physics-scan-dlq";
 
 export class ClamAvContainer extends Container {
-  sleepAfter = "10m";
+  sleepAfter = "5m";
   enableInternet = true;
   allowedHosts = ["database.clamav.net"];
+  lastDefinitionRefreshAt = 0;
 
   async captureProcess(process, timeoutMs) {
     let timedOut = false;
@@ -36,7 +40,7 @@ export class ClamAvContainer extends Container {
   }
 
   async version() {
-    const process = await this.ctx.container.exec(["clamdscan", "--version"]);
+    const process = await this.ctx.container.exec(["clamscan", "--version"]);
     const { output, timedOut } = await this.captureProcess(process, VERSION_TIMEOUT_MS);
     if (timedOut) {
       throw new ScanContractError("clamav_version_timeout", "ClamAV version check timed out.", { retryable: true });
@@ -45,21 +49,38 @@ export class ClamAvContainer extends Container {
       throw new ScanContractError("clamav_version_error", "ClamAV version check failed.", { retryable: true });
     }
     const versionOutput = new TextDecoder().decode(output.stdout);
+    console.log("clamav_version_observed", {
+      stdout: versionOutput.trim().slice(0, 240),
+      stderr: new TextDecoder().decode(output.stderr).trim().slice(0, 240),
+    });
     return { versionOutput, parsed: parseClamAvVersion(versionOutput) };
+  }
+
+  async refreshDefinitions() {
+    const now = Date.now();
+    if (now - this.lastDefinitionRefreshAt < DEFINITION_REFRESH_INTERVAL_MS) return;
+    const process = await this.ctx.container.exec(["freshclam", "--stdout"]);
+    const { output, timedOut } = await this.captureProcess(process, DEFINITION_REFRESH_TIMEOUT_MS);
+    const stdout = new TextDecoder().decode(output.stdout).trim().slice(0, 1000);
+    const stderr = new TextDecoder().decode(output.stderr).trim().slice(0, 1000);
+    console.log("clamav_definitions_refresh", { exitCode: output.exitCode, timedOut, stdout, stderr });
+    // FreshClam may return a transient mirror/rate-limit error while the local
+    // database is still fresh. The version freshness gate below is authoritative:
+    // a stale or malformed database always fails closed.
   }
 
   async scan(input) {
     this.renewActivityTimeout();
     if (!this.ctx.container.running) await this.start();
+    await this.refreshDefinitions();
     const before = await this.version();
+    // A successfully parsed fresh version is stronger evidence than FreshClam's
+    // exit code: mirrors may rate-limit while the installed database is current.
+    this.lastDefinitionRefreshAt = Date.now();
     const process = await this.ctx.container.exec([
-      "clamdscan",
-      "--wait",
-      "--stdout",
-      "--infected",
-      "--no-summary",
-      "--stream",
-      "-",
+      "sh",
+      "-c",
+      "umask 077; fixture=$(mktemp /tmp/studio-7321-scan.XXXXXX) || exit 2; trap 'rm -f \"$fixture\"' EXIT; cat > \"$fixture\" && clamscan --stdout --infected --no-summary \"$fixture\"",
     ], { stdin: input });
     const { output, timedOut } = await this.captureProcess(process, SCAN_TIMEOUT_MS);
     const after = await this.version();
@@ -246,9 +267,17 @@ async function processScanEvent(event, env) {
   const scanner = getContainer(env.CLAMAV, "clamav-primary");
   let result;
   try {
-    result = await scanner.scan(new Blob([bytes]).stream());
+    const scanStream = new Response(bytes).body;
+    if (!scanStream) throw new ScanContractError("scan_stream_missing", "The scan byte stream is unavailable.", { retryable: true });
+    result = await scanner.scan(scanStream);
   } catch (error) {
-    const code = error instanceof ScanContractError ? error.code : "clamav_unavailable";
+    console.error("clamav_rpc_failed", {
+      name: error?.name ?? "Error",
+      code: error?.code ?? null,
+      message: String(error?.message ?? "ClamAV RPC failed").slice(0, 320),
+      stack: String(error?.stack ?? "").split("\n").slice(0, 4).join(" | "),
+    });
+    const code = typeof error?.code === "string" ? error.code : "clamav_unavailable";
     await markRetryableScanFailure(env.DB, row.id, parsed.etag, leaseId, code);
     throw new ScanContractError(code, "ClamAV scan failed and must be retried.", { retryable: true });
   }
