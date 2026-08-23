@@ -181,6 +181,7 @@ function LibraryPage({ onOpenAi, onNotice }) {
   return (
     <main className="focused-workspace domain-workspace physics-workspace">
       <PhysicsHeading title="물리 자료 보관소" description="공개 자료 링크와 직접 올린 PDF·이미지를 분리해 개인 보관소에서 관리합니다." countLabel={`보관 링크 ${state.items.length}개`} />
+      <GoogleDriveVault onNotice={onNotice} />
       <PhysicsFileVault onOpenAi={onOpenAi} onNotice={onNotice} />
       <section className="resource-workspace">
         <div className="resource-toolbar">
@@ -208,6 +209,105 @@ function antivirusLabel(status) {
     error: "안전 검사 오류",
     "not-scanned": "안전 검사 대기",
   })[status] ?? "검사 상태 미상";
+}
+
+function safeGoogleAuthorizationUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:"
+      && url.origin === "https://accounts.google.com"
+      && url.pathname === "/o/oauth2/v2/auth"
+      ? url.toString()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function GoogleDriveVault({ onNotice }) {
+  const [state, setState] = useState({
+    status: "loading",
+    configured: false,
+    connected: false,
+    catalogItemCount: 0,
+    message: "Google Drive 연결 상태를 확인하고 있습니다.",
+  });
+  const requestRef = useRef(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    requestRef.current = controller;
+    void backendClient.getGoogleDriveStatus({ signal: controller.signal })
+      .then((result) => {
+        const outcome = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("drive");
+        setState({
+          status: "ready",
+          configured: Boolean(result.configured),
+          connected: Boolean(result.connected),
+          catalogItemCount: Number(result.catalogItemCount ?? 0),
+          message: outcome === "connected"
+            ? "Google Drive 연결이 완료되었습니다. 전용 폴더와 PDF 선택은 다음 단계에서 진행합니다."
+            : outcome === "cancelled"
+              ? "Google Drive 연결을 취소했습니다. 변경된 파일은 없습니다."
+              : "",
+        });
+      })
+      .catch((error) => {
+        if (error?.name !== "AbortError") {
+          setState((current) => ({ ...current, status: "error", message: "Google Drive 연결 상태를 불러오지 못했습니다." }));
+        }
+      });
+    return () => {
+      controller.abort();
+      if (requestRef.current === controller) requestRef.current = null;
+    };
+  }, []);
+
+  async function connect() {
+    if (!state.configured || state.status === "connecting") return;
+    const controller = new AbortController();
+    requestRef.current?.abort();
+    requestRef.current = controller;
+    setState((current) => ({ ...current, status: "connecting", message: "Google의 선택 파일 전용 권한 화면을 준비하고 있습니다." }));
+    try {
+      const result = await backendClient.startGoogleDriveConnection({ signal: controller.signal });
+      const authorizationUrl = safeGoogleAuthorizationUrl(result.authorizationUrl);
+      if (!authorizationUrl) throw new Error("Unexpected Google authorization URL");
+      window.location.assign(authorizationUrl);
+    } catch (error) {
+      if (error?.name !== "AbortError") {
+        setState((current) => ({ ...current, status: "error", message: "Google Drive 연결을 시작하지 못했습니다." }));
+        onNotice("Google Drive 연결 설정을 다시 확인해 주세요.");
+      }
+    } finally {
+      if (requestRef.current === controller) requestRef.current = null;
+    }
+  }
+
+  const stateLabel = state.connected ? "연결됨" : state.configured ? "연결 필요" : "설정 대기";
+  return (
+    <section className="google-drive-vault" aria-labelledby="google-drive-vault-title">
+      <header>
+        <div>
+          <span className={`drive-connection-state is-${state.connected ? "connected" : "pending"}`}>{stateLabel}</span>
+          <h3 id="google-drive-vault-title">Google Drive 원본 보관소</h3>
+          <p>대형 PDF 원본의 기준 저장소 · 선택하거나 STUDIO 7321을 통해 올린 파일만 접근</p>
+        </div>
+        <div>
+          <span>등록 자료 {state.catalogItemCount}개</span>
+          <button type="button" onClick={() => void connect()} disabled={!state.configured || state.connected || state.status === "connecting"}>
+            <ArrowSquareOut size={16} />
+            {state.status === "connecting" ? "연결 중" : state.connected ? "Drive 연결됨" : "Google Drive 연결"}
+          </button>
+        </div>
+      </header>
+      <div className="drive-access-boundary">
+        <ShieldWarning size={17} />
+        <p><strong>Drive 전체 권한을 요청하지 않습니다.</strong> PDF 원본은 Drive가 소유하며, STUDIO 7321에는 파일 ID와 목록 정보만 저장합니다. AI 전송은 파일별로 별도 허용합니다.</p>
+      </div>
+      {state.message ? <p className={`resource-query-status is-${state.status}`} role="status">{state.message}</p> : null}
+    </section>
+  );
 }
 
 function PhysicsFileVault({ onOpenAi, onNotice }) {

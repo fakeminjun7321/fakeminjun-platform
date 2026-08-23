@@ -85,6 +85,10 @@ API 응답은 기본적으로 `Cache-Control: no-store`, `X-Content-Type-Options
 | `GET` | `/api/v1/physics/resources` | 이미 저장된 고정 catalog·cache를 읽기 전용으로 검색 |
 | `POST` | `/api/v1/physics/resources/search` | 동일 origin에서 arXiv/Crossref 메타데이터를 새로 조회하고 cache 갱신 |
 | `GET` | `/api/v1/physics/library` | 현재 사용자의 링크 보관소 조회 |
+| `GET` | `/api/v1/integrations/google-drive` | 현재 사용자의 Drive 연결·카탈로그 상태 조회 |
+| `POST` | `/api/v1/integrations/google-drive/connect` | 선택 파일 전용 Google OAuth 시작 URL 발급 |
+| `GET` | `/api/v1/integrations/google-drive/callback` | 일회용 state와 PKCE를 검증하고 암호화된 장기 연결 토큰 저장 |
+| `GET` | `/api/v1/physics/drive/items` | 현재 사용자의 Drive PDF 카탈로그 조회 |
 | `POST` | `/api/v1/physics/files` | PDF·PNG·JPEG 개인 파일을 비공개 R2 격리 구역에 저장하고 `202` 반환 |
 | `GET` | `/api/v1/physics/files` | 현재 사용자의 개인 파일 목록 |
 | `GET` | `/api/v1/physics/files/:fileId/download` | 첨부 강제 다운로드 |
@@ -116,6 +120,13 @@ API 응답은 기본적으로 `Cache-Control: no-store`, `X-Content-Type-Options
 ```
 
 서버는 owner ID를 요청에서 받지 않는다. Access의 안정적인 identity ID로 내부 사용자를 결정하고 모든 개인 쿼리를 `owner_id`로 제한한다. 오래된 `expectedVersion` 수정은 `409 note_version_conflict`를 반환한다.
+
+### Google Drive 연결 기반
+
+- OAuth 권한은 `https://www.googleapis.com/auth/drive.file` 하나로 고정한다. 연결 시작은 정확한 앱 Origin과 Access 신원을 요구한다.
+- callback 주소는 `${APP_ORIGIN}/api/v1/integrations/google-drive/callback`으로 고정한다. `state`는 소유자별·10분·일회용이고 PKCE `S256`을 사용한다.
+- D1에는 암호화된 refresh token과 파일 카탈로그만 저장한다. 브라우저에는 OAuth 시작 URL과 연결 상태만 반환하며 secret·refresh token·access token은 반환하지 않는다.
+- 현재 구현은 연결·카탈로그 기반까지만 제공한다. 전용 폴더 선택, 기존 PDF 등록, 재개 가능한 대용량 업로드, 페이지 추출과 파일별 AI 허용 API는 후속 단계다.
 
 ### 메타데이터 사건 후보
 

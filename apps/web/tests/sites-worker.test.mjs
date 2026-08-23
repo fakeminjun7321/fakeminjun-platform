@@ -85,6 +85,7 @@ test("emits an executable server module and the files required by Sites packagin
   await access(new URL("../dist/server/ingestion.js", import.meta.url));
   await access(new URL("../dist/server/sourceRegistry.js", import.meta.url));
   await access(new URL("../dist/server/physicsProviders.js", import.meta.url));
+  await access(new URL("../dist/server/googleDrive.js", import.meta.url));
   await access(new URL("../dist/.openai/hosting.json", import.meta.url));
 
   const builtWorker = (await import(`${serverEntry.href}?test=${Date.now()}`)).default;

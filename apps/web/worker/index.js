@@ -1,5 +1,17 @@
 import { runAllSourceStreams } from "./ingestion.js";
 import { searchExternalPhysicsProviders } from "./physicsProviders.js";
+import {
+  GOOGLE_DRIVE_FILE_SCOPE,
+  GoogleDriveIntegrationError,
+  buildGoogleDriveAuthorizationUrl,
+  createGoogleOAuthAttempt,
+  decryptGoogleToken,
+  encryptGoogleToken,
+  exchangeGoogleAuthorizationCode,
+  getGoogleDriveConfiguration,
+  googleOAuthStateHash,
+  requireGoogleDriveConfiguration,
+} from "./googleDrive.js";
 
 const API_PREFIX = "/api/v1";
 const EVENT_LAYERS = new Set(["korea-core", "us-impact", "rapid-change"]);
@@ -269,6 +281,13 @@ function methodNotAllowed(allowed, requestId) {
 function requireDatabase(env) {
   if (!env.DB) throw new ApiError(503, "database_unavailable", "D1 데이터베이스가 연결되지 않았습니다.");
   return env.DB;
+}
+
+function rethrowGoogleDriveError(error) {
+  if (error instanceof GoogleDriveIntegrationError) {
+    throw new ApiError(error.status, error.code, error.message);
+  }
+  throw error;
 }
 
 function assertOnlyKeys(value, allowedKeys) {
@@ -4462,6 +4481,202 @@ async function promoteEventCandidate(candidateId, request, env, ctx, requestId) 
   } }, existingReceipt ? 200 : 201, requestId, { location: `${API_PREFIX}/events/${receipt.event_id}` });
 }
 
+function googleDriveRedirectResponse(env, outcome, requestId) {
+  let redirect;
+  try {
+    redirect = new URL("/physics/library", env.APP_ORIGIN);
+  } catch {
+    throw new ApiError(503, "google_oauth_origin_invalid", "Google Drive 연결 후 돌아갈 주소가 올바르지 않습니다.");
+  }
+  redirect.searchParams.set("drive", outcome);
+  return new Response(null, {
+    status: 303,
+    headers: {
+      "cache-control": "no-store",
+      location: redirect.toString(),
+      "referrer-policy": "no-referrer",
+      "x-content-type-options": "nosniff",
+      "x-request-id": requestId,
+    },
+  });
+}
+
+function physicsDriveItemFromRow(row) {
+  return {
+    id: row.id,
+    driveFileId: row.drive_file_id,
+    name: row.name,
+    mimeType: row.mime_type,
+    byteSize: row.byte_size,
+    modifiedTime: row.modified_time,
+    md5Checksum: row.md5_checksum,
+    webViewLink: row.web_view_link,
+    availabilityStatus: row.availability_status,
+    indexStatus: row.index_status,
+    aiAccessAllowed: Boolean(row.ai_access_allowed),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+async function getGoogleDriveStatus(env, ctx, requestId) {
+  const db = requireDatabase(env);
+  const principal = await requirePrincipal(ctx);
+  const ownerId = await ensureUser(db, principal);
+  const configuration = getGoogleDriveConfiguration(env);
+  const [connection, countRow] = await Promise.all([
+    db.prepare(`
+      SELECT status, scope, root_folder_id, connected_at, updated_at
+      FROM google_drive_connections WHERE owner_id = ?
+    `).bind(ownerId).first(),
+    db.prepare("SELECT COUNT(*) AS count FROM physics_drive_items WHERE owner_id = ?").bind(ownerId).first(),
+  ]);
+  return jsonResponse({ data: {
+    configured: configuration.configured,
+    connected: configuration.configured && connection?.status === "connected",
+    connectionStatus: connection?.status ?? "not-connected",
+    permission: "selected-files-only",
+    scope: GOOGLE_DRIVE_FILE_SCOPE,
+    sourceOfTruth: "google-drive",
+    rootFolderConfigured: Boolean(connection?.root_folder_id),
+    catalogItemCount: Number(countRow?.count ?? 0),
+    connectedAt: connection?.connected_at ?? null,
+    updatedAt: connection?.updated_at ?? null,
+  } }, 200, requestId);
+}
+
+async function startGoogleDriveConnection(request, env, ctx, requestId) {
+  requireMutationOrigin(request, env);
+  const db = requireDatabase(env);
+  const principal = await requirePrincipal(ctx);
+  const ownerId = await ensureUser(db, principal);
+  let configuration;
+  let attempt;
+  let encryptedVerifier;
+  let authorizationUrl;
+  try {
+    configuration = requireGoogleDriveConfiguration(env);
+    attempt = await createGoogleOAuthAttempt();
+    encryptedVerifier = await encryptGoogleToken(attempt.verifier, configuration.tokenEncryptionKey);
+    authorizationUrl = buildGoogleDriveAuthorizationUrl({
+      clientId: configuration.clientId,
+      redirectUri: configuration.redirectUri,
+      state: attempt.state,
+      codeChallenge: attempt.challenge,
+    });
+  } catch (error) {
+    rethrowGoogleDriveError(error);
+  }
+  await db.prepare(`
+    DELETE FROM google_drive_oauth_states
+    WHERE owner_id = ? OR expires_at <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+  `).bind(ownerId).run();
+  await db.prepare(`
+    INSERT INTO google_drive_oauth_states (
+      state_hash, owner_id, pkce_verifier_ciphertext, pkce_verifier_iv, key_version, expires_at
+    ) VALUES (?, ?, ?, ?, 1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '+10 minutes'))
+    ON CONFLICT(owner_id) DO UPDATE SET
+      state_hash = excluded.state_hash,
+      pkce_verifier_ciphertext = excluded.pkce_verifier_ciphertext,
+      pkce_verifier_iv = excluded.pkce_verifier_iv,
+      key_version = excluded.key_version,
+      expires_at = excluded.expires_at,
+      created_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+  `).bind(
+    attempt.stateHash,
+    ownerId,
+    encryptedVerifier.ciphertext,
+    encryptedVerifier.iv,
+  ).run();
+  return jsonResponse({ data: {
+    authorizationUrl,
+    expiresInSeconds: 600,
+    permission: "selected-files-only",
+  } }, 201, requestId);
+}
+
+async function finishGoogleDriveConnection(request, env, ctx, requestId) {
+  const db = requireDatabase(env);
+  const principal = await requirePrincipal(ctx);
+  const ownerId = await ensureUser(db, principal);
+  let configuration;
+  let stateHash;
+  try {
+    configuration = requireGoogleDriveConfiguration(env);
+    stateHash = await googleOAuthStateHash(new URL(request.url).searchParams.get("state"));
+  } catch (error) {
+    rethrowGoogleDriveError(error);
+  }
+  const attempt = await db.prepare(`
+    DELETE FROM google_drive_oauth_states
+    WHERE state_hash = ? AND owner_id = ?
+      AND expires_at > strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+    RETURNING pkce_verifier_ciphertext, pkce_verifier_iv, key_version
+  `).bind(stateHash, ownerId).first();
+  if (!attempt) {
+    throw new ApiError(400, "google_oauth_state_expired", "Google Drive 연결 요청이 만료됐거나 이미 사용되었습니다.");
+  }
+  const url = new URL(request.url);
+  if (url.searchParams.has("error")) return googleDriveRedirectResponse(env, "cancelled", requestId);
+  let verifier;
+  let token;
+  let encryptedRefreshToken;
+  try {
+    verifier = await decryptGoogleToken({
+      ciphertext: attempt.pkce_verifier_ciphertext,
+      iv: attempt.pkce_verifier_iv,
+    }, configuration.tokenEncryptionKey);
+    token = await exchangeGoogleAuthorizationCode({
+      code: url.searchParams.get("code"),
+      verifier,
+      clientId: configuration.clientId,
+      clientSecret: configuration.clientSecret,
+      redirectUri: configuration.redirectUri,
+      fetchImpl: env.GOOGLE_OAUTH_FETCH ?? globalThis.fetch,
+    });
+    encryptedRefreshToken = await encryptGoogleToken(token.refreshToken, configuration.tokenEncryptionKey);
+  } catch (error) {
+    rethrowGoogleDriveError(error);
+  }
+  await db.prepare(`
+    INSERT INTO google_drive_connections (
+      owner_id, refresh_token_ciphertext, refresh_token_iv, key_version, scope, status,
+      last_error_code, connected_at, updated_at
+    ) VALUES (?, ?, ?, 1, ?, 'connected', NULL,
+      strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    ON CONFLICT(owner_id) DO UPDATE SET
+      refresh_token_ciphertext = excluded.refresh_token_ciphertext,
+      refresh_token_iv = excluded.refresh_token_iv,
+      key_version = excluded.key_version,
+      scope = excluded.scope,
+      status = 'connected',
+      last_error_code = NULL,
+      connected_at = excluded.connected_at,
+      updated_at = excluded.updated_at
+  `).bind(
+    ownerId,
+    encryptedRefreshToken.ciphertext,
+    encryptedRefreshToken.iv,
+    token.scope,
+  ).run();
+  return googleDriveRedirectResponse(env, "connected", requestId);
+}
+
+async function listPhysicsDriveItems(env, ctx, requestId) {
+  const db = requireDatabase(env);
+  const principal = await requirePrincipal(ctx);
+  const ownerId = await ensureUser(db, principal);
+  const { results = [] } = await db.prepare(`
+    SELECT * FROM physics_drive_items
+    WHERE owner_id = ? ORDER BY updated_at DESC, id
+    LIMIT 500
+  `).bind(ownerId).all();
+  return jsonResponse({
+    data: results.map(physicsDriveItemFromRow),
+    meta: { count: results.length, sourceOfTruth: "google-drive" },
+  }, 200, requestId);
+}
+
 async function getSession(env, ctx, requestId) {
   const db = requireDatabase(env);
   const principal = await requirePrincipal(ctx);
@@ -4529,6 +4744,19 @@ async function handleApiRequest(request, env, ctx) {
       return await getEvent(eventMatch[1], env, requestId);
     }
 
+    if (pathname === `${API_PREFIX}/integrations/google-drive`) {
+      if (request.method !== "GET") return methodNotAllowed(["GET"], requestId);
+      return await getGoogleDriveStatus(env, ctx, requestId);
+    }
+    if (pathname === `${API_PREFIX}/integrations/google-drive/connect`) {
+      if (request.method !== "POST") return methodNotAllowed(["POST"], requestId);
+      return await startGoogleDriveConnection(request, env, ctx, requestId);
+    }
+    if (pathname === `${API_PREFIX}/integrations/google-drive/callback`) {
+      if (request.method !== "GET") return methodNotAllowed(["GET"], requestId);
+      return await finishGoogleDriveConnection(request, env, ctx, requestId);
+    }
+
     if (pathname === `${API_PREFIX}/physics/resources`) {
       if (request.method !== "GET") return methodNotAllowed(["GET"], requestId);
       return await listPhysicsResources(request, env, ctx, requestId);
@@ -4541,6 +4769,10 @@ async function handleApiRequest(request, env, ctx) {
       if (request.method === "GET") return await listPhysicsFiles(env, ctx, requestId);
       if (request.method === "POST") return await uploadPhysicsFile(request, env, ctx, requestId);
       return methodNotAllowed(["GET", "POST"], requestId);
+    }
+    if (pathname === `${API_PREFIX}/physics/drive/items`) {
+      if (request.method !== "GET") return methodNotAllowed(["GET"], requestId);
+      return await listPhysicsDriveItems(env, ctx, requestId);
     }
     const physicsFileMatch = pathname.match(/^\/api\/v1\/physics\/files\/([0-9a-f-]+)(?:\/(download|analyses))?$/i);
     if (physicsFileMatch) {
