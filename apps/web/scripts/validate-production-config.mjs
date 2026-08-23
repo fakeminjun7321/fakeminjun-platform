@@ -11,7 +11,7 @@ assert.equal(frontend.name, "fakeminjun-platform-web", "Unexpected frontend Work
 assert.equal(frontend.main, "worker/frontend.js", "Unexpected frontend guard entrypoint");
 assert.equal(frontend.assets?.directory, "./dist/client", "Frontend asset directory is not the Vite client build");
 assert.equal(frontend.assets?.not_found_handling, "single-page-application", "Frontend SPA fallback is missing");
-assert.deepEqual(frontend.assets?.run_worker_first, ["/api/*", "/oauth/google-drive/*"], "Missing API or OAuth fallback guard");
+assert.deepEqual(frontend.assets?.run_worker_first, ["/api/*"], "Missing API fallback guard");
 assert.deepEqual(frontend.routes, [{ pattern: "fakeminjun.vip", custom_domain: true }]);
 assert.equal(frontend.d1_databases, undefined, "Frontend must not receive the production D1 binding");
 
@@ -19,10 +19,7 @@ assert.equal(api.name, "fakeminjun-platform-api", "Unexpected API Worker name");
 assert.equal(api.main, "worker/index.js", "Unexpected API entrypoint");
 assert.equal(api.assets, undefined, "API Worker must not have a Static Assets binding because ctx.access is required");
 assert.equal(api.preview_urls, false, "API preview URLs must remain disabled");
-assert.deepEqual(api.routes, [
-  { pattern: "fakeminjun.vip/api/*", zone_name: "fakeminjun.vip" },
-  { pattern: "fakeminjun.vip/oauth/google-drive/*", zone_name: "fakeminjun.vip" },
-]);
+assert.deepEqual(api.routes, [{ pattern: "fakeminjun.vip/api/*", zone_name: "fakeminjun.vip" }]);
 assert.equal(api.vars?.APP_ENV, "production");
 assert.equal(api.vars?.APP_ORIGIN, "https://fakeminjun.vip");
 assert.equal(api.vars?.PHYSICS_SCANNER_ENABLED, "true");

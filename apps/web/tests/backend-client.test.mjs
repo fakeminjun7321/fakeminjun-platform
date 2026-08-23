@@ -403,6 +403,7 @@ test("backend client reads Drive status and runs the server-verified resumable u
       if (url.endsWith("/connect")) {
         return jsonResponse({ data: { authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth?state=safe" } }, { status: 201 });
       }
+      if (url.endsWith("/callback")) return jsonResponse({ data: { outcome: "connected" } });
       if (url.endsWith("/items")) return jsonResponse({ data: [], meta: { sourceOfTruth: "google-drive" } });
       if (url.endsWith("/uploads")) return jsonResponse({ data: { id: "upload-session-id", status: "ready" } }, { status: 201 });
       if (url.endsWith("/complete")) return jsonResponse({ data: { id: "catalog-item-id", driveFileId: "drive-file-123456" } }, { status: 201 });
@@ -412,6 +413,10 @@ test("backend client reads Drive status and runs the server-verified resumable u
   const controller = new AbortController();
   const status = await client.getGoogleDriveStatus({ signal: controller.signal });
   const connection = await client.startGoogleDriveConnection({ signal: controller.signal });
+  const callback = await client.finishGoogleDriveConnection(
+    { state: "s".repeat(43), code: "authorization-code" },
+    { signal: controller.signal },
+  );
   const items = await client.listPhysicsDriveItems({ signal: controller.signal });
   const upload = await client.startPhysicsDriveUpload(
     { name: "Mechanics.pdf", byteSize: 4096 },
@@ -425,20 +430,25 @@ test("backend client reads Drive status and runs the server-verified resumable u
 
   assert.equal(status.permission, "selected-files-only");
   assert.match(connection.authorizationUrl, /^https:\/\/accounts\.google\.com\//);
+  assert.equal(callback.outcome, "connected");
   assert.equal(items.meta.sourceOfTruth, "google-drive");
   assert.equal(calls[0].url, "/api/v1/integrations/google-drive");
   assert.equal(calls[0].options.signal, controller.signal);
   assert.equal(calls[1].url, "/api/v1/integrations/google-drive/connect");
   assert.equal(calls[1].options.method, "POST");
   assert.deepEqual(JSON.parse(calls[1].options.body), {});
-  assert.equal(calls[2].url, "/api/v1/physics/drive/items");
+  assert.equal(calls[2].url, "/api/v1/integrations/google-drive/callback");
+  assert.equal(calls[2].options.method, "POST");
+  assert.equal(calls[2].options.keepalive, true);
+  assert.deepEqual(JSON.parse(calls[2].options.body), { state: "s".repeat(43), code: "authorization-code" });
+  assert.equal(calls[3].url, "/api/v1/physics/drive/items");
   assert.equal(upload.status, "ready");
-  assert.equal(calls[3].url, "/api/v1/physics/drive/uploads");
-  assert.equal(calls[3].options.headers["idempotency-key"], "drive-upload-1234");
-  assert.deepEqual(JSON.parse(calls[3].options.body), { name: "Mechanics.pdf", byteSize: 4096 });
+  assert.equal(calls[4].url, "/api/v1/physics/drive/uploads");
+  assert.equal(calls[4].options.headers["idempotency-key"], "drive-upload-1234");
+  assert.deepEqual(JSON.parse(calls[4].options.body), { name: "Mechanics.pdf", byteSize: 4096 });
   assert.equal(completed.driveFileId, "drive-file-123456");
-  assert.equal(calls[4].url, "/api/v1/physics/drive/uploads/9f165cbb-0315-4a0e-bf07-0c8c602e3da5/complete");
-  assert.deepEqual(JSON.parse(calls[4].options.body), { driveFileId: "drive-file-123456" });
+  assert.equal(calls[5].url, "/api/v1/physics/drive/uploads/9f165cbb-0315-4a0e-bf07-0c8c602e3da5/complete");
+  assert.deepEqual(JSON.parse(calls[5].options.body), { driveFileId: "drive-file-123456" });
 });
 
 test("backend client uploads private physics files and starts file analysis", async () => {

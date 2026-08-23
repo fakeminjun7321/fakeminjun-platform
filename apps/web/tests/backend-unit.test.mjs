@@ -34,6 +34,7 @@ import worker, {
   parsePhysicsSearchResourceIds,
   validatePhysicsSearchPayload,
   validateGoogleDriveUploadCompletionPayload,
+  validateGoogleDriveCallbackPayload,
   validateGoogleDriveUploadPayload,
 } from "../worker/index.js";
 
@@ -277,6 +278,7 @@ test("candidate mutations reject an untrusted origin before identity, D1, or Ope
     ["/api/v1/visual-analyses", "POST"],
     ["/api/v1/physics/library", "POST"],
     ["/api/v1/integrations/google-drive/connect", "POST"],
+    ["/api/v1/integrations/google-drive/callback", "POST"],
     ["/api/v1/physics/drive/uploads", "POST"],
     ["/api/v1/physics/drive/uploads/9f165cbb-0315-4a0e-bf07-0c8c602e3da5/complete", "POST"],
   ]) {
@@ -317,6 +319,24 @@ test("Drive upload contracts accept only bounded PDFs and server-verifiable file
   assert.throws(
     () => validateGoogleDriveUploadCompletionPayload({ driveFileId: "short", ownerId: 7 }),
     (error) => error.code === "unknown_fields",
+  );
+});
+
+test("Drive OAuth callback relay accepts one bounded result shape", () => {
+  const state = "s".repeat(43);
+  assert.deepEqual(validateGoogleDriveCallbackPayload({ state, code: "authorization-code" }), {
+    state, code: "authorization-code", error: null,
+  });
+  assert.deepEqual(validateGoogleDriveCallbackPayload({ state, error: "access_denied" }), {
+    state, code: null, error: "access_denied",
+  });
+  assert.throws(
+    () => validateGoogleDriveCallbackPayload({ state, code: "code", error: "access_denied" }),
+    (error) => error.code === "google_oauth_result_invalid",
+  );
+  assert.throws(
+    () => validateGoogleDriveCallbackPayload({ state: "short", code: "code" }),
+    (error) => error.code === "google_oauth_state_invalid",
   );
 });
 

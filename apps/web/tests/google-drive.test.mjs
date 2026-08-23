@@ -93,7 +93,7 @@ test("Drive authorization-code exchange uses the fixed token endpoint and reject
     verifier: "v".repeat(43),
     clientId: "client-id",
     clientSecret: "client-secret",
-    redirectUri: "https://app.example.test/api/v1/integrations/google-drive/callback",
+    redirectUri: "https://app.example.test/physics/library",
     fetchImpl: async (url, options) => {
       calls.push({ url, options });
       return new Response(JSON.stringify({
@@ -114,7 +114,7 @@ test("Drive authorization-code exchange uses the fixed token endpoint and reject
       verifier: "v".repeat(43),
       clientId: "client-id",
       clientSecret: "client-secret",
-      redirectUri: "https://app.example.test/api/v1/integrations/google-drive/callback",
+      redirectUri: "https://app.example.test/physics/library",
       fetchImpl: async () => new Response(JSON.stringify({
         refresh_token: "refresh-token-value-1234567890",
         scope: `${GOOGLE_DRIVE_FILE_SCOPE} https://www.googleapis.com/auth/drive.readonly`,
@@ -129,7 +129,7 @@ test("Drive authorization-code exchange uses the fixed token endpoint and reject
       verifier: "v".repeat(43),
       clientId: "client-id",
       clientSecret: "client-secret",
-      redirectUri: "https://app.example.test/api/v1/integrations/google-drive/callback",
+      redirectUri: "https://app.example.test/physics/library",
       fetchImpl: async () => new Response("not-json"),
     }),
     (error) => error.code === "google_oauth_response_invalid",
@@ -141,7 +141,7 @@ test("Drive authorization-code exchange uses the fixed token endpoint and reject
       verifier: "v".repeat(43),
       clientId: "client-id",
       clientSecret: "client-secret",
-      redirectUri: "https://app.example.test/api/v1/integrations/google-drive/callback",
+      redirectUri: "https://app.example.test/physics/library",
       timeoutMs: 5,
       fetchImpl: async (_url, options) => new Promise((_resolve, reject) => {
         options.signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });

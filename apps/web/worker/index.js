@@ -1,7 +1,6 @@
 import { runAllSourceStreams } from "./ingestion.js";
 import { searchExternalPhysicsProviders } from "./physicsProviders.js";
 import {
-  GOOGLE_DRIVE_CALLBACK_PATH,
   GOOGLE_DRIVE_FILE_SCOPE,
   GOOGLE_DRIVE_MAX_PDF_BYTES,
   GoogleDriveIntegrationError,
@@ -4571,26 +4570,6 @@ async function promoteEventCandidate(candidateId, request, env, ctx, requestId) 
   } }, existingReceipt ? 200 : 201, requestId, { location: `${API_PREFIX}/events/${receipt.event_id}` });
 }
 
-function googleDriveRedirectResponse(env, outcome, requestId) {
-  let redirect;
-  try {
-    redirect = new URL("/physics/library", env.APP_ORIGIN);
-  } catch {
-    throw new ApiError(503, "google_oauth_origin_invalid", "Google Drive 연결 후 돌아갈 주소가 올바르지 않습니다.");
-  }
-  redirect.searchParams.set("drive", outcome);
-  return new Response(null, {
-    status: 303,
-    headers: {
-      "cache-control": "no-store",
-      location: redirect.toString(),
-      "referrer-policy": "no-referrer",
-      "x-content-type-options": "nosniff",
-      "x-request-id": requestId,
-    },
-  });
-}
-
 function physicsDriveItemFromRow(row) {
   return {
     id: row.id,
@@ -4685,7 +4664,29 @@ async function startGoogleDriveConnection(request, env, ctx, requestId) {
   } }, 201, requestId);
 }
 
+export function validateGoogleDriveCallbackPayload(payload) {
+  assertOnlyKeys(payload, new Set(["state", "code", "error"]));
+  const state = typeof payload.state === "string" ? payload.state.trim() : "";
+  const code = typeof payload.code === "string" ? payload.code.trim() : "";
+  const error = typeof payload.error === "string" ? payload.error.trim() : "";
+  if (!/^[A-Za-z0-9_-]{43}$/u.test(state)) {
+    throw new ApiError(400, "google_oauth_state_invalid", "Google Drive 연결 상태값이 올바르지 않습니다.");
+  }
+  if (error) {
+    if (!/^[A-Za-z0-9_.-]{1,100}$/u.test(error) || code) {
+      throw new ApiError(400, "google_oauth_result_invalid", "Google Drive 연결 결과가 올바르지 않습니다.");
+    }
+    return { state, code: null, error };
+  }
+  if (!code || code.length > 4096) {
+    throw new ApiError(400, "google_oauth_code_invalid", "Google Drive 연결 코드가 올바르지 않습니다.");
+  }
+  return { state, code, error: null };
+}
+
 async function finishGoogleDriveConnection(request, env, ctx, requestId) {
+  requireMutationOrigin(request, env);
+  const payload = validateGoogleDriveCallbackPayload(await readJson(request));
   const db = requireDatabase(env);
   const principal = await requirePrincipal(ctx);
   const ownerId = await ensureUser(db, principal);
@@ -4693,7 +4694,7 @@ async function finishGoogleDriveConnection(request, env, ctx, requestId) {
   let stateHash;
   try {
     configuration = requireGoogleDriveConfiguration(env);
-    stateHash = await googleOAuthStateHash(new URL(request.url).searchParams.get("state"));
+    stateHash = await googleOAuthStateHash(payload.state);
   } catch (error) {
     rethrowGoogleDriveError(error);
   }
@@ -4706,8 +4707,9 @@ async function finishGoogleDriveConnection(request, env, ctx, requestId) {
   if (!attempt) {
     throw new ApiError(400, "google_oauth_state_expired", "Google Drive 연결 요청이 만료됐거나 이미 사용되었습니다.");
   }
-  const url = new URL(request.url);
-  if (url.searchParams.has("error")) return googleDriveRedirectResponse(env, "cancelled", requestId);
+  if (payload.error) {
+    return jsonResponse({ data: { outcome: "cancelled" } }, 200, requestId);
+  }
   let verifier;
   let token;
   let encryptedRefreshToken;
@@ -4717,7 +4719,7 @@ async function finishGoogleDriveConnection(request, env, ctx, requestId) {
       iv: attempt.pkce_verifier_iv,
     }, configuration.tokenEncryptionKey);
     token = await exchangeGoogleAuthorizationCode({
-      code: url.searchParams.get("code"),
+      code: payload.code,
       verifier,
       clientId: configuration.clientId,
       clientSecret: configuration.clientSecret,
@@ -4749,7 +4751,7 @@ async function finishGoogleDriveConnection(request, env, ctx, requestId) {
     encryptedRefreshToken.iv,
     token.scope,
   ).run();
-  return googleDriveRedirectResponse(env, "connected", requestId);
+  return jsonResponse({ data: { outcome: "connected" } }, 200, requestId);
 }
 
 export function validateGoogleDriveUploadPayload(value) {
@@ -5166,8 +5168,8 @@ async function handleApiRequest(request, env, ctx) {
       if (request.method !== "POST") return methodNotAllowed(["POST"], requestId);
       return await startGoogleDriveConnection(request, env, ctx, requestId);
     }
-    if (pathname === GOOGLE_DRIVE_CALLBACK_PATH) {
-      if (request.method !== "GET") return methodNotAllowed(["GET"], requestId);
+    if (pathname === `${API_PREFIX}/integrations/google-drive/callback`) {
+      if (request.method !== "POST") return methodNotAllowed(["POST"], requestId);
       return await finishGoogleDriveConnection(request, env, ctx, requestId);
     }
 
@@ -5294,9 +5296,7 @@ async function handleAssets(request, env) {
 export default {
   async fetch(request, env, ctx) {
     const pathname = new URL(request.url).pathname;
-    if (pathname.startsWith("/api/") || pathname === GOOGLE_DRIVE_CALLBACK_PATH) {
-      return handleApiRequest(request, env, ctx);
-    }
+    if (pathname.startsWith("/api/")) return handleApiRequest(request, env, ctx);
     return handleAssets(request, env);
   },
   async scheduled(_controller, env, ctx) {
