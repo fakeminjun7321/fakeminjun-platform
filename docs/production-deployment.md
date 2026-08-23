@@ -1,6 +1,6 @@
 # Production deployment: `fakeminjun.vip`
 
-작성일: 2026-08-22
+작성일: 2026-08-23
 
 현재 지도 타일은 운영용 자체 호스팅 PMTiles가 아니라 OpenFreeMap을 사용한다. 따라서 이 배포는 Cloudflare Access 뒤의 **개인 private alpha**이며 공개 production이라고 부르지 않는다.
 
@@ -53,9 +53,10 @@
 
 ## 현재 상태
 
-- **Implemented**: 기존 프론트/API 분리·Access·D1·OpenAI·Cron 경계와 이번 변경의 production D1 0015·0016 migration, 물리 검색·파일·분석 근거·사용량 schema
-- **Unit-verified**: 애플리케이션 테스트 98건과 운영 배포 경계 테스트 4건, Sites worker 5건 통과. 로컬 D1·R2 통합 경로와 production build 통과
-- **Live-service-verified**: 공용 DNS·TLS, 미로그인 루트/API의 Access 302 차단, HTTP→HTTPS 301, 이전 버전의 허용 계정 로그인·깊은 SPA 경로·실제 OpenAI 표준 분석, `workers.dev` 우회 주소 404와 10분 Cron 수집을 확인. 2026-08-23에는 APAC Standard `fakeminjun-physics-vault`, API version `78a1dbd1-b2df-4d47-902e-b88753f89767`, frontend version `489490dd-fb91-4197-a92b-057016430d99`를 배포하고 실제 production D1·R2 remote binding으로 71,168바이트 PDF 업로드·바이트 일치 다운로드·GPT-5.6 Luna 분석·인용/근거 저장·기록 재조회·삭제와 시험 데이터 정리를 확인함
-- **Not verified / 미검증**: 이번 배포 버전의 production Chrome 로그인 후 파일·인용/기록 UI 경로, 비허용 계정 거부, WAF·DDoS 부하 경로, 모바일 화면
+- **Implemented**: 기존 프론트/API 분리·Access·D1·OpenAI·Cron 경계와 production D1 0015·0016·0018 migration, 물리 검색·파일·분석 근거·사용량·scan schema
+- **Unit-verified**: 애플리케이션 테스트 114건, 운영 배포 경계 5건, Sites worker 5건, 로컬 D1·R2 통합 경로와 production build 통과. npm 취약점 0건·registry signature 127개·attestation 65개를 확인했고 PR #23 CI의 ClamAV 이미지 취약점 검사와 Worker 번들도 통과
+- **Live-service-verified**: 공용 DNS·TLS, 미로그인 루트/API Access 302, HTTP→HTTPS 301, 이전 버전의 허용 계정 로그인·깊은 SPA 경로·OpenAI 분석, `workers.dev` 404와 10분 Cron 수집을 확인. 현재 배포는 frontend `e3f1aeca-41d3-47de-a894-3ae48fdccdff`, API `9ea270f3-ed8c-43eb-bf0c-2105ac953a45`, scanner `82047ca5-1127-4bbf-ac0a-96134b518bcc`다. production Queue/R2/ClamAV에서 정상 PDF clean·동일 바이트 다운로드·OpenAI 분석/인용/기록, EICAR blocked·R2 삭제·API 차단, 전달 시도 1~4 뒤 DLQ의 file/job error·lease 해제·API 차단과 시험 데이터 정리를 확인함
+- **Security-control-verified**: 잘못된 origin의 쓰기 요청 403, 물리 외부 검색 앱 한도 429, 시험 사용량 원장 삭제를 확인. 이는 Cloudflare WAF 정책이나 DDoS 부하 결과가 아님
+- **Not verified / 미검증**: 현재 배포 버전의 production Chrome 로그인 후 파일·인용/기록 UI 경로, 비허용 계정 거부, Cloudflare Access 정책 상세·WAF 규칙·비용 경보, DDoS/부하 경로, 모바일 화면
 - **Simulator-verified**: **Not verified / 미검증**
-- **Physical-device-verified**: 실제 macOS Chrome에서 Access 로그인, 국제정세·물리 렌더, 실제 AI 응답 표시를 확인. 모바일 물리기기는 **Not verified / 미검증**
+- **Physical-device-verified**: 이전 production 버전은 실제 macOS Chrome에서 Access 로그인, 국제정세·물리 렌더, 실제 AI 응답 표시를 확인. 현재 배포 버전과 모바일 물리기기는 **Not verified / 미검증**

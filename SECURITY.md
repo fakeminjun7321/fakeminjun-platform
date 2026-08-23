@@ -29,6 +29,8 @@
 
 scanner core fixture, mock Queue, 직접 주입한 D1 `clean` 상태는 실제 백신 실행 증거가 아니다. **Antivirus-verified**라고 보고하려면 production과 같은 경로에서 정상 파일의 clean 판정, EICAR의 blocked 판정과 객체 삭제, signature DB 시각·engine 기록, retry/DLQ 결과를 각각 확인하고 시험 객체를 정리해야 한다.
 
+2026-08-23 production 검증에서 위 조건을 모두 실행했다. 정상 PDF는 ClamAV 1.5.4와 signature DB 28101로 `clean` 판정 뒤 동일 바이트 다운로드·OpenAI 분석이 성공했고, EICAR PDF는 `blocked`·R2 삭제·다운로드/분석 423을 확인했다. 별도 고장 주입에서는 전달 시도 1~4 뒤 DLQ가 파일과 작업을 `scan_retries_exhausted`로 닫고 lease를 해제했으며 다운로드·분석 423과 D1/R2 시험 데이터 삭제까지 확인했다. 따라서 이 배포의 signature 기반 파일 경로는 **Antivirus-verified**지만 EDR 또는 모든 악성 행위에 대한 보증은 아니다.
+
 ## 보고 경계
 
 - `npm audit`과 registry signature는 알려진 패키지 위험 신호를 확인할 뿐 백신·EDR 검사가 아니다.

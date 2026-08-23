@@ -44,14 +44,15 @@
 ## 4. 현재 상태
 
 - **Implemented**: 기존 범위에 arXiv/Crossref, 비공개 물리 파일, 파일 분석, 근거 ID 인용·분석 기록 검색, 독립 근거 지도 승격 추가
-- **Unit-verified**: `npm test` 98건, `npm run test:sites` 5건, 운영 배포 경계 4건 통과
+- **Unit-verified**: `npm test` 114건, `npm run test:sites` 5건, 운영 배포 경계 5건, 로컬 D1·R2 백엔드 통합 테스트 통과. PR #23 CI에서 고정 ClamAV 이미지 취약점 검사와 production Worker 번들 검사도 통과
 - **Local-runtime-verified**: 임시 D1·R2에서 파일 중복 제거·총량 한도·업로드·다운로드·재시작 후 영속성·삭제, 외부 검색/분석 한도, 160자 검색, 분석 기록 검색, 독립 지지 출처 2개와 위치를 요구하는 지도 승격 및 사건-출처 저장 확인
 - **Browser-verified**: 인앱 브라우저에서 실제 공식 자료 선택 → 실제 OpenAI 후보 생성 → 검토 메모 저장 → 새로고침 후 유지 경로를 확인. 콘솔 `warn`/`error` 0건, 390×844 브라우저 viewport 수평 overflow 없음
 - **Simulator-verified**: 미검증 — 모바일 시뮬레이터는 사용하지 않음
-- **Physical-device-verified**: 이전 production 버전은 실제 macOS Chrome에서 Access 로그인, 국제정세·물리 화면과 OpenAI 결과 표시를 확인. 이번 배포 버전과 모바일 물리기기는 미검증
-- **Live-service-verified**: DNS·TLS·미로그인 Access 차단·D1·OpenAI·Cron, arXiv/Crossref 실제 응답과 production D1 0015·0016 migration을 확인. 실제 production D1·R2 remote binding에서는 PDF 업로드·동일 바이트 다운로드·GPT-5.6 Luna 분석·인용/근거 저장·기록 재조회·삭제와 시험 데이터 정리까지 확인
-- **Not verified / 미검증**: 이번 배포 버전의 production Chrome 로그인 후 파일·분석 인용/기록 UI 조작, 비허용 계정, 모바일, 백신 엔진, WAF·DDoS 부하 경로
-- **Antivirus-verified**: 미검증 — 변경분 보안 검토와 npm advisory·registry signature 검사는 수행했으나 백신·EDR 엔진은 실행하지 않음
+- **Physical-device-verified**: 이전 production 버전은 실제 macOS Chrome에서 Access 로그인, 국제정세·물리 화면과 OpenAI 결과 표시를 확인. 현재 frontend/API/scanner 버전과 모바일 물리기기는 **Not verified / 미검증**
+- **Live-service-verified**: DNS·TLS·미로그인 Access 차단·D1·OpenAI·Cron, arXiv/Crossref 실제 응답·캐시, production D1 0015·0016·0018 migration을 확인. production Queue/R2/ClamAV에서 정상 PDF clean·다운로드·AI 분석/인용/기록, EICAR blocked·객체 삭제·API 차단, delivery attempt 1~4 뒤 DLQ의 file/job error·lease 해제·API 차단과 시험 데이터 정리를 확인
+- **Security-control-verified**: HTTPS 강제, 미로그인 Access 경계, origin 거부, 앱 사용량 한도의 실제 429와 시험 원장 삭제를 확인
+- **Not verified / 미검증**: 현재 배포 버전의 production Chrome 로그인 후 파일·분석 인용/기록 UI 조작, 비허용 계정, 모바일, Cloudflare Access 정책 상세·WAF 규칙·비용 경보, DDoS/부하 경로
+- **Antivirus-verified**: production 정상 파일, EICAR, retry/DLQ의 실제 목적지 결과와 정리까지 확인. ClamAV는 EDR이나 모든 악성 행위 탐지를 대신하지 않음
 
 ## 5. 프론트와 백엔드의 다음 연결 기준
 
