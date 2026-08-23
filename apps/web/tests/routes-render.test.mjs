@@ -44,6 +44,7 @@ after(async () => {
 
 const ROUTE_EXPECTATIONS = [
   ["/international/briefing", "사건 후보 검토대"],
+  ["/international/issues", "이슈 추적"],
   ["/physics/learn", "물리 학습 허브"],
   ["/physics/library", "물리 자료 보관소"],
   ["/physics/find", "물리 자료 찾기"],
@@ -75,7 +76,7 @@ for (const [pathname, expectedText] of ROUTE_EXPECTATIONS) {
     } else {
       assert.ok(html.includes(expectedText));
     }
-    if (pathname === "/international/briefing") {
+    if (pathname.startsWith("/international/")) {
       assert.ok(html.includes("공식 자료 · 검증 전"));
       assert.ok(html.includes("공식 업데이트"));
     } else {
@@ -94,6 +95,10 @@ for (const [pathname, expectedText] of ROUTE_EXPECTATIONS) {
       assert.ok(html.includes("사건 후보 만들기"));
       assert.ok(html.includes("60초마다 확인"));
       assert.ok(html.includes("첫 동기화 대기"));
+    } else if (pathname === "/international/issues") {
+      assert.ok(html.includes("공식 업데이트"));
+      assert.ok(html.includes("분석용 데모"));
+      assert.ok(html.includes("검증 전"));
     }
   });
 }

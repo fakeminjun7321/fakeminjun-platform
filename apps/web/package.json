@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test tests/backend-client.test.mjs tests/backend-unit.test.mjs tests/events.test.mjs tests/google-drive.test.mjs tests/google-drive-upload.test.mjs tests/international-refresh.test.mjs tests/map-layers.test.mjs tests/physics-providers.test.mjs tests/routes-render.test.mjs tests/scanner-core.test.mjs tests/source-ingestion.test.mjs tests/verify-live-backend.test.mjs tests/workspaces.test.mjs",
+    "test": "node --test tests/backend-client.test.mjs tests/backend-unit.test.mjs tests/events.test.mjs tests/google-drive.test.mjs tests/google-drive-upload.test.mjs tests/international-issues.test.mjs tests/international-refresh.test.mjs tests/map-layers.test.mjs tests/physics-providers.test.mjs tests/routes-render.test.mjs tests/scanner-core.test.mjs tests/source-ingestion.test.mjs tests/verify-live-backend.test.mjs tests/workspaces.test.mjs",
     "test:deployment": "node --test tests/deployment-config.test.mjs",
     "dev": "vite",
     "dev:backend": "wrangler dev --local",

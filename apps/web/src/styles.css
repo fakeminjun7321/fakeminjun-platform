@@ -1317,7 +1317,22 @@ p { margin-block: 0; }
 }
 .issue-index h2 { margin: 6px 8px 20px; font-size: 29px; }
 .issue-scroll-hint { display: none; }
-.issue-index > div { border-top: 1px solid var(--line); }
+.issue-index-group { border-top: 1px solid var(--line); }
+.issue-index-group + .issue-index-group { margin-top: 22px; }
+.issue-index-group > header {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+.issue-index-group > header strong { color: #a8b5b5; font: inherit; }
+.issue-index-group > div { border-top: 1px solid var(--line); }
+.issue-index-state { margin: 0; padding: 14px 8px; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; line-height: 1.6; }
+.issue-index-state.is-error { color: #c5a988; }
 .issue-index button {
   width: 100%;
   min-height: 86px;
@@ -1330,7 +1345,7 @@ p { margin-block: 0; }
 }
 .issue-index button:hover { background: var(--surface-1); }
 .issue-index button.is-selected { box-shadow: inset 2px 0 var(--cyan); background: var(--surface-2); }
-.issue-index button > span { color: var(--faint); font-family: var(--mono); font-size: 10px; }
+.issue-index button > span { color: var(--faint); font-family: var(--mono); font-size: 9px; line-height: 1.45; }
 .issue-index button strong { color: #d9dfde; font-size: 13px; }
 .issue-index button small { grid-column: 2; color: var(--muted); font-size: 10px; }
 
@@ -1378,6 +1393,33 @@ p { margin-block: 0; }
 .issue-history time { color: var(--muted); font-family: var(--mono); font-size: 10px; }
 .issue-history strong { color: #dce2e1; font-size: 13px; }
 .issue-history button span { color: var(--muted); font-size: 11px; line-height: 1.6; }
+
+.official-issue-updates { max-width: 940px; margin-top: 28px; border-top: 1px solid var(--line-strong); border-bottom: 1px solid var(--line-strong); }
+.official-issue-updates > div {
+  min-height: 62px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.official-issue-updates h3 { margin-top: 3px; color: #e3e7e6; font-family: var(--display); font-size: 20px; }
+.official-issue-updates > div > span { color: var(--muted); font-family: var(--mono); font-size: 10px; }
+.official-issue-updates ol { margin: 0; padding: 0; list-style: none; }
+.official-issue-updates li { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 18px; padding: 15px 0; }
+.official-issue-updates li + li { border-top: 1px solid var(--line); }
+.official-update-meta { display: grid; align-content: start; gap: 5px; color: var(--muted); font-family: var(--mono); font-size: 10px; }
+.official-issue-updates a,
+.official-issue-updates li > strong { color: #dce2e1; font-size: 13px; font-weight: 600; line-height: 1.55; }
+.official-issue-updates a { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; text-decoration: none; }
+.official-issue-updates a:hover { color: #bde3e1; }
+.official-issue-updates a svg { flex: 0 0 auto; margin-top: 3px; color: var(--cyan); }
+.official-issue-boundary { max-width: 940px; display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: 26px; margin-top: 24px; padding: 18px 0; border-bottom: 1px solid var(--line); }
+.official-issue-boundary div { display: grid; gap: 6px; }
+.official-issue-boundary span { color: var(--cyan); font-size: 10px; font-weight: 700; }
+.official-issue-boundary strong { color: var(--text-soft); font-size: 12px; line-height: 1.65; }
+.official-issue-boundary p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
 
 .evidence-grid {
   max-width: 940px;
@@ -2494,12 +2536,17 @@ mjx-container {
   .issues-workspace { display: block; overflow: auto; }
   .issue-index { overflow: visible; border-right: 0; border-bottom: 1px solid var(--line); }
   .issue-scroll-hint { display: block; margin: 7px 8px 0; color: var(--muted); font-family: var(--mono); font-size: 10px; }
-  .issue-index > div { display: flex; gap: 0; overflow-x: auto; padding-bottom: 8px; }
+  .issue-index-group { min-width: 0; }
+  .issue-index-group + .issue-index-group { margin-top: 14px; }
+  .issue-index-group > div { display: flex; gap: 0; overflow-x: auto; padding-bottom: 8px; }
   .issue-index button { flex: 0 0 236px; border-right: 1px solid var(--line); }
   .issue-dossier { padding: 30px 18px 48px; }
   .issue-dossier h2 { font-size: 30px; }
   .issue-history ol { grid-template-columns: 1fr; }
   .issue-history li + li { border-top: 1px solid var(--line); border-left: 0; }
+  .official-issue-updates li { grid-template-columns: 1fr; gap: 8px; }
+  .official-update-meta { grid-template-columns: minmax(0, 1fr) auto; }
+  .official-issue-boundary { grid-template-columns: 1fr; gap: 14px; }
   .dossier-meta { gap: 7px; }
   .ai-drawer { width: 100%; }
   .domain-workspace { padding: 22px 12px 40px; }
@@ -2780,7 +2827,8 @@ body {
 .issues-workspace { grid-template-columns: 270px minmax(0, 1fr); }
 .issue-index { padding: 28px 16px; background: #080c0e; }
 .issue-index h2 { margin: 6px 6px 17px; font-size: 25px; }
-.issue-index > div { border-top-color: var(--line); }
+.issue-index-group { border-top-color: var(--line); }
+.issue-index-group > div { border-top-color: var(--line); }
 .issue-index button { min-height: 78px; padding: 12px 8px; border-bottom-color: var(--line); border-radius: 8px; }
 .issue-index button.is-selected { background: #121b20; }
 .issue-index button strong { font-size: 12px; }
