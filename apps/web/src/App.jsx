@@ -19,6 +19,7 @@ import {
   startVisibleRefresh,
 } from "./internationalRefresh.js";
 import { CATEGORY_META, STATUS_META, getTopSignals } from "./mapLayers.js";
+import { PHYSICS_ANALYSIS_LEVEL, PHYSICS_PROFILE_SUMMARY } from "./physicsProfile.js";
 
 const AiDrawer = lazy(() => import("./AiDrawer.jsx"));
 const CandidatePromotionPanel = lazy(() => import("./CandidatePromotionPanel.jsx"));
@@ -710,11 +711,11 @@ function IssuesPage({ selectedEvent, onSelect, onOpenAi }) {
   );
 }
 
-function PassiveStatusBar({ domain, route, sourceState, mapEventState, physicsLevel }) {
+function PassiveStatusBar({ domain, route, sourceState, mapEventState }) {
   if (domain === "physics") {
     return (
       <footer className="system-status" aria-label="물리 워크스페이스 상태">
-        <span>LIBRARY <strong>PRIVATE API</strong></span><span>ACTIVE LEVEL <strong>P{physicsLevel}</strong></span>
+        <span>LIBRARY <strong>PRIVATE API</strong></span><span>PROFILE <strong>OLYMPIAD THEORY</strong></span>
         <span>TRACK <strong>KPHO → IPHO</strong></span><span>OPEN LINKS <strong>6</strong></span>
         <span className="system-health">OpenAI 분석 API <i aria-hidden="true" /> 요청 시 연결 확인</span>
       </footer>
@@ -778,7 +779,6 @@ export function App() {
   ));
   const [aiOpen, setAiOpen] = useState(false);
   const [analysisContext, setAnalysisContext] = useState(null);
-  const [physicsLevel, setPhysicsLevel] = useState(4);
   const [notice, setNotice] = useState("");
   const [sourceState, setSourceState] = useState({
     status: "idle",
@@ -826,11 +826,11 @@ export function App() {
     if (domain === "physics") {
       return {
         domain: "physics",
-        level: `P${physicsLevel}`,
+        level: PHYSICS_ANALYSIS_LEVEL,
         contextKind: "physics-workspace",
         contextId: "current",
         title: "물리 학습 워크스페이스",
-        meta: `물리 워크스페이스 · 설명 수준 P${physicsLevel}`,
+        meta: `물리 워크스페이스 · ${PHYSICS_PROFILE_SUMMARY}`,
         placeholder: "개념과 수학적 구조를 분리해서 단계적으로 설명해줘.",
       };
     }
@@ -844,7 +844,7 @@ export function App() {
         meta: `${selectedEvent.region} · ${selectedEvent.time} KST · ${selectedEvent.live ? "승격된 실제 사건" : "명시된 데모 자료"}`,
       placeholder: "확인된 사실과 추론을 구분해서, 한국에 미칠 영향을 분석해줘.",
     };
-  }, [domain, physicsLevel, selectedEvent]);
+  }, [domain, selectedEvent]);
 
   useEffect(() => {
     const syncRouteToPath = () => {
@@ -1158,13 +1158,11 @@ export function App() {
               view={{ library: "library", finder: "finder", ipho: "ipho" }[route] ?? "learn"}
               onOpenAi={openAi}
               onNotice={showNotice}
-              level={physicsLevel}
-              onLevelChange={setPhysicsLevel}
             />
           </Suspense>
         )}
 
-        <PassiveStatusBar domain={domain} route={route} sourceState={sourceState} mapEventState={mapEventState} physicsLevel={physicsLevel} />
+        <PassiveStatusBar domain={domain} route={route} sourceState={sourceState} mapEventState={mapEventState} />
       </div>
       <p className="sr-only" role="status" aria-live="polite">선택 사건: {selectedEvent.title}</p>
       {notice && <div className="domain-notice" role="status">{notice}</div>}
