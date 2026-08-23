@@ -17,6 +17,22 @@ export function shouldRetryScanError(error) {
   return !(error instanceof ScanContractError) || error.retryable;
 }
 
+export async function markDeadLetterScanFailure(db, fileId, code) {
+  await db.batch([
+    db.prepare(`
+      UPDATE physics_files
+      SET antivirus_status = 'error', scan_error_code = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+      WHERE id = ? AND antivirus_status NOT IN ('clean', 'blocked')
+    `).bind(code, fileId),
+    db.prepare(`
+      UPDATE physics_file_scan_jobs
+      SET state = 'error', last_error_code = ?, lease_id = NULL, lease_expires_at = NULL,
+          updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+      WHERE file_id = ? AND state NOT IN ('clean', 'blocked')
+    `).bind(code, fileId),
+  ]);
+}
+
 export function requireCommittedScanTransition(fileTransition, jobTransition) {
   if (fileTransition?.meta?.changes === 1 && jobTransition?.meta?.changes === 1) return;
   throw new ScanContractError(
