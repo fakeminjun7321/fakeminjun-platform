@@ -114,6 +114,7 @@ export async function runLiveBackendVerification({
   includeEicar = false,
   baseUrl = DEFAULT_BASE_URL,
   appOrigin = DEFAULT_APP_ORIGIN,
+  accessToken = null,
   fetchImpl = globalThis.fetch,
   scanTimeoutMs = DEFAULT_SCAN_TIMEOUT_MS,
   pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
@@ -136,9 +137,11 @@ export async function runLiveBackendVerification({
     const response = await fetchImpl(`${normalizedBaseUrl}${pathname}`, {
       signal: AbortSignal.timeout(120_000),
       ...options,
-      headers: options.headers?.origin
-        ? { ...options.headers, origin: appOrigin }
-        : options.headers,
+      headers: {
+        ...(accessToken ? { "cf-access-token": accessToken } : {}),
+        ...options.headers,
+        ...(options.headers?.origin ? { origin: appOrigin } : {}),
+      },
     });
     const body = response.status === 204 ? null : await response.json().catch(() => null);
     return { response, body };
@@ -227,6 +230,7 @@ export async function runLiveBackendVerification({
 
     const download = await fetchImpl(`${normalizedBaseUrl}/api/v1/physics/files/${cleanFileId}/download`, {
       signal: AbortSignal.timeout(30_000),
+      headers: accessToken ? { "cf-access-token": accessToken } : undefined,
     });
     assert.equal(download.status, 200);
     assert.equal(download.headers.get("content-type"), "application/octet-stream");
@@ -358,6 +362,7 @@ export async function runCli(args = process.argv.slice(2)) {
     includeEicar: args.includes("--eicar"),
     baseUrl: process.env.STUDIO_7321_VERIFY_URL || DEFAULT_BASE_URL,
     appOrigin: process.env.STUDIO_7321_APP_ORIGIN || DEFAULT_APP_ORIGIN,
+    accessToken: process.env.STUDIO_7321_ACCESS_TOKEN || null,
     scanTimeoutMs: finitePositiveInteger(process.env.STUDIO_7321_SCAN_TIMEOUT_MS, DEFAULT_SCAN_TIMEOUT_MS),
     pollIntervalMs: finitePositiveInteger(process.env.STUDIO_7321_POLL_INTERVAL_MS, DEFAULT_POLL_INTERVAL_MS),
   });

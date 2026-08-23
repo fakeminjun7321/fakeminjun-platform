@@ -308,9 +308,14 @@ async function processDeadLetter(event, env) {
   } catch {
     return;
   }
-  const row = await env.DB.prepare("SELECT id FROM physics_files WHERE id = ? AND owner_id = ?")
+  const row = await env.DB.prepare(`
+    SELECT f.id, j.last_error_code
+    FROM physics_files f
+    LEFT JOIN physics_file_scan_jobs j ON j.file_id = f.id
+    WHERE f.id = ? AND f.owner_id = ?
+  `)
     .bind(parsed.fileId, parsed.ownerId).first();
-  if (row) await markFileScanError(env.DB, row.id, "scan_retries_exhausted");
+  if (row) await markFileScanError(env.DB, row.id, row.last_error_code || "scan_retries_exhausted");
 }
 
 export default {
@@ -330,6 +335,13 @@ export default {
         message.ack();
       } catch (error) {
         if (shouldRetryScanError(error)) {
+          console.error("physics_scan_retry", {
+            messageId: message.id,
+            attempt: message.attempts,
+            code: error?.code ?? "scan_infrastructure_error",
+            name: error?.name ?? "Error",
+            message: String(error?.message ?? "Scan infrastructure error").slice(0, 240),
+          });
           message.retry({ delaySeconds: Math.min(60, 5 * message.attempts) });
         } else {
           console.error("physics_scan_event_rejected", { messageId: message.id, code: error?.code ?? "scan_event_failed" });
