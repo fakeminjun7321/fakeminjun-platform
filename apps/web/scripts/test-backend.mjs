@@ -286,14 +286,14 @@ try {
         'fixture stale analysis', '{}', 'pending', 'fixture-stale-analysis', '${"9".repeat(64)}',
         'auto', 'auto-task-solution-audit', 'bounded-openai-v1',
         '{"taskType":"solution-audit","resolvedMode":"deep"}',
-        strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-10 minutes')
+        strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-12 minutes')
       FROM users u WHERE u.external_subject = 'local-development-user';
 
       INSERT INTO analysis_steps (id, analysis_id, stage, role, position, model_id, status, started_at)
       VALUES
-        ('step-fixture-1', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'specialist', 'physics-theory', 0, 'gpt-fixture', 'pending', strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-10 minutes')),
-        ('step-fixture-2', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'specialist', 'physics-audit', 1, 'gpt-fixture', 'pending', strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-10 minutes')),
-        ('step-fixture-3', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'synthesis', 'bounded-final-synthesis', 2, 'gpt-fixture', 'pending', strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-10 minutes'));
+        ('step-fixture-1', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'specialist', 'physics-theory', 0, 'gpt-fixture', 'pending', strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-12 minutes')),
+        ('step-fixture-2', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'specialist', 'physics-audit', 1, 'gpt-fixture', 'pending', strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-12 minutes')),
+        ('step-fixture-3', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'synthesis', 'bounded-final-synthesis', 2, 'gpt-fixture', 'pending', strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-12 minutes'));
     `,
   ]);
 
