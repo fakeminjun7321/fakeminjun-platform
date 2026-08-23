@@ -30,6 +30,7 @@ import worker, {
   validateEventCandidatePayload,
   validateEventCandidateReviewPayload,
   validateNotePayload,
+  parsePhysicsSearchResourceIds,
   validatePhysicsSearchPayload,
 } from "../worker/index.js";
 
@@ -452,6 +453,21 @@ test("physics external search is a bounded server-owned JSON mutation", () => {
     () => validatePhysicsSearchPayload({ query: "전자기학", ownerId: 42 }),
     (error) => error.code === "unknown_fields",
   );
+});
+
+test("physics cache resource IDs are provider-owned, unique, and bounded", () => {
+  const validIds = Array.from({ length: 13 }, (_, index) => `arxiv-${index.toString(16).padStart(32, "0")}`);
+  assert.deepEqual(
+    parsePhysicsSearchResourceIds(JSON.stringify([
+      validIds[0],
+      validIds[0],
+      "mit-801",
+      "arxiv-not-a-digest",
+      ...validIds.slice(1),
+    ])),
+    validIds.slice(0, 12),
+  );
+  assert.deepEqual(parsePhysicsSearchResourceIds("not-json"), []);
 });
 
 test("external physics search rejects a cross-origin POST before database access", async () => {

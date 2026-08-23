@@ -39,6 +39,7 @@ const PHYSICS_FILE_MIME_TYPES = new Set(["application/pdf", ...CAPTURE_MIME_TYPE
 const MAX_PHYSICS_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_PHYSICS_FILE_REQUEST_BYTES = MAX_PHYSICS_FILE_BYTES + 64 * 1024;
 const PHYSICS_SEARCH_CACHE_MS = 24 * 60 * 60 * 1000;
+const MAX_EXTERNAL_PHYSICS_RESULTS = 12;
 const PHYSICS_SEARCH_WINDOW_LIMIT = 30;
 const DAILY_PHYSICS_SEARCH_LIMIT = 200;
 const MONTHLY_PHYSICS_SEARCH_LIMIT = 2_000;
@@ -956,15 +957,24 @@ function physicsResourceFromRow(row) {
   };
 }
 
-async function queryPhysicsResources(db, ownerId, query, { savedOnly = false } = {}) {
+async function queryPhysicsResources(db, ownerId, query, { savedOnly = false, preferredResourceIds = [] } = {}) {
   const clauses = [];
   const bindings = [ownerId];
   if (savedOnly) clauses.push("li.id IS NOT NULL");
   if (query.query) {
-    clauses.push(`(
+    const textMatch = `(
       instr(lower(r.title), lower(?)) > 0 OR instr(lower(r.summary), lower(?)) > 0
       OR instr(lower(r.topic), lower(?)) > 0 OR instr(lower(r.resource_type), lower(?)) > 0
-    )`);
+    )`;
+    if (preferredResourceIds.length) {
+      clauses.push(`(
+        r.id IN (${preferredResourceIds.map(() => "?").join(", ")})
+        OR (json_extract(r.metadata_json, '$.verifiedCatalog') = 1 AND ${textMatch})
+      )`);
+      bindings.push(...preferredResourceIds);
+    } else {
+      clauses.push(textMatch);
+    }
     bindings.push(query.query, query.query, query.query, query.query);
   }
   if (query.provider) {
@@ -976,6 +986,9 @@ async function queryPhysicsResources(db, ownerId, query, { savedOnly = false } =
     bindings.push(query.type);
   }
   const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+  const preferredOrder = preferredResourceIds.length
+    ? `CASE r.id ${preferredResourceIds.map((_, index) => `WHEN ? THEN ${index}`).join(" ")} ELSE ${preferredResourceIds.length} END ASC,`
+    : "";
   const { results = [] } = await db.prepare(`
     SELECT r.*, li.id AS library_item_id, li.personal_note, li.tags_json, li.revision,
       li.created_at AS library_created_at
@@ -983,9 +996,9 @@ async function queryPhysicsResources(db, ownerId, query, { savedOnly = false } =
     LEFT JOIN physics_library_items li
       ON li.catalog_resource_id = r.id AND li.owner_id = ?
     ${where}
-    ORDER BY COALESCE(li.updated_at, r.created_at) DESC, r.id
+    ORDER BY ${preferredOrder} COALESCE(li.updated_at, r.created_at) DESC, r.id
     LIMIT ? OFFSET ?
-  `).bind(...bindings, query.limit + 1, query.cursor).all();
+  `).bind(...bindings, ...preferredResourceIds, query.limit + 1, query.cursor).all();
   const hasMore = results.length > query.limit;
   const page = results.slice(0, query.limit);
   return {
@@ -1002,13 +1015,19 @@ function normalizePhysicsSearchQuery(value) {
   return String(value ?? "").normalize("NFKC").replace(/\s+/g, " ").trim().toLocaleLowerCase("en-US");
 }
 
+export function parsePhysicsSearchResourceIds(value) {
+  return [...new Set(parseJsonArray(value).filter((id) => (
+    typeof id === "string" && /^(?:arxiv|crossref)-[0-9a-f]{32}$/.test(id)
+  )))].slice(0, MAX_EXTERNAL_PHYSICS_RESULTS);
+}
+
 async function physicsExternalResourceId(resource) {
   const digest = await sha256Text(`${resource.providerKey}:${resource.providerItemId}`);
   return `${resource.providerKey}-${digest.slice(0, 32)}`;
 }
 
 async function cacheExternalPhysicsResources(db, normalizedQuery, resources, providerStatus) {
-  const rows = await Promise.all(resources.map(async (resource) => ({
+  const rows = await Promise.all(resources.slice(0, MAX_EXTERNAL_PHYSICS_RESULTS).map(async (resource) => ({
     ...resource,
     id: await physicsExternalResourceId(resource),
   })));
@@ -1051,6 +1070,7 @@ async function cacheExternalPhysicsResources(db, normalizedQuery, resources, pro
   }
   const queryHash = await sha256Text(normalizedQuery);
   const expiresAt = new Date(Date.now() + PHYSICS_SEARCH_CACHE_MS).toISOString();
+  const resourceIds = parsePhysicsSearchResourceIds(JSON.stringify(rows.map(({ id }) => id)));
   await db.prepare(`
     INSERT INTO physics_search_cache (
       query_hash, normalized_query, provider_status_json, resource_ids_json, refreshed_at, expires_at
@@ -1061,8 +1081,14 @@ async function cacheExternalPhysicsResources(db, normalizedQuery, resources, pro
       resource_ids_json = excluded.resource_ids_json,
       refreshed_at = excluded.refreshed_at,
       expires_at = excluded.expires_at
-  `).bind(queryHash, normalizedQuery, JSON.stringify(providerStatus), JSON.stringify(rows.map(({ id }) => id)), expiresAt).run();
-  return { resources: rows, providerStatus, cacheStatus: "refreshed", expiresAt };
+  `).bind(queryHash, normalizedQuery, JSON.stringify(providerStatus), JSON.stringify(resourceIds), expiresAt).run();
+  return {
+    resources: rows,
+    resourceIds,
+    providerStatus,
+    cacheStatus: "refreshed",
+    expiresAt,
+  };
 }
 
 async function getPhysicsSearchUsage(db, ownerId, idempotencyKey) {
@@ -1160,7 +1186,9 @@ async function prunePhysicsSearchData(db) {
 
 async function refreshExternalPhysicsResources(db, ownerId, query, env, idempotencyKey, requestHash) {
   const normalizedQuery = normalizePhysicsSearchQuery(query);
-  if (!normalizedQuery) return { resources: [], providerStatus: {}, cacheStatus: "not-requested", expiresAt: null };
+  if (!normalizedQuery) return {
+    resources: [], resourceIds: [], providerStatus: {}, cacheStatus: "not-requested", expiresAt: null,
+  };
   const queryHash = await sha256Text(normalizedQuery);
   const existingUsage = await getPhysicsSearchUsage(db, ownerId, idempotencyKey);
   if (existingUsage) assertIdempotentPayload(existingUsage, requestHash);
@@ -1174,6 +1202,7 @@ async function refreshExternalPhysicsResources(db, ownerId, query, env, idempote
     }
     return {
       resources: [],
+      resourceIds: parsePhysicsSearchResourceIds(cached.resource_ids_json),
       providerStatus: parseJsonObject(cached.provider_status_json),
       cacheStatus: "hit",
       expiresAt: cached.expires_at,
@@ -1229,8 +1258,10 @@ async function searchPhysicsResources(request, env, ctx, requestId) {
   const requestHash = await sha256Text(JSON.stringify(query));
   const external = env.PHYSICS_EXTERNAL_SEARCH_ENABLED !== "false"
     ? await refreshExternalPhysicsResources(db, ownerId, query.query, env, idempotencyKey, requestHash)
-    : { providerStatus: {}, cacheStatus: "disabled", expiresAt: null };
-  const result = await queryPhysicsResources(db, ownerId, query);
+    : { resourceIds: [], providerStatus: {}, cacheStatus: "disabled", expiresAt: null };
+  const result = await queryPhysicsResources(db, ownerId, query, {
+    preferredResourceIds: external.resourceIds,
+  });
   result.meta.externalSearch = {
     status: external.cacheStatus,
     providers: external.providerStatus,

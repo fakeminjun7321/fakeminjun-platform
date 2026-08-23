@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { createServer } from "node:net";
@@ -20,6 +21,11 @@ const port = await new Promise((resolve, reject) => {
 });
 const apiOrigin = `http://127.0.0.1:${port}`;
 const frontendOrigin = "http://127.0.0.1:5173";
+const cachedExternalQuery = "mit";
+const cachedExternalQueryHash = createHash("sha256").update(cachedExternalQuery).digest("hex");
+const cachedArxivId = `arxiv-${"a".repeat(32)}`;
+const cachedCrossrefId = `crossref-${"b".repeat(32)}`;
+const staleExternalId = `arxiv-${"c".repeat(32)}`;
 let workerProcess;
 
 function run(command, args) {
@@ -792,6 +798,29 @@ try {
       INSERT INTO notes (id, owner_id, subject_type, subject_id, body)
       SELECT 'other-user-note', id, 'event', '1', '다른 사용자의 비공개 노트'
       FROM users WHERE external_subject = 'other-test-user';
+      INSERT INTO physics_catalog_resources (
+        id, provider_key, provider_item_id, title, canonical_url, resource_type,
+        topic, level, language, summary, rights_note, metadata_json
+      ) VALUES
+        ('${cachedArxivId}', 'arxiv', '2608.12345', 'Hamiltonian systems fixture',
+          'https://arxiv.org/abs/2608.12345', '프리프린트', 'math-ph', 'P4', '영어',
+          'A server-selected external metadata result.', '링크와 메타데이터만 저장',
+          '{"discoveryStatus":"external-metadata"}'),
+        ('${cachedCrossrefId}', 'crossref', '10.1000/cache.fixture', 'Symplectic review fixture',
+          'https://doi.org/10.1000/cache.fixture', '동료평가 논문', 'Journal fixture', 'P4', '영어',
+          'A second server-selected external metadata result.', '링크와 메타데이터만 저장',
+          '{"discoveryStatus":"external-metadata"}'),
+        ('${staleExternalId}', 'arxiv', '2608.99999', 'MIT stale external metadata fixture',
+          'https://arxiv.org/abs/2608.99999', '프리프린트', 'physics.test-ph', 'P4', '영어',
+          'This old external row is not part of the current provider result set.', '링크와 메타데이터만 저장',
+          '{"discoveryStatus":"external-metadata"}');
+      INSERT INTO physics_search_cache (
+        query_hash, normalized_query, provider_status_json, resource_ids_json, expires_at
+      ) VALUES (
+        '${cachedExternalQueryHash}', '${cachedExternalQuery}',
+        '{"arxiv":{"status":"ok","count":1},"crossref":{"status":"ok","count":1}}',
+        '["${cachedArxivId}","${cachedCrossrefId}"]', '2099-01-01T00:00:00.000Z'
+      );
       WITH RECURSIVE seq(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM seq WHERE n < 30)
       INSERT INTO physics_search_usage_ledger (id, owner_id, query_hash)
       SELECT 'quota-search-' || n, id, printf('%064x', n)
@@ -831,6 +860,29 @@ try {
   const readOnlySearch = await request("/api/v1/physics/resources?q=quota-unique-query&limit=10");
   assert.equal(readOnlySearch.response.status, 200, JSON.stringify(readOnlySearch.body));
   assert.equal(readOnlySearch.body.meta.externalSearch.status, "read-only");
+
+  const cachedExternalSearch = await request(
+    "/api/v1/physics/resources/search",
+    jsonMutation("POST", { query: cachedExternalQuery, limit: 10 }, "physics-search-cached-external"),
+  );
+  assert.equal(cachedExternalSearch.response.status, 200, JSON.stringify(cachedExternalSearch.body));
+  assert.equal(cachedExternalSearch.body.meta.externalSearch.status, "hit");
+  assert.deepEqual(
+    cachedExternalSearch.body.data.map(({ id }) => id),
+    [cachedArxivId, cachedCrossrefId, "mit-801", "mit-802", "mit-803"],
+  );
+  assert.equal(cachedExternalSearch.body.data.some(({ id }) => id === staleExternalId), false);
+
+  const typedCachedExternalSearch = await request(
+    "/api/v1/physics/resources/search",
+    jsonMutation("POST", {
+      query: cachedExternalQuery,
+      type: "동료평가 논문",
+      limit: 10,
+    }, "physics-search-cached-external-type"),
+  );
+  assert.equal(typedCachedExternalSearch.response.status, 200, JSON.stringify(typedCachedExternalSearch.body));
+  assert.deepEqual(typedCachedExternalSearch.body.data.map(({ id }) => id), [cachedCrossrefId]);
 
   const searchQuotaExceeded = await request(
     "/api/v1/physics/resources/search",
