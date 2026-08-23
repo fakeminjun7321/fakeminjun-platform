@@ -897,6 +897,12 @@ try {
   );
   assert.equal(replayedDriveCallback.status, 400);
   assert.equal((await replayedDriveCallback.json()).error.code, "google_oauth_state_expired");
+  const disconnectedDriveUpload = await request(
+    "/api/v1/physics/drive/uploads",
+    jsonMutation("POST", { name: "Mechanics.pdf", byteSize: 4096 }, "drive-upload-no-connection"),
+  );
+  assert.equal(disconnectedDriveUpload.response.status, 409, JSON.stringify(disconnectedDriveUpload.body));
+  assert.equal(disconnectedDriveUpload.body.error.code, "google_drive_not_connected");
 
   const persistedNotes = await request("/api/v1/notes?subjectType=event&subjectId=1");
   assert.equal(persistedNotes.response.status, 200);

@@ -2,7 +2,7 @@ const API_PREFIX = "/api/";
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
   "base-uri 'none'",
-  "connect-src 'self' https://tiles.openfreemap.org",
+  "connect-src 'self' https://tiles.openfreemap.org https://www.googleapis.com",
   "font-src 'self'",
   "form-action 'self'",
   "frame-ancestors 'none'",

@@ -259,6 +259,23 @@ export function createBackendClient({ baseUrl = "", fetchImpl = globalThis.fetch
       "/api/v1/physics/drive/items",
       { signal, returnEnvelope: true },
     ),
+    startPhysicsDriveUpload: ({ name, byteSize }, { signal, idempotencyKey = crypto.randomUUID() } = {}) => request(
+      "/api/v1/physics/drive/uploads",
+      {
+        method: "POST",
+        body: JSON.stringify({ name, byteSize }),
+        headers: { "idempotency-key": idempotencyKey },
+        signal,
+      },
+    ),
+    completePhysicsDriveUpload: (sessionId, { driveFileId }, { signal } = {}) => request(
+      `/api/v1/physics/drive/uploads/${encodeURIComponent(sessionId)}/complete`,
+      {
+        method: "POST",
+        body: JSON.stringify({ driveFileId }),
+        signal,
+      },
+    ),
     listNotes: ({ subjectType, subjectId }) => request(
       `/api/v1/notes?${new URLSearchParams({ subjectType, subjectId: String(subjectId) })}`,
     ),

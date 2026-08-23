@@ -16,8 +16,50 @@ import { backendClient } from "./backendClient.js";
 import { IPHO_TOPICS, PHYSICS_RESOURCES, PHYSICS_TOOLS, filterPhysicsResources } from "./physicsData.js";
 import { PHYSICS_ANALYSIS_LEVEL, PHYSICS_PROFILE_SUMMARY } from "./physicsProfile.js";
 import { startPhysicsScanPolling } from "./physicsScanPolling.js";
+import {
+  GOOGLE_DRIVE_UPLOAD_MAX_BYTES,
+  isGoogleDrivePdfFile,
+  uploadFileToGoogleDriveSession,
+} from "./googleDriveUpload.js";
 
 const RESOURCE_TYPES = ["전체", "강의·문제", "강의 영상", "동료평가 논문", "프리프린트", "기출문제", "공식 문서"];
+const DRIVE_COMPLETION_STORAGE_KEY = "studio7321.drive-upload-completion.v1";
+
+function readSessionValue(key) {
+  try {
+    return JSON.parse(window.sessionStorage.getItem(key));
+  } catch {
+    return null;
+  }
+}
+
+function writeSessionValue(key, value) {
+  try {
+    if (value === null) window.sessionStorage.removeItem(key);
+    else window.sessionStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Session recovery is best-effort; the server remains the source of truth.
+  }
+}
+
+function readPendingDriveCompletion() {
+  const value = readSessionValue(DRIVE_COMPLETION_STORAGE_KEY);
+  return value
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value.sessionId ?? "")
+    && /^[A-Za-z0-9_-]{10,200}$/u.test(value.driveFileId ?? "")
+    && typeof value.name === "string"
+    ? value
+    : null;
+}
+
+function isTerminalDriveCompletion(error) {
+  return error?.status === 410 || [
+    "google_drive_upload_expired",
+    "google_drive_upload_not_ready",
+    "google_drive_upload_conflict",
+    "google_drive_upload_verification_failed",
+  ].includes(error?.code);
+}
 
 function safeResourceUrl(value) {
   try {
@@ -224,42 +266,73 @@ function safeGoogleAuthorizationUrl(value) {
   }
 }
 
+function safeGoogleDriveViewUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:"
+      && ["drive.google.com", "docs.google.com"].includes(url.hostname)
+      && !url.username
+      && !url.password
+      ? url.toString()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function GoogleDriveVault({ onNotice }) {
   const [state, setState] = useState({
     status: "loading",
     configured: false,
     connected: false,
     catalogItemCount: 0,
+    items: [],
+    progress: 0,
+    pendingCompletion: null,
+    catalogRefreshNeeded: false,
     message: "Google Drive 연결 상태를 확인하고 있습니다.",
   });
   const requestRef = useRef(null);
+  const inputRef = useRef(null);
+
+  async function load(signal, outcome = null) {
+    const [status, items] = await Promise.all([
+      backendClient.getGoogleDriveStatus({ signal }),
+      backendClient.listPhysicsDriveItems({ signal }),
+    ]);
+    setState((current) => ({
+      ...current,
+      status: "ready",
+      configured: Boolean(status.configured),
+      connected: Boolean(status.connected),
+      catalogItemCount: Number(status.catalogItemCount ?? items.data.length),
+      items: items.data,
+      progress: 0,
+      pendingCompletion: readPendingDriveCompletion(),
+      catalogRefreshNeeded: false,
+      message: outcome === "connected"
+        ? "Google Drive 연결이 완료되었습니다. 이제 PDF를 전용 폴더에 바로 추가할 수 있습니다."
+        : outcome === "cancelled"
+          ? "Google Drive 연결을 취소했습니다. 변경된 파일은 없습니다."
+          : readPendingDriveCompletion()
+            ? "Drive 업로드는 끝났지만 사이트 목록 등록 확인이 남아 있습니다. 아래에서 이어서 확인할 수 있습니다."
+            : "",
+    }));
+  }
 
   useEffect(() => {
     const controller = new AbortController();
     requestRef.current = controller;
-    void backendClient.getGoogleDriveStatus({ signal: controller.signal })
-      .then((result) => {
-        const outcome = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("drive");
-        setState({
-          status: "ready",
-          configured: Boolean(result.configured),
-          connected: Boolean(result.connected),
-          catalogItemCount: Number(result.catalogItemCount ?? 0),
-          message: outcome === "connected"
-            ? "Google Drive 연결이 완료되었습니다. 전용 폴더와 PDF 선택은 다음 단계에서 진행합니다."
-            : outcome === "cancelled"
-              ? "Google Drive 연결을 취소했습니다. 변경된 파일은 없습니다."
-              : "",
-        });
-      })
+    const outcome = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("drive");
+    void load(controller.signal, outcome)
       .catch((error) => {
         if (error?.name !== "AbortError") {
           setState((current) => ({ ...current, status: "error", message: "Google Drive 연결 상태를 불러오지 못했습니다." }));
         }
       });
     return () => {
-      controller.abort();
-      if (requestRef.current === controller) requestRef.current = null;
+      requestRef.current?.abort();
+      requestRef.current = null;
     };
   }, []);
 
@@ -284,7 +357,164 @@ function GoogleDriveVault({ onNotice }) {
     }
   }
 
+  async function uploadSelectedPdf(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (!state.connected) {
+      onNotice("먼저 Google Drive를 연결해 주세요.");
+      return;
+    }
+    if (!/\.pdf$/iu.test(file.name) || file.size < 1 || file.size > GOOGLE_DRIVE_UPLOAD_MAX_BYTES
+      || !(await isGoogleDrivePdfFile(file))) {
+      onNotice("512MiB 이하 PDF 파일만 Drive 원본 보관소에 추가할 수 있습니다.");
+      return;
+    }
+    const controller = new AbortController();
+    requestRef.current?.abort();
+    requestRef.current = controller;
+    setState((current) => ({
+      ...current,
+      status: "uploading",
+      progress: 0,
+      message: `${file.name}의 안전한 Drive 업로드 통로를 준비하고 있습니다.`,
+    }));
+    try {
+      const session = await backendClient.startPhysicsDriveUpload(
+        { name: file.name, byteSize: file.size },
+        { signal: controller.signal, idempotencyKey: crypto.randomUUID() },
+      );
+      if (session.status === "completed") {
+        await load(controller.signal);
+        return;
+      }
+      setState((current) => ({ ...current, message: `${file.name}을 Google Drive에 올리는 중입니다.` }));
+      const uploaded = await uploadFileToGoogleDriveSession({
+        file,
+        uploadUrl: session.uploadUrl,
+        signal: controller.signal,
+        onProgress: (progress) => setState((current) => ({ ...current, progress })),
+      });
+      const pendingCompletion = { sessionId: session.id, driveFileId: uploaded.driveFileId, name: file.name };
+      writeSessionValue(DRIVE_COMPLETION_STORAGE_KEY, pendingCompletion);
+      setState((current) => ({
+        ...current,
+        status: "finalizing",
+        progress: 100,
+        pendingCompletion,
+        message: "Drive 업로드 완료 · 실제 파일 정보와 사이트 목록 등록을 확인하고 있습니다.",
+      }));
+      await finishDriveCatalogRegistration(pendingCompletion, controller);
+    } catch (error) {
+      if (error?.name !== "AbortError") {
+        setState((current) => ({ ...current, status: "error", message: error?.message || "Google Drive PDF 업로드를 완료하지 못했습니다." }));
+        onNotice("Google Drive 업로드를 완료하지 못했습니다.");
+      }
+    } finally {
+      if (requestRef.current === controller) requestRef.current = null;
+    }
+  }
+
+  function cancelUpload() {
+    requestRef.current?.abort();
+    setState((current) => ({ ...current, status: "ready", progress: 0, message: "업로드를 중단했습니다. 다시 추가하면 새 업로드로 안전하게 시작합니다." }));
+  }
+
+  async function finishDriveCatalogRegistration(pendingCompletion, existingController = null) {
+    const controller = existingController ?? new AbortController();
+    if (!existingController) {
+      requestRef.current?.abort();
+      requestRef.current = controller;
+    }
+    setState((current) => ({
+      ...current,
+      status: "finalizing",
+      pendingCompletion,
+      message: "Drive 업로드는 완료됐습니다. 사이트 목록 등록을 확인하고 있습니다.",
+    }));
+    try {
+      let item;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+          item = await backendClient.completePhysicsDriveUpload(
+            pendingCompletion.sessionId,
+            { driveFileId: pendingCompletion.driveFileId },
+            { signal: controller.signal },
+          );
+          break;
+        } catch (error) {
+          if (error?.name === "AbortError" || error?.status < 500 || attempt === 2) throw error;
+          await new Promise((resolve) => setTimeout(resolve, 500 * (2 ** attempt)));
+        }
+      }
+      writeSessionValue(DRIVE_COMPLETION_STORAGE_KEY, null);
+      setState((current) => ({
+        ...current,
+        status: "ready",
+        progress: 0,
+        pendingCompletion: null,
+        catalogItemCount: current.items.some(({ id }) => id === item.id)
+          ? current.catalogItemCount : current.catalogItemCount + 1,
+        items: [item, ...current.items.filter(({ id }) => id !== item.id)],
+        message: `${pendingCompletion.name}을 Drive 전용 폴더와 사이트 목록에 등록했습니다.`,
+      }));
+      onNotice("Google Drive PDF 등록을 완료했습니다.");
+      try {
+        await load(controller.signal);
+        setState((current) => ({ ...current, message: `${pendingCompletion.name}을 Drive 전용 폴더와 사이트 목록에 등록했습니다.` }));
+      } catch (error) {
+        if (error?.name !== "AbortError") {
+          setState((current) => ({
+            ...current,
+            status: "ready",
+            catalogRefreshNeeded: true,
+            message: "PDF 등록은 완료됐지만 최신 목록을 다시 불러오지 못했습니다. 등록된 파일은 Drive에 안전하게 남아 있습니다.",
+          }));
+        }
+      }
+    } catch (error) {
+      if (error?.name !== "AbortError") {
+        if (isTerminalDriveCompletion(error)) {
+          writeSessionValue(DRIVE_COMPLETION_STORAGE_KEY, null);
+          setState((current) => ({
+            ...current,
+            status: "ready",
+            progress: 0,
+            pendingCompletion: null,
+            message: "Drive에는 PDF가 남아 있지만 사이트 목록 등록 시간이 만료됐거나 파일 확인값이 달라 등록하지 않았습니다. Drive에서 파일을 확인한 뒤 필요하면 다시 추가하세요.",
+          }));
+          onNotice("Drive 파일은 남아 있고 사이트 목록에는 등록되지 않았습니다.");
+          return;
+        }
+        setState((current) => ({
+          ...current,
+          status: "finalizing-error",
+          pendingCompletion,
+          message: "Drive 업로드는 완료됐지만 사이트 목록 등록 확인이 중단됐습니다. PDF를 다시 올리지 말고 아래에서 확인만 다시 시도하세요.",
+        }));
+        onNotice("Drive 업로드는 끝났습니다. 목록 등록 확인만 다시 시도해 주세요.");
+      }
+    } finally {
+      if (requestRef.current === controller) requestRef.current = null;
+    }
+  }
+
+  async function refreshDriveCatalog() {
+    const controller = new AbortController();
+    requestRef.current?.abort();
+    requestRef.current = controller;
+    try {
+      await load(controller.signal);
+    } catch (error) {
+      if (error?.name !== "AbortError") onNotice("Drive 목록을 다시 불러오지 못했습니다.");
+    } finally {
+      if (requestRef.current === controller) requestRef.current = null;
+    }
+  }
+
   const stateLabel = state.connected ? "연결됨" : state.configured ? "연결 필요" : "설정 대기";
+  const uploading = state.status === "uploading";
+  const finalizing = state.status === "finalizing";
   return (
     <section className="google-drive-vault" aria-labelledby="google-drive-vault-title">
       <header>
@@ -295,17 +525,54 @@ function GoogleDriveVault({ onNotice }) {
         </div>
         <div>
           <span>등록 자료 {state.catalogItemCount}개</span>
-          <button type="button" onClick={() => void connect()} disabled={!state.configured || state.connected || state.status === "connecting"}>
+          {state.connected ? <>
+            <input ref={inputRef} className="sr-only" type="file" accept="application/pdf,.pdf" onChange={(event) => void uploadSelectedPdf(event)} />
+            <button
+              type="button"
+              onClick={() => {
+                if (state.pendingCompletion) void finishDriveCatalogRegistration(state.pendingCompletion);
+                else if (state.catalogRefreshNeeded) void refreshDriveCatalog();
+                else if (uploading) cancelUpload();
+                else inputRef.current?.click();
+              }}
+              disabled={state.status === "connecting" || finalizing}
+            >
+              <FileArrowUp size={16} />
+              {finalizing
+                ? "목록 등록 확인 중"
+                : state.pendingCompletion
+                  ? "목록 등록 확인 다시 시도"
+                  : state.catalogRefreshNeeded
+                    ? "Drive 목록 새로고침"
+                    : uploading
+                      ? `업로드 중단 · ${state.progress}%`
+                      : "Drive에 PDF 추가"}
+            </button>
+          </> : <button type="button" onClick={() => void connect()} disabled={!state.configured || state.status === "connecting"}>
             <ArrowSquareOut size={16} />
-            {state.status === "connecting" ? "연결 중" : state.connected ? "Drive 연결됨" : "Google Drive 연결"}
-          </button>
+            {state.status === "connecting" ? "연결 중" : "Google Drive 연결"}
+          </button>}
         </div>
       </header>
       <div className="drive-access-boundary">
         <ShieldWarning size={17} />
         <p><strong>Drive 전체 권한을 요청하지 않습니다.</strong> PDF 원본은 Drive가 소유하며, STUDIO 7321에는 파일 ID와 목록 정보만 저장합니다. AI 전송은 파일별로 별도 허용합니다.</p>
       </div>
+      {uploading ? <div className="drive-upload-progress" role="progressbar" aria-label="Google Drive 업로드 진행률" aria-valuemin="0" aria-valuemax="100" aria-valuenow={state.progress}>
+        <span style={{ width: `${state.progress}%` }} />
+      </div> : null}
       {state.message ? <p className={`resource-query-status is-${state.status}`} role="status">{state.message}</p> : null}
+      {state.items.length ? <div className="drive-file-list" aria-label="Google Drive 물리 PDF 목록">
+        {state.items.map((item) => {
+          const viewUrl = safeGoogleDriveViewUrl(item.webViewLink);
+          return <article key={item.id}>
+            <FileText size={18} aria-hidden="true" />
+            <div><strong>{item.name}</strong><span>{formatFileSize(item.byteSize)} · Google Drive 원본</span></div>
+            <span className="drive-ai-boundary">AI 사용 안 함</span>
+            {viewUrl ? <a href={viewUrl} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">Drive에서 열기 <ArrowSquareOut size={14} /></a> : null}
+          </article>;
+        })}
+      </div> : state.connected && state.status === "ready" ? <p className="drive-empty">아직 등록한 Drive PDF가 없습니다. 위 버튼으로 필요한 자료만 추가하세요.</p> : null}
     </section>
   );
 }
