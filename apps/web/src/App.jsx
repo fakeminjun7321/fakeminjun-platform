@@ -153,7 +153,7 @@ function Header({ domain, route, sourceState, mapEventState, onOpenAi, onNavigat
           aria-controls="ai-analysis-drawer"
         >
           <Brain size={19} weight="duotone" aria-hidden="true" />
-          AI 분석 열기
+          Mandos 열기
         </button>
       </div>
     </header>
@@ -704,7 +704,7 @@ function IssuesPage({ selectedEvent, onSelect, onOpenAi }) {
         </div>
         <footer className="watch-condition">
           <span>다음 관찰 조건</span><strong>{selectedEvent.disputed[0]}</strong>
-          <button type="button" onClick={onOpenAi}><Brain size={17} /> AI로 추가 분석</button>
+          <button type="button" onClick={onOpenAi}><Brain size={17} /> Mandos로 추가 분석</button>
         </footer>
       </article>
     </main>
@@ -717,7 +717,7 @@ function PassiveStatusBar({ domain, route, sourceState, mapEventState }) {
       <footer className="system-status" aria-label="물리 워크스페이스 상태">
         <span>LIBRARY <strong>PRIVATE API</strong></span><span>PROFILE <strong>OLYMPIAD THEORY</strong></span>
         <span>TRACK <strong>KPHO → IPHO</strong></span><span>OPEN LINKS <strong>6</strong></span>
-        <span className="system-health">OpenAI 분석 API <i aria-hidden="true" /> 요청 시 연결 확인</span>
+        <span className="system-health">Mandos 분석 <i aria-hidden="true" /> 요청 시 연결 확인</span>
       </footer>
     );
   }
@@ -1167,7 +1167,7 @@ export function App() {
       <p className="sr-only" role="status" aria-live="polite">선택 사건: {selectedEvent.title}</p>
       {notice && <div className="domain-notice" role="status">{notice}</div>}
       {aiOpen && (
-        <Suspense fallback={<div className="drawer-layer"><aside className="ai-drawer" role="status">AI 분석 도구를 불러오는 중입니다.</aside></div>}>
+        <Suspense fallback={<div className="drawer-layer"><aside className="ai-drawer" role="status">Mandos를 불러오는 중입니다.</aside></div>}>
           <AiDrawer analysisContext={analysisContext ?? defaultAnalysisContext} onClose={closeAi} />
         </Suspense>
       )}

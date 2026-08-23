@@ -28,3 +28,33 @@
 ## Final result
 
 passed
+
+# Mandos Drawer Design QA
+
+## Result
+
+PASS — the implemented drawer matches the selected Focus Line direction at the tested desktop and mobile states.
+
+## Reference and capture
+
+- Reference: `/Users/minjun/.codex/generated_images/01a02df7-46d6-7ed0-955d-f186702e5741/exec-a79bddc2-0002-4e57-8926-2a789b118350.png`
+- Desktop implementation: `/Users/minjun/.codex/visualizations/2026/08/23/01a02df7-46d6-7ed0-955d-f186702e5741/mandos-qa/desktop-final-drawer.png`
+- Side-by-side comparison: `/Users/minjun/.codex/visualizations/2026/08/23/01a02df7-46d6-7ed0-955d-f186702e5741/mandos-qa/desktop-final-comparison.png`
+- Focused composer comparison: `/Users/minjun/.codex/visualizations/2026/08/23/01a02df7-46d6-7ed0-955d-f186702e5741/mandos-qa/composer-comparison.png`
+- Mobile capture: `/Users/minjun/.codex/visualizations/2026/08/23/01a02df7-46d6-7ed0-955d-f186702e5741/mandos-qa/mobile-390.png`
+
+## Visual checks
+
+- Desktop drawer width and height matched the normalized 490 × 803 reference.
+- Header, compact context block, quiet empty conversation field, bottom divider, borderless prompt, compact attachment controls, centered model selector, and square send action align with the reference composition.
+- The screen and region actions remain icon-only compact controls instead of large cards.
+- Mobile at 390 px uses the full viewport width without a visible horizontal overflow or clipped composer control.
+- The model menu opens above the composer on desktop and mobile and keeps all three Mandos profiles visible.
+
+## Interaction checks
+
+- Drawer opens from the Mandos entry point and starts on Mandos 3 Core.
+- Mandos 3 Swift, Core, and Deep are selectable and expose distinct task and reasoning descriptions.
+- The prompt grows from 62 px to its 144 px cap for multi-line input, and the send action enables only when content exists.
+- History opens from the header control and shows a concise user-facing failure state when the local API is unavailable.
+- No analysis request was submitted during visual QA because live backend verification was outside this frontend-only scope.

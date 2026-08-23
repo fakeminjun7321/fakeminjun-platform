@@ -69,12 +69,12 @@ function LearningHub({ onOpenAi }) {
           <dl><div><dt>입력</dt><dd>{selected.input}</dd></div><div><dt>결과 구조</dt><dd>{selected.output}</dd></div><div><dt>학습 예시</dt><dd>{selected.example}</dd></div></dl>
           <section className="physics-working-area">
             <div><p className="system-kicker">WORKING NOTE</p><h4>분석할 내용을 이 화면에 모읍니다</h4></div>
-            <p>그림·그래프 분석 모드에서는 AI 패널의 내장 영역 캡처를 사용할 수 있습니다. 결과와 사용량은 소유자별로 기록됩니다.</p>
+            <p>그림·그래프 분석 모드에서는 Mandos의 내장 영역 캡처를 사용할 수 있습니다. 분석 기록은 소유자별로 보관됩니다.</p>
             <button type="button" onClick={() => onOpenAi({
               level: PHYSICS_ANALYSIS_LEVEL, contextKind: "physics-mode", contextId: selected.id, title: selected.title,
               ...(selected.id === "derivation" ? { taskType: "full-derivation" } : {}),
               meta: `물리 학습 모드 ${selected.code} · ${PHYSICS_PROFILE_SUMMARY}`, placeholder: selected.example,
-            })}><Brain size={18} /> {selected.title}로 AI 열기</button>
+            })}><Brain size={18} /> {selected.title}로 Mandos 열기</button>
           </section>
         </article>
         <aside className="physics-quick-resources">
@@ -110,7 +110,7 @@ function ResourceTable({ resources, onOpenAi, emptyLabel, onSave, onRemove, pend
               <button type="button" onClick={() => onOpenAi({
                 level: PHYSICS_ANALYSIS_LEVEL, contextKind: "physics-resource", contextId: resource.id, title: resource.title,
                 meta: `${resource.provider} · ${resource.topic} · ${resource.level}`, placeholder: "이 자료를 어떻게 공부하면 좋을지 선수지식과 학습 순서를 알려줘.",
-              })}>AI와 보기</button>
+              })}>Mandos와 보기</button>
               {resource.saved ? <button type="button" disabled={pending} onClick={() => onRemove?.(resource)}><Trash size={13} /> {pending ? "처리 중" : "보관 해제"}</button>
                 : <button type="button" disabled={pending} onClick={() => onSave?.(resource)}><BookmarkSimple size={13} /> {pending ? "저장 중" : "보관"}</button>}
             </div>
@@ -337,7 +337,7 @@ function PhysicsFileVault({ onOpenAi, onNotice }) {
                 title: file.filename,
                 meta: `${file.mimeType} · ${formatFileSize(file.byteSize)} · ${antivirusLabel(file.antivirusStatus)}`,
                 placeholder: "이 자료의 핵심 개념과 수식을 페이지 근거와 함께 분석해줘.",
-              })} disabled={!actionsAvailable}>AI 분석</button>
+              })} disabled={!actionsAvailable}>Mandos 분석</button>
               <button type="button" className="is-danger" onClick={() => void remove(file)} disabled={pendingId === file.id}><Trash size={14} />{pendingId === file.id ? "삭제 중" : "삭제"}</button>
             </div>
           </article>;
@@ -445,7 +445,7 @@ function IphoPage({ onOpenAi }) {
           {PHYSICS_RESOURCES.filter(({ id }) => ["kpho-official", "ipho-syllabus", "ipho-problems"].includes(id)).map((resource) => (
             <a key={resource.id} href={resource.href} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer"><FileText size={17} /><span><strong>{resource.title}</strong><small>{resource.provider}</small></span><ArrowSquareOut size={14} /></a>
           ))}
-          <button type="button" onClick={() => onOpenAi({ level: PHYSICS_ANALYSIS_LEVEL, contextKind: "olympiad-track", contextId: "kpho-ipho", title: "KPhO에서 IPhO까지의 준비 계획", meta: `KPhO → IPhO 준비 트랙 · ${PHYSICS_PROFILE_SUMMARY}`, placeholder: "KPhO를 아직 시작하지 않은 상태에서 역학과 전자기학 중심의 첫 학습 순서를 짜줘." })}><Trophy size={17} /> 준비 계획을 AI와 보기</button>
+          <button type="button" onClick={() => onOpenAi({ level: PHYSICS_ANALYSIS_LEVEL, contextKind: "olympiad-track", contextId: "kpho-ipho", title: "KPhO에서 IPhO까지의 준비 계획", meta: `KPhO → IPhO 준비 트랙 · ${PHYSICS_PROFILE_SUMMARY}`, placeholder: "KPhO를 아직 시작하지 않은 상태에서 역학과 전자기학 중심의 첫 학습 순서를 짜줘." })}><Trophy size={17} /> 준비 계획을 Mandos와 보기</button>
         </aside>
       </div>
     </main>

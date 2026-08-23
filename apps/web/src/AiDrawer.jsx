@@ -1,11 +1,11 @@
-import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import React, { lazy, Suspense, useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
-  Brain,
   Camera,
+  CaretDown,
   ClockCounterClockwise,
-  MapTrifold,
   MagnifyingGlass,
+  Monitor,
   PaperPlaneTilt,
   Quotes,
   Selection,
@@ -26,87 +26,33 @@ const CaptureComposer = lazy(() => import("./CaptureComposer.jsx"));
 
 const CONFIDENCE_LABELS = { high: "높음", medium: "중간", low: "낮음" };
 const BASIS_LABELS = {
-  "provided-evidence": "모델 분류 · 제공 맥락",
-  "established-knowledge": "모델 분류 · 확립 지식",
-  inference: "모델 분류 · 추론",
-  uncertain: "모델 분류 · 불확실",
+  "provided-evidence": "분석 근거 · 제공 맥락",
+  "established-knowledge": "분석 근거 · 확립 지식",
+  inference: "분석 근거 · 추론",
+  uncertain: "분석 근거 · 불확실",
 };
 
-const MODE_COPY = {
-  auto: { title: "자동 판단", detail: "요청 복잡도에 따라 단일 분석 또는 제한된 교차검토" },
-  standard: { title: "일반 분석", detail: "빠르고 경제적인 OpenAI 단일 분석" },
-  deep: { title: "정밀 분석", detail: "전문 검토 2개를 병렬 실행한 뒤 최종 통합" },
-};
+const MANDOS_PROFILES = [
+  { mode: "standard", title: "Mandos 3 Swift", task: "요약·정리", trait: "빠른 응답" },
+  { mode: "auto", title: "Mandos 3 Core", task: "상황·맥락", trait: "균형 추론" },
+  { mode: "deep", title: "Mandos 3 Deep", task: "복합 쟁점", trait: "깊은 교차검토" },
+];
 
-function normalizeReturnedStages(analysis) {
-  const stages = analysis?.execution?.stages ?? analysis?.steps ?? analysis?.activity ?? analysis?.stages ?? [];
-  if (!Array.isArray(stages)) return [];
-  return stages.flatMap((stage, index) => {
-    if (!stage || typeof stage !== "object") return [];
-    return [{
-      id: stage.id ?? `stage-${index + 1}`,
-      label: stage.label ?? stage.role ?? stage.name ?? `실행 단계 ${index + 1}`,
-      detail: stage.detail ?? ([stage.role, stage.model].filter(Boolean).join(" · ") || "서버가 기록한 실행 단계"),
-      status: stage.status ?? "completed",
-    }];
-  });
+const DOMAIN_LABELS = { international: "국제정세", physics: "물리" };
+
+export function getMandosProfile(mode) {
+  return MANDOS_PROFILES.find((profile) => profile.mode === mode) ?? MANDOS_PROFILES[1];
 }
 
-export function buildAgentActivity({ analysis, requestedMode, requestState }) {
-  const returned = normalizeReturnedStages(analysis);
-  if (returned.length) return returned;
-  if (requestState === "submitting") {
-    return [{
-      id: "server-execution",
-      label: "SERVER EXECUTION",
-      detail: "내부 단계별 상태는 서버가 반환한 경우에만 표시합니다.",
-      status: "running",
-    }];
-  }
-  if (analysis?.models?.length) {
-    return analysis.models.map((model, index) => ({
-      id: `model-${index + 1}`,
-      label: `MODEL CALL ${String(index + 1).padStart(2, "0")}`,
-      detail: model,
-      status: analysis.status === "failed" ? "failed" : "completed",
-    }));
-  }
-  const mode = MODE_COPY[requestedMode] ?? MODE_COPY.auto;
-  return [{ id: "planned", label: mode.title, detail: mode.detail, status: "planned" }];
-}
-
-function AgentRunPanel({ analysis, requestedMode, requestState }) {
-  const stages = buildAgentActivity({ analysis, requestedMode, requestState });
-  const resolvedMode = analysis?.execution?.resolvedMode ?? analysis?.mode ?? null;
-  return (
-    <section className="agent-run-panel" aria-label="AI 실행 구성과 실제 기록">
-      <header>
-        <div><p className="system-kicker">OPENAI EXECUTION TRACE</p><h3>분석 실행</h3></div>
-        <span>{resolvedMode ? `ACTUAL · ${resolvedMode.toUpperCase()}` : `REQUESTED · ${requestedMode.toUpperCase()}`}</span>
-      </header>
-      <ol>
-        {stages.map((stage) => (
-          <li className={`agent-run-stage is-${stage.status}`} key={stage.id}>
-            <i aria-hidden="true" /><div><strong>{stage.label}</strong><span>{stage.detail}</span></div><small>{stage.status.toUpperCase()}</small>
-          </li>
-        ))}
-      </ol>
-      <footer>
-        <span>{analysis?.models?.length ? `${analysis.models.length} ACTUAL MODEL CALLS` : "실제 반환 정보만 표시"}</span>
-        <span>{analysis?.usage?.totalTokens ? `${analysis.usage.totalTokens.toLocaleString("ko-KR")} TOKENS` : "TOKEN USAGE PENDING"}</span>
-      </footer>
-    </section>
-  );
-}
-
-function AnalysisResult({ analysis }) {
+function AnalysisResult({ analysis, requestedMode }) {
   const result = analysis.result;
   if (!result) return null;
+  const profile = getMandosProfile(analysis.execution?.resolvedMode ?? analysis.mode ?? requestedMode);
   const evidenceById = new Map((analysis.evidence ?? []).map((item) => [item.evidenceId, item]));
   return (
     <article className="analysis-result" aria-labelledby="analysis-result-title">
       <header>
-        <p className="system-kicker">STRUCTURED ANALYSIS · {(analysis.execution?.resolvedMode ?? analysis.mode ?? "standard").toUpperCase()}</p>
+        <p className="analysis-model-label">{profile.title}</p>
         <h3 id="analysis-result-title">{result.headline}</h3>
         <p>{result.summary}</p>
       </header>
@@ -127,7 +73,7 @@ function AnalysisResult({ analysis }) {
         ))}
       </div>
       <section className="analysis-boundary">
-        <strong>모델이 밝힌 근거 범위 · 자동 검증 전</strong><p>{result.sourceBoundary}</p>
+        <strong>Mandos가 밝힌 근거 범위 · 별도 확인 필요</strong><p>{result.sourceBoundary}</p>
       </section>
       {result.citations?.length ? (
         <section className="analysis-citations" aria-label="서버가 ID를 검증한 분석 근거">
@@ -150,8 +96,8 @@ function AnalysisResult({ analysis }) {
         <section className="analysis-list"><strong>다음 질문</strong><ul>{result.nextQuestions.map((item) => <li key={item}>{item}</li>)}</ul></section>
       ) : null}
       <footer>
-        <span>{analysis.models?.join(" · ")}</span>
-        <span>{analysis.usage?.totalTokens ? `${analysis.usage.totalTokens.toLocaleString("ko-KR")} tokens` : "사용량 집계 없음"}</span>
+        <span>{profile.title}</span>
+        <span>{profile.task} · {profile.trait}</span>
       </footer>
     </article>
   );
@@ -196,12 +142,14 @@ export function AiDrawer({ analysisContext, onClose }) {
   const [captureUrl, setCaptureUrl] = useState("");
   const [historyQuery, setHistoryQuery] = useState("");
   const [historyState, setHistoryState] = useState({ status: "loading", items: [], message: "분석 기록을 불러오는 중" });
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const drawerRef = useRef(null);
-  const closeButtonRef = useRef(null);
   const requestRef = useRef(null);
   const historyRef = useRef(null);
+  const selectedProfile = getMandosProfile(mode);
 
-  useEffect(() => { closeButtonRef.current?.focus(); }, []);
+  useEffect(() => { drawerRef.current?.focus(); }, []);
   useEffect(() => () => requestRef.current?.abort(), []);
   useEffect(() => () => historyRef.current?.abort(), []);
   useEffect(() => () => { if (captureUrl) URL.revokeObjectURL(captureUrl); }, [captureUrl]);
@@ -215,7 +163,7 @@ export function AiDrawer({ analysisContext, onClose }) {
       const response = await backendClient.listAnalyses({ domain: analysisContext.domain, query, limit: 8, signal: controller.signal });
       setHistoryState({ status: "ready", items: response.data ?? [], message: "" });
     } catch (error) {
-      if (error?.name !== "AbortError") setHistoryState((current) => ({ ...current, status: "error", message: error?.message ?? "분석 기록을 불러오지 못했습니다." }));
+      if (error?.name !== "AbortError") setHistoryState((current) => ({ ...current, status: "error", message: "이전 분석을 불러오지 못했습니다." }));
     } finally {
       if (historyRef.current === controller) historyRef.current = null;
     }
@@ -230,6 +178,8 @@ export function AiDrawer({ analysisContext, onClose }) {
     try {
       const loaded = await backendClient.getAnalysis(item.id, { signal: controller.signal });
       setAnalysis(loaded);
+      setMode(loaded.mode ?? "auto");
+      setHistoryOpen(false);
       setRequestState(loaded.status === "completed" ? "success" : loaded.status === "failed" ? "error" : "submitting");
       setNotice("저장된 분석 기록을 열었습니다.");
     } catch (error) {
@@ -243,6 +193,8 @@ export function AiDrawer({ analysisContext, onClose }) {
     if (eventObject.key === "Escape") {
       eventObject.preventDefault();
       if (captureOpen) setCaptureOpen(false);
+      else if (modelMenuOpen) setModelMenuOpen(false);
+      else if (historyOpen) setHistoryOpen(false);
       else onClose();
       return;
     }
@@ -255,6 +207,13 @@ export function AiDrawer({ analysisContext, onClose }) {
     const last = focusable[focusable.length - 1];
     if (eventObject.shiftKey && document.activeElement === first) { eventObject.preventDefault(); last.focus(); }
     else if (!eventObject.shiftKey && document.activeElement === last) { eventObject.preventDefault(); first.focus(); }
+  }
+
+  function updatePrompt(eventObject) {
+    const input = eventObject.currentTarget;
+    setPrompt(input.value);
+    input.style.height = "auto";
+    input.style.height = `${Math.min(input.scrollHeight, 144)}px`;
   }
 
   function confirmCapture(result) {
@@ -283,7 +242,7 @@ export function AiDrawer({ analysisContext, onClose }) {
     requestRef.current?.abort();
     requestRef.current = controller;
     setRequestState("submitting");
-    setNotice(capture ? "선택 영역과 질문을 개인 분석 백엔드로 전송했습니다." : "분석 요청을 전송했습니다.");
+    setNotice(`${selectedProfile.title}가 ${capture ? "선택 영역과 질문" : "질문"}을 분석하고 있습니다.`);
     setAnalysis(null);
     const payload = {
       domain: analysisContext.domain,
@@ -337,7 +296,7 @@ export function AiDrawer({ analysisContext, onClose }) {
       if (attempt && clearAttempt) clearAttempt(attempt.fingerprint);
       setAnalysis(completed);
       setRequestState("success");
-      setNotice(capture ? "캡처 기반 분석이 완료되었습니다. 이미지 해석도 자동 검증된 사실은 아닙니다." : "분석이 완료되었습니다.");
+      setNotice(capture ? "Mandos 분석이 완료되었습니다. 이미지 해석은 검증된 사실이 아닙니다." : "Mandos 분석이 완료되었습니다.");
       void loadHistory(historyQuery.trim());
     } catch (error) {
       if (error?.name === "AbortError") return;
@@ -351,71 +310,99 @@ export function AiDrawer({ analysisContext, onClose }) {
     }
   }
 
-  const activity = useMemo(() => ({ analysis, requestedMode: mode, requestState }), [analysis, mode, requestState]);
-
   return (
     <div className="drawer-layer" role="presentation">
       <button className="drawer-scrim" type="button" onClick={onClose} tabIndex={-1} aria-hidden="true" />
       <aside
         className="ai-drawer" id="ai-analysis-drawer" ref={drawerRef} role="dialog" aria-modal="true"
-        aria-labelledby="ai-analysis-title" aria-describedby="ai-connection-status" onKeyDown={handleKeyDown}
+        aria-labelledby="ai-analysis-title" aria-describedby="mandos-context-meta" onKeyDown={handleKeyDown} tabIndex={-1}
       >
         <div className="drawer-heading">
-          <div><p className="system-kicker">ANALYSIS WORKSPACE</p><h2 id="ai-analysis-title">AI 분석</h2></div>
-          <button className="icon-button" type="button" onClick={onClose} ref={closeButtonRef} aria-label="AI 분석 패널 닫기"><X size={20} /></button>
+          <h2 id="ai-analysis-title">MANDOS</h2>
+          <div>
+            <button
+              className="icon-button" type="button" onClick={() => { setHistoryOpen((current) => !current); setModelMenuOpen(false); }}
+              aria-label="이전 분석 열기" aria-expanded={historyOpen} aria-controls="mandos-history-panel"
+            ><ClockCounterClockwise size={21} /></button>
+            <button className="icon-button" type="button" onClick={onClose} aria-label="Mandos 패널 닫기"><X size={22} /></button>
+          </div>
         </div>
-        <div className="connection-note" id="ai-connection-status"><span />OPENAI BACKEND · 요청 시 연결 확인</div>
-        <section className="selected-context">
-          <p className="system-kicker">SELECTED CONTEXT</p><strong>{analysisContext.title}</strong><small>{analysisContext.meta}</small>
-        </section>
-        <div className="context-actions" aria-label="분석 컨텍스트">
-          <button className={!capture ? "is-selected" : ""} type="button" aria-pressed={!capture}><MapTrifold size={18} />현재 화면</button>
-          <button className={capture ? "is-selected" : ""} type="button" onClick={() => setCaptureOpen(true)} aria-pressed={Boolean(capture)}>
-            <Selection size={18} />{capture ? "선택 영역 변경" : "영역 선택"}
-          </button>
-        </div>
-        {captureOpen ? (
-          <Suspense fallback={<div className="capture-stage">캡처 도구를 불러오는 중</div>}>
-            <CaptureComposer onConfirm={confirmCapture} onCancel={() => setCaptureOpen(false)} />
-          </Suspense>
-        ) : null}
-        {capture && !captureOpen ? (
-          <section className="capture-attachment" aria-label="첨부할 화면 캡처">
-            <img src={captureUrl} alt="분석에 첨부할 선택 영역" />
-            <div><Camera size={16} /><span>{capture.width} × {capture.height}px · 전송 전</span></div>
-            <button type="button" onClick={removeCapture}><Trash size={16} /> 제거</button>
+        <div className="mandos-conversation">
+          <section className="selected-context">
+            <strong>{analysisContext.title}</strong><small id="mandos-context-meta">{analysisContext.meta}</small>
           </section>
-        ) : null}
-        <div className="analysis-mode" aria-label="분석 강도">
-          {Object.entries(MODE_COPY).map(([id, copy]) => (
-            <button type="button" key={id} className={mode === id ? "is-selected" : ""} onClick={() => setMode(id)} aria-pressed={mode === id} disabled={requestState === "submitting"}>
-              <strong>{copy.title}</strong><span>{copy.detail}</span>
-            </button>
-          ))}
+          {historyOpen ? <section className="analysis-history" id="mandos-history-panel" aria-label="이전 분석">
+            <header><strong>이전 분석</strong><span>{historyState.items.length}</span></header>
+            <form onSubmit={(eventObject) => { eventObject.preventDefault(); void loadHistory(historyQuery.trim()); }}>
+              <label><MagnifyingGlass size={15} /><span className="sr-only">이전 분석 검색</span><input value={historyQuery} onChange={(eventObject) => setHistoryQuery(eventObject.target.value)} maxLength={160} placeholder="질문·결과 검색" /></label>
+              <button type="submit" disabled={historyState.status === "loading"}>검색</button>
+            </form>
+            {historyState.message ? <p>{historyState.message}</p> : null}
+            <ol>{historyState.items.map((item) => {
+              const itemProfile = getMandosProfile(item.mode);
+              return (
+                <li key={item.id}><button type="button" onClick={() => void openHistoryItem(item)}>
+                  <span>{DOMAIN_LABELS[item.domain] ?? "분석"} · {itemProfile.title}</span><strong>{item.result?.headline ?? item.prompt}</strong><small>{new Date(item.createdAt).toLocaleString("ko-KR")}</small><ArrowRight size={14} />
+                </button></li>
+              );
+            })}</ol>
+          </section> : null}
+          {captureOpen ? (
+            <Suspense fallback={<div className="capture-stage">캡처 도구를 불러오는 중</div>}>
+              <CaptureComposer onConfirm={confirmCapture} onCancel={() => setCaptureOpen(false)} />
+            </Suspense>
+          ) : null}
+          {capture && !captureOpen ? (
+            <section className="capture-attachment" aria-label="첨부할 화면 캡처">
+              <img src={captureUrl} alt="Mandos 분석에 첨부할 선택 영역" />
+              <div><Camera size={16} /><span>{capture.width} × {capture.height}px · 전송 전</span></div>
+              <button type="button" onClick={removeCapture}><Trash size={16} /> 제거</button>
+            </section>
+          ) : null}
+          {notice && <p className={`prototype-notice${requestState === "error" ? " is-error" : ""}`} role="status">{notice}</p>}
+          {analysis && <AnalysisResult analysis={analysis} requestedMode={mode} />}
         </div>
-        <AgentRunPanel {...activity} />
-        <details className="analysis-history">
-          <summary><ClockCounterClockwise size={16} /> 저장된 분석 기록 <span>{historyState.items.length}</span></summary>
-          <form onSubmit={(eventObject) => { eventObject.preventDefault(); void loadHistory(historyQuery.trim()); }}>
-            <label><MagnifyingGlass size={15} /><span className="sr-only">분석 기록 검색</span><input value={historyQuery} onChange={(eventObject) => setHistoryQuery(eventObject.target.value)} maxLength={160} placeholder="질문·결과 검색" /></label>
-            <button type="submit" disabled={historyState.status === "loading"}>검색</button>
-          </form>
-          {historyState.message ? <p>{historyState.message}</p> : null}
-          <ol>{historyState.items.map((item) => (
-            <li key={item.id}><button type="button" onClick={() => void openHistoryItem(item)}>
-              <span>{item.domain.toUpperCase()} · {item.mode.toUpperCase()}</span><strong>{item.result?.headline ?? item.prompt}</strong><small>{new Date(item.createdAt).toLocaleString("ko-KR")}</small><ArrowRight size={14} />
-            </button></li>
-          ))}</ol>
-        </details>
         <form className="analysis-form" onSubmit={submit} aria-busy={requestState === "submitting"}>
-          <label htmlFor="analysis-prompt">무엇을 분석할까요?</label>
-          <textarea id="analysis-prompt" value={prompt} onChange={(eventObject) => setPrompt(eventObject.target.value)} maxLength={4000} placeholder={analysisContext.placeholder} />
-          <button type="submit" className="analysis-submit" disabled={requestState === "submitting" || !prompt.trim()}>
-            {requestState === "submitting" ? "분석 중…" : capture ? "이미지와 질문 분석" : "분석 요청"}<PaperPlaneTilt size={17} />
-          </button>
+          <label className="sr-only" htmlFor="analysis-prompt">Mandos에게 질문</label>
+          <textarea
+            id="analysis-prompt" value={prompt} onChange={updatePrompt} maxLength={4000}
+            placeholder={analysisContext.placeholder} rows={2}
+          />
+          <div className="composer-toolbar">
+            <div className="composer-attachments" aria-label="분석할 화면 첨부">
+              <button
+                className={!capture ? "is-selected" : ""} type="button" onClick={capture ? removeCapture : undefined}
+                aria-label="현재 화면 사용" title="현재 화면" aria-pressed={!capture}
+              ><Monitor size={19} /></button>
+              <button
+                className={capture ? "is-selected" : ""} type="button" onClick={() => setCaptureOpen(true)}
+                aria-label={capture ? "선택 영역 변경" : "화면 영역 선택"} title={capture ? "선택 영역 변경" : "영역 선택"} aria-pressed={Boolean(capture)}
+              ><Selection size={18} /></button>
+            </div>
+            <div className="mandos-mode-picker">
+              <button
+                className="mandos-mode-trigger" type="button" onClick={() => { setModelMenuOpen((current) => !current); setHistoryOpen(false); }}
+                aria-expanded={modelMenuOpen} aria-haspopup="menu" disabled={requestState === "submitting"}
+              >
+                <span><strong>{selectedProfile.title}</strong><small>{selectedProfile.task} · {selectedProfile.trait}</small></span>
+                <CaretDown size={14} aria-hidden="true" />
+              </button>
+              {modelMenuOpen ? <div className="mandos-mode-menu" role="menu" aria-label="Mandos 모델 선택">
+                {MANDOS_PROFILES.map((profile) => (
+                  <button
+                    type="button" role="menuitemradio" aria-checked={mode === profile.mode} key={profile.mode}
+                    className={mode === profile.mode ? "is-selected" : ""}
+                    onClick={() => { setMode(profile.mode); setModelMenuOpen(false); }}
+                  ><strong>{profile.title}</strong><span>{profile.task} · {profile.trait}</span></button>
+                ))}
+              </div> : null}
+            </div>
+            <button
+              type="submit" className="analysis-submit" disabled={requestState === "submitting" || !prompt.trim()}
+              aria-label={requestState === "submitting" ? "Mandos가 분석 중" : "Mandos에게 요청"}
+            ><PaperPlaneTilt size={20} /></button>
+          </div>
         </form>
-        {notice && <p className={`prototype-notice${requestState === "error" ? " is-error" : ""}`} role="status">{notice}</p>}
-        {analysis && <AnalysisResult analysis={analysis} />}
       </aside>
     </div>
   );

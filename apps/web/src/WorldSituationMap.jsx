@@ -485,7 +485,7 @@ export function WorldSituationMap({ events, selectedEvent, selectionActive, data
           {relation && <p className="relation-label"><ShieldCheck size={15} /> 연결 관계&nbsp; {selectedEvent.region} → {relation.to.label} · {selectedEvent.relationLabel}</p>}
           <div className="popover-actions">
             <button type="button" onClick={onOpenIssues}>이슈 분석 보기 <ArrowSquareOut size={16} /></button>
-            <button type="button" onClick={onOpenAi}><Brain size={17} /> AI에 묻기</button>
+            <button type="button" onClick={onOpenAi}><Brain size={17} /> Mandos에 묻기</button>
           </div>
         </section>
       )}
