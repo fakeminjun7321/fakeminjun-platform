@@ -545,15 +545,15 @@ test("Mandos runtime policies use distinct models, reasoning, and bounded output
   };
   assert.deepEqual(mandosRuntimePolicy("standard", env, "text"), {
     profile: "swift", resolvedMode: "standard", model: "swift-model",
-    reasoningEffort: "low", maxOutputTokens: 1600,
+    reasoningEffort: "low", maxOutputTokens: 1600, timeoutMs: 90_000,
   });
   assert.deepEqual(mandosRuntimePolicy("auto", env, "visual"), {
     profile: "core", resolvedMode: "standard", model: "core-model",
-    reasoningEffort: "medium", maxOutputTokens: 3400,
+    reasoningEffort: "medium", maxOutputTokens: 3400, timeoutMs: 90_000,
   });
   assert.deepEqual(mandosRuntimePolicy("deep", env, "file"), {
     profile: "deep", resolvedMode: "deep", model: "deep-model",
-    reasoningEffort: "high", maxOutputTokens: 4800,
+    reasoningEffort: "high", maxOutputTokens: 4800, timeoutMs: 150_000,
   });
   assert.equal(mandosRuntimePolicy("deep", env, "text").maxOutputTokens, 6400);
 });
