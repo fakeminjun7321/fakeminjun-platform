@@ -133,16 +133,6 @@ function eventCandidatesQuery(params = {}) {
   return encoded ? `?${encoded}` : "";
 }
 
-function physicsResourcesQuery(params = {}) {
-  const query = new URLSearchParams();
-  if (params.query?.trim()) query.set("q", params.query.trim());
-  if (params.type && params.type !== "전체") query.set("type", params.type);
-  if (params.cursor) query.set("cursor", params.cursor);
-  if (params.limit !== undefined) query.set("limit", String(params.limit));
-  const encoded = query.toString();
-  return encoded ? `?${encoded}` : "";
-}
-
 function analysesQuery(params = {}) {
   const query = new URLSearchParams();
   if (params.query?.trim()) query.set("q", params.query.trim());
@@ -271,9 +261,15 @@ export function createBackendClient({ baseUrl = "", fetchImpl = globalThis.fetch
       method: "PUT",
       body: JSON.stringify(levels),
     }),
-    searchPhysicsResources: ({ signal, ...params } = {}) => request(
-      `/api/v1/physics/resources${physicsResourcesQuery(params)}`,
-      { signal, returnEnvelope: true },
+    searchPhysicsResources: ({ signal, idempotencyKey = crypto.randomUUID(), type, ...params } = {}) => request(
+      "/api/v1/physics/resources/search",
+      {
+        method: "POST",
+        body: JSON.stringify({ ...params, ...(type && type !== "전체" ? { type } : {}) }),
+        headers: { "idempotency-key": idempotencyKey },
+        signal,
+        returnEnvelope: true,
+      },
     ),
     listPhysicsLibrary: ({ signal } = {}) => request("/api/v1/physics/library", { signal }),
     savePhysicsResource: (resource, { signal, idempotencyKey = crypto.randomUUID() } = {}) => request(

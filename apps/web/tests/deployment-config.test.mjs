@@ -47,6 +47,7 @@ test("production API is isolated to the API route without static assets", async 
   assert.deepEqual(config.vars, {
     APP_ENV: "production",
     APP_ORIGIN: "https://fakeminjun.vip",
+    PHYSICS_SCANNER_ENABLED: "true",
   });
   assert.deepEqual(config.triggers?.crons, ["*/10 * * * *"]);
 
@@ -56,6 +57,25 @@ test("production API is isolated to the API route without static assets", async 
   assert.deepEqual(config.r2_buckets, [{
     binding: "PHYSICS_FILES",
     bucket_name: "fakeminjun-physics-vault",
+  }]);
+});
+
+test("production scanner has no public route and consumes only the bounded AV queues", async () => {
+  const config = await readConfig("wrangler.scan.production.jsonc");
+  assert.equal(config.name, "fakeminjun-physics-scan");
+  assert.equal(config.main, "worker/scanner.js");
+  assert.equal(config.workers_dev, false);
+  assert.equal(config.preview_urls, false);
+  assert.equal(config.routes, undefined);
+  assert.deepEqual(config.queues.consumers.map(({ queue, max_batch_size, max_concurrency }) => ({ queue, max_batch_size, max_concurrency })), [
+    { queue: "fakeminjun-physics-scan", max_batch_size: 1, max_concurrency: 1 },
+    { queue: "fakeminjun-physics-scan-dlq", max_batch_size: 1, max_concurrency: 1 },
+  ]);
+  assert.deepEqual(config.containers, [{
+    class_name: "ClamAvContainer",
+    image: "./scanner/Dockerfile",
+    max_instances: 1,
+    instance_type: "standard-1",
   }]);
 });
 

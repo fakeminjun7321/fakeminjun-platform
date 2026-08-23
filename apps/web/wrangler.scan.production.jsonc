@@ -1,0 +1,67 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "fakeminjun-physics-scan",
+  "main": "worker/scanner.js",
+  "compatibility_date": "2026-08-22",
+  "workers_dev": false,
+  "preview_urls": false,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "fakeminjun-platform-prod",
+      "database_id": "1e8d5ff1-cfe7-4176-b6fa-735739b2c243",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "PHYSICS_FILES",
+      "bucket_name": "fakeminjun-physics-vault"
+    }
+  ],
+  "queues": {
+    "consumers": [
+      {
+        "queue": "fakeminjun-physics-scan",
+        "max_batch_size": 1,
+        "max_batch_timeout": 1,
+        "max_retries": 3,
+        "dead_letter_queue": "fakeminjun-physics-scan-dlq",
+        "max_concurrency": 1
+      },
+      {
+        "queue": "fakeminjun-physics-scan-dlq",
+        "max_batch_size": 1,
+        "max_batch_timeout": 1,
+        "max_retries": 3,
+        "max_concurrency": 1
+      }
+    ]
+  },
+  "containers": [
+    {
+      "class_name": "ClamAvContainer",
+      "image": "./scanner/Dockerfile",
+      "max_instances": 1,
+      "instance_type": "standard-1"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CLAMAV",
+        "class_name": "ClamAvContainer"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["ClamAvContainer"]
+    }
+  ],
+  "vars": {
+    "CLOUDFLARE_ACCOUNT_ID": "cf03cf471c6eb89a4ababd4f1f023469",
+    "PHYSICS_SCAN_BUCKET": "fakeminjun-physics-vault"
+  }
+}

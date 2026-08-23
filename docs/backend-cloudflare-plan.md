@@ -1,6 +1,6 @@
 # Cloudflare-first 백엔드 구현 계획
 
-작성일: 2026-08-21 · 구현 상태 갱신: 2026-08-22
+작성일: 2026-08-21 · 구현 상태 갱신: 2026-08-23
 
 ## 결론과 결정 경계
 
@@ -22,6 +22,7 @@ Firebase는 첫 출시부터 공개 회원가입, 소셜 로그인, 비밀번호
 - 공식 출처 수집: 고정 RSS 4개, metadata-only 정규화, idempotent D1 upsert, 수집 이력, 공개 수집함 조회
 - 사건 후보: 사용자가 고른 2~8개 수집 메타데이터의 변경 불가능한 사본, 단일 OpenAI 구조화 분류, 개인 후보 목록·검토 이력, 지도 승격 fail-closed 잠금
 - 개인 경로: Access 신원 확인, 노트 CRUD, 국제정세·물리 수준 설정, OpenAI 일반·정밀 분석 생성·조회·삭제
+- 개인 파일 보안: 비공개 R2 quarantine, R2 이벤트용 scan Queue·DLQ, digest 고정 ClamAV Container, D1 scan lease·판정 기록, clean+동일 ETag 다운로드/AI 잠금
 - 방어 경계: 서버 결정 소유자, 개인 쿼리의 `owner_id` 제한, 고정 Origin, JSON 전용, 16 KiB 본문 제한, 필드 allowlist, prepared statement, 노트 optimistic locking, 분석 idempotency·사용량 원장·응답 제한
 - `apps/web/src/backendClient.js`: 화면에서 사용할 same-origin API client와 구조화 오류 타입
 - Vite 개발 프록시: `127.0.0.1:5173/api` → `127.0.0.1:8787/api`
@@ -35,6 +36,7 @@ Firebase는 첫 출시부터 공개 회원가입, 소셜 로그인, 비밀번호
 | 프론트와 API | 정적 프론트 호스팅 + 전용 API Worker | 프론트와 `/api/*`를 분리해 Access 신원 컨텍스트 보존 |
 | 관계형 데이터 | D1 | 사건, 출처, 주장, 근거, 이슈, 노트, 분석 메타데이터 |
 | 파일과 원본 | 비공개 R2 | API 원본 JSON, 캡처, PDF, 이미지, 추출 텍스트 |
+| 파일 악성코드 검사 | R2 Event Notifications + Queues + Containers/ClamAV | quarantine 비동기 검사, 재시도·DLQ, 탐지 객체 삭제 |
 | 수집 작업 | Cron Triggers + Queues | 예약 수집, 정규화, 중복 제거 |
 | 긴 처리 | Workflows, 2단계 | 추출, 임베딩, AI, 검증과 재시도 |
 | 의미 검색 | Vectorize, 2단계 | 개인 자료와 근거 청크 검색 |
@@ -51,7 +53,10 @@ Firebase는 첫 출시부터 공개 회원가입, 소셜 로그인, 비밀번호
   → Cloudflare Access
   → Worker BFF (/api/v1)
       ├─ D1: 사건·근거·메타데이터·노트·분석 이력
-      ├─ R2: 원본 응답·캡처·PDF·이미지·파생 파일
+      ├─ R2 quarantine: PDF·이미지
+      │    └─ PutObject event → scan Queue → 비공개 scanner Worker → ClamAV Container
+      │         ├─ clean + 동일 ETag → 다운로드·OpenAI 분석 허용
+      │         └─ blocked → R2 객체 삭제, D1 차단 기록 유지
       ├─ Queue / Workflow: 수집·추출·임베딩·AI 작업
       ├─ Vectorize: 근거 및 개인 자료 검색
       └─ OpenAI Responses API
@@ -88,7 +93,8 @@ Firebase는 첫 출시부터 공개 회원가입, 소셜 로그인, 비밀번호
 
 - `users`, `user_profiles`: 소유자와 분야별 수준 설정
 - `notes`: 사건·이슈·자료에 연결된 개인 기록
-- `files`: 소유자, R2 객체 키, MIME, 크기, 해시, 처리 상태
+- `physics_files`: 소유자, quarantine R2 객체 키, MIME, 크기, SHA-256, 원본·검사 ETag, ClamAV engine·signature DB·판정 상태
+- `physics_file_scan_jobs`: 예상 ETag·해시·크기, 처리 상태, 시도 수, 180초 lease, 마지막 오류와 이벤트 시각
 - `file_chunks`: 페이지·영역·문단 단위 파생 텍스트와 벡터 ID
 - `jobs`: 업로드·추출·삭제 작업 상태
 
@@ -154,9 +160,11 @@ GET  /api/v1/analyses/:analysisId
 DELETE /api/v1/analyses/:analysisId
 ```
 
-- 현재 개인용 10MiB 상한에서는 정확한 앱 origin의 multipart 요청을 Worker가 읽고, 무작위 소유자별 객체 키로 비공개 R2에 직접 저장한다. 브라우저는 R2 주소나 객체 키를 받지 않는다.
-- 크기·MIME·확장자·파일 시그니처 검사는 악성코드 검사가 아니다. 압축 폭탄·PDF 객체 수·페이지 수 제한과 별도의 실제 malware scanner를 두기 전에는 `Antivirus-verified`라고 표시하지 않는다.
-- 현재는 시그니처·크기·해시 검사만 수행하고 `not-scanned`를 명시한다. 알려진 `blocked` 상태는 다운로드와 AI 입력을 차단하지만, 실제 악성코드 판정 엔진은 아직 없다.
+- 현재 개인용 10MiB 상한에서는 정확한 앱 origin의 multipart 요청을 Worker가 읽고, 무작위 소유자별 `quarantine/` 객체 키로 비공개 R2에 직접 저장한다. 브라우저는 R2 주소나 객체 키를 받지 않는다.
+- R2 `PutObject` event는 batch 1·동시성 1의 scan Queue로 전달한다. account·bucket·action·키·크기·ETag를 allowlist하고 D1 예상값과 R2 크기·SHA-256을 다시 대조한다. D1 lease와 파일별 scan job으로 at-least-once 중복 처리를 제한한다.
+- digest 고정 ClamAV 1.5.4 Container는 120초 timeout과 `database.clamav.net` egress만 사용한다. signature DB가 48시간보다 오래됐거나 종료 결과가 불명확하면 clean으로 승격하지 않는다.
+- `clean`이며 검사 ETag와 현재 R2 ETag가 같은 파일만 조건부로 읽어 다운로드·OpenAI 분석한다. 탐지 파일은 R2에서 삭제하고 blocked 기록을 유지하며, retry 소진은 DLQ에서 error로 닫는다.
+- 크기·MIME·파일 시그니처와 ClamAV clean도 PDF 객체 수·페이지 수·능동 콘텐츠 안전성이나 자료 내용의 신뢰성을 보증하지 않는다.
 - 현재 AI 분석은 분야·모드·질문·사건 ID·설명 수준·제한된 화면 맥락을 받고, 사건 상세는 서버가 D1에서 다시 읽는다.
 - 일반 작업은 `gpt-5.6-luna` 한 번, 정밀 작업은 `gpt-5.6-terra` 두 번과 `gpt-5.6-sol` 통합 한 번으로 고정한다.
 - 분석 당시 서버가 제공한 근거 ID와 스냅샷을 `analysis_evidence_links`에 저장하고 모델의 ID 집합을 후검증한다. 이 검사는 인용 내용 자체의 진실성 검증이 아니다.
@@ -176,6 +184,7 @@ Worker와 D1에는 이 계약의 사건 목록·상세 API가 구현되어 있�
 ## 작업·수집 안전 경계
 
 - Queue는 at-least-once 전달을 전제로 작업별 idempotency key, D1 unique constraint 또는 처리 영수증을 둔다.
+- scan Queue는 최대 3회 재시도 뒤 DLQ로 보내고, DLQ 소비 결과를 D1 `error`로 남긴다. 정상 파일과 EICAR의 실제 clean/blocked 결과, 탐지 객체 삭제와 DLQ를 production 목적지에서 확인하기 전에는 Antivirus-verified로 보고하지 않는다.
 - retry 횟수와 backoff, DLQ, 운영자 재처리, Cron 중첩 방지와 cursor 원자적 갱신을 정의한다.
 - 외부 수집기는 공급자별 HTTPS hostname allowlist만 사용하고 redirect마다 scheme과 host를 다시 검증한다. 사용자 URL을 서버가 임의 fetch하지 않으며 private·link-local·metadata endpoint 접근을 차단한다.
 - 수집 HTML은 렌더 전에 sanitize하고, 원문 텍스트는 신뢰할 수 없는 데이터로 취급한다. 원문 속 지시가 AI 도구 호출·삭제·외부 요청을 유발할 수 없게 분리한다.
@@ -214,9 +223,9 @@ preview와 production 바인딩은 자동 상속된다고 가정하지 않고 �
 - 지도에서 사건 선택 → 출처 확인
 - 현재 프론트 화면을 API client에 연결
 
-### 2. 자료·AI — AI 기본 경로 로컬 구현
+### 2. 자료·AI — scanner 저장소 구현, 운영 검증 대기
 
-- 캡처·PDF quarantine, 형식 검증과 실제 악성코드 검사 경계
+- PDF·이미지 R2 quarantine, scan Queue·DLQ, ClamAV Container, D1 판정·lease와 clean+ETag API 잠금 구현
 - R2 파생물, D1 메타데이터, Vectorize 근거 검색
 - OpenAI Responses API 구조화 분석: 로컬 구현·실제 API 검증
 - 인용 ID 서버 검증과 분석 이력 저장
@@ -234,19 +243,20 @@ preview와 production 바인딩은 자동 상속된다고 가정하지 않고 �
 2. 월 비용 상한과 결제 계정
 3. 공식 RSS 4개 이후 추가할 교차검증 출처
 4. OpenAI 월 예산 상한과 production 모델 변경 정책
-5. 파일 최대 크기·허용 형식·실제 악성코드 검사 수단·원본 보관 기간
+5. 파일 최대 크기·허용 형식·ClamAV signature 갱신 경보·격리/차단 기록 보관 기간과 Container 비용 상한
 6. 삭제·백업·복구와 감사 로그 보관 정책
 7. WAF·rate limit·비용 경보의 실제 운영 임계값과 부하 검증
 
 ## 현재 검증 경계
 
-- **Implemented**: 기존 Worker/D1/OpenAI/RSS 경로에 arXiv/Crossref, 비공개 물리 파일, 근거 ID·분석 기록, 독립 근거 지도 승격 경로 추가
-- **Unit-verified**: 일반 Node 테스트 98건, Sites 전용 테스트 5건, 운영 배포 경계 테스트 4건 통과
-- **Local-runtime-verified**: 임시 D1·R2에서 물리 파일 중복 제거·총량 한도·업로드·영속성·다운로드·삭제, 검색/분석 사용량 차단, 분석 기록 검색, 독립 지지 출처 2개와 위치를 요구하는 지도 승격 확인
+- **Implemented**: 기존 Worker/D1/OpenAI/RSS 경로에 arXiv/Crossref, 비공개 물리 파일, scan Queue·DLQ/ClamAV Container 계약, clean+동일 ETag 잠금, 근거 ID·분석 기록, 독립 근거 지도 승격 경로 추가
+- **Unit-verified**: 기존 일반 Node·Sites 테스트에 더해 scanner core·운영 구성 집중 테스트 8건 통과. ClamAV 출력은 fixture이며 실제 Container 실행이 아님
+- **Local-runtime-verified**: 임시 D1·R2에서 물리 파일 중복 제거·총량 한도·격리 중 다운로드/분석 차단, D1에 clean을 직접 주입한 뒤 다운로드, 영속성·삭제, 검색/분석 사용량 차단, 분석 기록 검색, 독립 지지 출처 2개와 위치를 요구하는 지도 승격 확인. 실제 악성코드 판정은 아님
 - **Browser-verified**: 실제 수집함 12건 표시와 안전한 원문 링크에 더해 자료 2건 선택 → 실제 OpenAI 후보 생성 → 검토 메모 저장 → 새로고침 후 유지 경로를 인앱 브라우저에서 확인. 콘솔 warning/error 0건, 390×844 브라우저 viewport 수평 overflow 없음
 - **Simulator-verified**: **Not verified / 미검증**
 - **Physical-device-verified**: 실제 macOS Chrome에서 production Access 로그인, 국제정세·물리 AI 결과 표시를 확인. 모바일 물리기기는 **Not verified / 미검증**
 - **Live-service-verified**: 원격 D1·Access·프론트/API Worker·DNS/TLS·OpenAI 분석 2회와 D1 완료 기록·`workers.dev` 404를 확인. 10분 Cron 배포 직후 2026-08-22 15:00 UTC 자동 실행에서 4개 stream이 모두 성공해 원격 D1에 기록됨
 - 60초 자동 동기화·탭 복귀 즉시 갱신·수동 새로고침 버튼의 production Chrome 경로와 production 후보/검토/승격 잠금: **Not verified / 미검증**
-- 로컬 R2 수명주기: **Local-runtime-verified**. production R2는 APAC Standard 버킷 생성·Worker 바인딩·실제 PDF 업로드/다운로드/삭제와 OpenAI 파일 분석까지 **Live-service-verified**. Queue, Workflows, Vectorize는 **Not verified / 미검증**
-- 실제 업로드 악성코드 검사와 antivirus/EDR: **Not verified / 미검증**
+- 로컬 R2 수명주기: **Local-runtime-verified**. production R2의 기존 scanner 도입 전 PDF 업로드/다운로드/삭제와 OpenAI 파일 분석은 **Live-service-verified**. 새 scan Queue·R2 notification·Container 경로를 증명하지는 않음
+- production 0018 migration, Queue·DLQ, R2 PutObject notification, scanner Worker/Container 배포와 정상 파일 clean·EICAR blocked+객체 삭제·retry/DLQ: **Not verified / 미검증**
+- ClamAV 검사는 EDR이나 모든 악성 행위 탐지를 대신하지 않음. 실제 업로드 악성코드 검사: **Not verified / 미검증**

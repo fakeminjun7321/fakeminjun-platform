@@ -1,0 +1,1 @@
+FROM docker.io/clamav/clamav:1.5.4@sha256:6e348a93ef3be6a52e90819062313a2ef35c260708121d4465e67b949ae4e616

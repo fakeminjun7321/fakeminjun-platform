@@ -82,9 +82,10 @@ API 응답은 기본적으로 `Cache-Control: no-store`, `X-Content-Type-Options
 | `POST` | `/api/v1/event-candidates` | 공식 출처 자료 2~8개로 미검증 후보 생성 |
 | `POST` | `/api/v1/event-candidates/:candidateId/reviews` | 후보 보류·검토 완료·기각 영수증 저장 |
 | `POST` | `/api/v1/event-candidates/:candidateId/promote` | 편집자 전용 승격 잠금 확인; 현재 항상 409이며 사건을 쓰지 않음 |
-| `GET` | `/api/v1/physics/resources` | 고정 catalog + arXiv/Crossref 메타데이터 검색 |
+| `GET` | `/api/v1/physics/resources` | 이미 저장된 고정 catalog·cache를 읽기 전용으로 검색 |
+| `POST` | `/api/v1/physics/resources/search` | 동일 origin에서 arXiv/Crossref 메타데이터를 새로 조회하고 cache 갱신 |
 | `GET` | `/api/v1/physics/library` | 현재 사용자의 링크 보관소 조회 |
-| `POST` | `/api/v1/physics/files` | PDF·PNG·JPEG 개인 파일을 비공개 R2에 저장 |
+| `POST` | `/api/v1/physics/files` | PDF·PNG·JPEG 개인 파일을 비공개 R2 격리 구역에 저장하고 `202` 반환 |
 | `GET` | `/api/v1/physics/files` | 현재 사용자의 개인 파일 목록 |
 | `GET` | `/api/v1/physics/files/:fileId/download` | 첨부 강제 다운로드 |
 | `DELETE` | `/api/v1/physics/files/:fileId` | R2 객체와 D1 메타데이터 삭제 |
@@ -156,7 +157,20 @@ API 응답은 기본적으로 `Cache-Control: no-store`, `X-Content-Type-Options
 - 사건·출처·물리 자료·개인 파일·캡처는 요청 당시 `evidenceId`와 스냅샷으로 저장. 모델이 서버가 제공하지 않은 ID를 인용하면 실패 처리하고, `provided-evidence` 단락에는 최소 한 개의 citation을 요구
 - ID 집합 검사는 출처 내용의 진실성이나 인용 문장의 정확성을 보증하지 않으며 화면에도 이 경계를 표시
 
-개인 파일은 10MiB 이하 PDF·PNG·JPEG만 받는다. 서버는 PDF header/EOF 또는 이미지 시그니처·크기와 SHA-256을 확인하고 무작위 소유자 경로에 저장한다. 소유자별 250개·총 2GiB를 원자적으로 예약한 뒤 R2에 쓰며, 동일 내용은 SHA-256으로 중복 제거한다. 다운로드는 원래 MIME으로 브라우저 실행하지 않고 `application/octet-stream` 첨부로 강제한다. `antivirusStatus: not-scanned`는 악성코드 무해 판정이 아니며 production 백신 엔진은 아직 없다.
+### 개인 파일 격리와 백신 상태
+
+개인 파일은 10MiB 이하 PDF·PNG·JPEG만 받는다. 서버는 PDF header/EOF 또는 이미지 시그니처·크기와 SHA-256을 확인하고 `quarantine/owners/:ownerId/physics/:uuid.:ext` 형태의 비공개 R2 키에 저장한다. 소유자별 250개·총 2GiB를 원자적으로 예약한 뒤 R2에 쓰며, 동일 내용은 SHA-256으로 중복 제거한다. 업로드 작업 자체도 10분 20회·1일 100회·30일 1,000회로 기록하며 삭제해도 이 작업 한도는 환불하지 않는다. scanner 기능 플래그가 꺼져 있으면 새 업로드는 `503 physics_scanner_unavailable`로 닫힌다.
+
+업로드 성공 응답은 `202`와 `antivirusStatus: not-scanned`를 반환한다. 이 상태는 악성코드 무해 판정이 아니라 격리 대기다. R2 `PutObject` 이벤트는 전용 Queue를 통해 공개 route가 없는 scanner Worker로 전달되고, scanner는 이벤트 account·bucket·action·키·크기·ETag, D1 메타데이터, R2 객체의 크기·SHA-256을 다시 대조한다. ClamAV Container가 48시간 이내 signature DB로 명확한 clean 결과를 냈을 때만 `antivirusStatus: clean`과 `scannedR2Etag`를 기록한다.
+
+- `not-scanned`: 검사 대기 또는 재시도 가능 실패. 다운로드·AI 분석은 `423 physics_file_scan_pending`
+- `clean`: 저장 당시 R2 ETag와 검사 ETag가 동일한 경우에만 다운로드·AI 분석 허용
+- `blocked`: ClamAV 탐지. R2 객체를 삭제하고 다운로드·AI 분석은 `423 physics_file_blocked`
+- `error`: 무결성 불일치 또는 재시도 소진. 다운로드·AI 분석은 `423 physics_file_scan_failed`
+
+다운로드 직전에도 `clean`과 ETag 일치를 확인하고 R2 조건부 읽기를 사용한다. 응답은 원래 MIME으로 브라우저 실행하지 않고 `application/octet-stream` 첨부로 강제한다. ClamAV clean은 알려진 signature에 대한 검사 결과일 뿐 PDF 능동 콘텐츠의 안전성이나 자료 내용의 신뢰성을 보증하지 않는다.
+
+scanner core 단위 테스트는 R2 이벤트와 ClamAV 출력 fixture만 검증한다. 로컬 backend 수명주기 테스트의 clean 상태는 D1에 직접 주입하므로 실제 ClamAV 실행이 아니다. production Queue·R2 event notification·Container와 정상 파일/EICAR/DLQ의 목적지 결과를 확인하기 전에는 **Antivirus-verified**가 아니다.
 
 외부 물리 검색은 cache miss에만 소유자별 10분 30회·하루 200회·30일 2,000회 한도를 소비한다. 만료 cache와 30일 지난 검색 원장, 90일 지난 미보관 외부 catalog 항목을 정리하고, 개인 링크 보관소는 최대 2,000개다. 개인 파일 분석은 R2 객체를 읽기 전에 원자적 분석 사용량 예약을 끝낸다.
 
@@ -181,4 +195,4 @@ API 응답은 기본적으로 `Cache-Control: no-store`, `X-Content-Type-Options
 - 수집 실패는 기존 성공 자료를 삭제하지 않으며 오류 코드만 기록
 - scheduled handler와 `*/10 * * * *` production Cron Trigger가 배포되어 있으며, 2026-08-22 15:00 UTC 시간창에서 4개 stream의 성공 기록을 원격 D1에서 확인함. source inbox client는 열린 동안 60초마다 읽기 API를 다시 확인하고 탭 복귀 시 즉시 동기화함
 
-production D1에는 0015·0016 migration과 새 테이블 생성까지 확인했다. APAC Standard production R2 버킷과 이번 Worker를 배포했고, 실제 production D1·R2 remote binding에서는 기존 OpenAI 키로 PDF 업로드·동일 바이트 다운로드·GPT-5.6 Luna 분석·근거 인용·기록 재조회·삭제와 시험 데이터 정리까지 확인했다. 다만 이번 배포 버전의 로그인 후 Chrome UI 조작은 **Not verified / 미검증**이다. 로컬 임시 D1·R2에서는 별도로 업로드·중복 제거·총량 한도·재시작 영속성·다운로드·삭제와 독립 근거 지도 승격을 확인했다.
+production D1에는 0015·0016 migration과 새 테이블 생성까지 확인했다. APAC Standard production R2 버킷과 기존 Worker 경로에서 PDF 업로드·동일 바이트 다운로드·GPT-5.6 Luna 분석·근거 인용·기록 재조회·삭제와 시험 데이터 정리를 확인했지만, 이는 scanner 도입 전 경로의 결과다. 새 0018 scan migration, Queue·R2 event notification·ClamAV Container와 clean/EICAR/DLQ 결과는 별도 **Not verified / 미검증**이다. 이번 배포 버전의 로그인 후 Chrome UI 조작도 **Not verified / 미검증**이다.

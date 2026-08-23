@@ -14,7 +14,7 @@
 - MapLibre 기반 확대·이동·URL 상태·레이어가 있는 세계 상황지도, 3개 핵심 신호, 별도 오늘 브리핑·이슈 추적 화면, 사건 선택, 호출형 AI 패널의 화면 흐름 구현
 - 물리: 7개 학습 모드, 혼합형 자료 보관소, KPhO→IPhO 준비 화면과 조절 가능한 설명 수준 구현
 - 물리 자료 찾기는 고정 MIT OpenCourseWare·KPhO·IPhO 링크와 arXiv 프리프린트·Crossref DOI 메타데이터 검색을 함께 사용하고, 외부 결과를 24시간 캐시하며 검증 전 메타데이터로 표시. 외부 검색은 소유자별 10분 30회·하루 200회·30일 2,000회로 제한하고 만료 cache·오래된 미보관 자료를 정리함
-- PDF·PNG·JPEG 개인 파일은 소유자별 비공개 R2 키와 D1 메타데이터로 보관하고 업로드·재조회·강제 다운로드·삭제·명시적 OpenAI 파일 분석 경로를 제공. 파일은 최대 250개·총 2GiB이며 링크 보관소는 2,000개로 제한함. 현재 확장자/내부 시그니처와 해시만 확인하며 백신 검사는 연결하지 않음
+- PDF·PNG·JPEG 개인 파일은 소유자별 비공개 R2 격리 키와 D1 메타데이터로 보관한다. R2 `PutObject` 이벤트를 단일 동시성 Queue로 받아 digest 고정 ClamAV Container에서 비동기 검사하고, `clean` 판정과 동일 R2 ETag가 함께 확인된 파일만 다운로드·OpenAI 분석을 허용하는 fail-closed 경로가 저장소에 구현되어 있다. 파일은 최대 250개·총 2GiB이며 링크 보관소는 2,000개로 제한한다
 - 상황지도와 분석용 데모 신호는 모두 `NON-LIVE DEMO`이며 실제 수집 자료나 사건 후보와 분리함
 - 공식 RSS 4개(외교부·통일부·백악관·UN 평화·안보)의 제목·기관·원문 링크·시각을 로컬 D1에 수집하고 오늘 브리핑의 별도 `실제 수집 · 미검증` 영역에 표시
 - production Worker는 공식 RSS를 10분마다 수집하고, 국제정세 화면은 열려 있을 때 60초마다 API를 다시 확인하며 브라우저 탭 복귀 시 즉시 동기화함
@@ -80,12 +80,12 @@ Vite는 `/api`를 `127.0.0.1:8787`의 Worker로 전달한다. 로컬 Access 개�
 
 ## 검증 상태
 
-- **Implemented**: 기존 국제정세·물리 기능에 arXiv/Crossref 검색·캐시, 비공개 물리 파일 API/UI, 파일 분석, 근거 ID 인용·분석 기록 검색, 독립 근거 기반 지도 승격 경로가 저장소에 존재
-- **Unit-verified**: `npm test` 98건, Sites worker 5건, 운영 배포 경계 4건 통과
-- **Local-runtime-verified**: 임시 D1·R2에서 migration, 물리 파일 중복 제거·총량 한도·업로드→다운로드→재시작 후 영속성→삭제, 외부 검색/분석 선예약 한도, 160자 검색, 분석 기록 검색, 독립 출처 지지 근거 2개+위치 확인 후 지도 승격과 사건-출처 보존을 확인
+- **Implemented**: 기존 국제정세·물리 기능에 arXiv/Crossref 검색·캐시, 비공개 물리 파일 API/UI, 격리 Queue·ClamAV Container scanner, clean+ETag 다운로드/AI 잠금, 파일 분석, 근거 ID 인용·분석 기록 검색, 독립 근거 기반 지도 승격 경로가 저장소에 존재
+- **Unit-verified**: 기존 `npm test` 98건, Sites worker 5건에 더해 scanner core·운영 구성 집중 테스트 8건 통과. 집중 테스트는 R2 이벤트 계약과 ClamAV 출력 fixture를 검사하며 실제 Container에서 ClamAV를 실행하지 않음
+- **Local-runtime-verified**: 임시 D1·R2에서 migration, 물리 파일 중복 제거·총량 한도·격리 중 다운로드/분석 차단, 테스트가 D1에 주입한 clean 상태 뒤 다운로드, 재시작 영속성·삭제, 외부 검색/분석 선예약 한도, 160자 검색, 분석 기록 검색, 독립 출처 지지 근거 2개+위치 확인 후 지도 승격과 사건-출처 보존을 확인. 이 clean 주입은 실제 백신 판정이 아님
 - **Browser-verified**: 인앱 브라우저에서 실제 공식 자료 선택 → 실제 OpenAI 후보 생성 → 검토 메모 저장 → 새로고침 후 유지 경로를 확인. 콘솔 `warn`/`error`는 0건이었고 390×844 브라우저 viewport에서 수평 overflow가 없었음
 - **Simulator-verified**: 미검증 — 390×844는 데스크톱 브라우저 viewport 확인이며 모바일 시뮬레이터 실행이 아님
 - **Physical-device-verified**: 이전 production 버전은 실제 macOS Chrome에서 Access 로그인, 국제정세·물리 화면과 OpenAI 응답을 확인. 이번 배포 버전과 모바일 물리기기는 미검증
 - **Live-service-verified**: DNS·TLS·미로그인 Access 차단·D1·OpenAI·Cron, arXiv/Crossref 실제 검색 응답, production D1 0015·0016 migration을 확인. 이번 배포에서는 실제 production D1·R2 remote binding으로 71,168바이트 PDF 업로드·동일 바이트 다운로드·GPT-5.6 Luna 분석·인용 1개·근거 링크 1개·기록 재조회·삭제와 시험 데이터 정리까지 확인
 - **Not verified / 미검증**: 이번 배포 버전의 실제 Chrome 로그인 후 파일·인용/기록 UI 조작, 비허용 계정 거부, 모바일 화면, WAF·DDoS 부하 경로
-- **Antivirus-verified**: 미검증 — 백신·EDR 엔진은 실행하지 못했으며, 변경분 보안 검토와 npm advisory·registry signature 검사만 수행
+- **Antivirus-verified**: **Not verified / 미검증** — scanner 코드·Container 구성·fail-closed API는 구현됐지만 production Queue/R2 알림/Container/D1 migration 배포, 최신 signature DB를 사용한 정상 파일 clean 판정, EICAR 차단·R2 삭제·DLQ 실패 경로의 실제 목적지 결과를 아직 확인하지 않음

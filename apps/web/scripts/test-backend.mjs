@@ -554,7 +554,10 @@ try {
   assert.equal(event.body.data.title, "한미 공급망 실무 협의 종료");
   assert.equal(event.body.data.facts.length, 3);
 
-  const physicsSearch = await request("/api/v1/physics/resources?q=MIT&limit=10");
+  const physicsSearch = await request(
+    "/api/v1/physics/resources/search",
+    jsonMutation("POST", { query: "MIT", limit: 10 }, "physics-search-mit"),
+  );
   assert.equal(physicsSearch.response.status, 200, JSON.stringify(physicsSearch.body));
   assert.equal(physicsSearch.body.data.length, 3);
   assert.equal(physicsSearch.body.data.every(({ sourceKind }) => sourceKind === "verified-catalog"), true);
@@ -594,7 +597,7 @@ try {
     "/api/v1/physics/files",
     physicsFileMutation(new Blob([physicsPdfBytes], { type: "application/pdf" }), "mechanics-notes.pdf", "physics-file-upload-1"),
   );
-  assert.equal(uploadedPhysicsFile.response.status, 201, JSON.stringify(uploadedPhysicsFile.body));
+  assert.equal(uploadedPhysicsFile.response.status, 202, JSON.stringify(uploadedPhysicsFile.body));
   assert.equal(uploadedPhysicsFile.body.data.filename, "mechanics-notes.pdf");
   assert.equal(uploadedPhysicsFile.body.data.antivirusStatus, "not-scanned");
   assert.equal(uploadedPhysicsFile.body.data.signatureStatus, "verified");
@@ -614,6 +617,33 @@ try {
   assert.equal(duplicatePhysicsFile.body.data.id, physicsFileId);
   const filesAfterDuplicate = await request("/api/v1/physics/files");
   assert.equal(filesAfterDuplicate.body.meta.quota.usedFiles, 1);
+
+  const pendingPhysicsDownload = await request(`/api/v1/physics/files/${physicsFileId}/download`);
+  assert.equal(pendingPhysicsDownload.response.status, 423, JSON.stringify(pendingPhysicsDownload.body));
+  assert.equal(pendingPhysicsDownload.body.error.code, "physics_file_scan_pending");
+  const pendingPhysicsAnalysis = await request(
+    `/api/v1/physics/files/${physicsFileId}/analyses`,
+    jsonMutation("POST", {
+      domain: "physics",
+      mode: "auto",
+      taskType: "full-derivation",
+      prompt: "검사 전 파일은 분석하지 마.",
+      level: "P4",
+      context: { kind: "physics-file", refId: physicsFileId, title: "mechanics-notes.pdf" },
+    }, "physics-file-analysis-pending"),
+  );
+  assert.equal(pendingPhysicsAnalysis.response.status, 423, JSON.stringify(pendingPhysicsAnalysis.body));
+  assert.equal(pendingPhysicsAnalysis.body.error.code, "physics_file_scan_pending");
+  await run(wrangler, [
+    "d1", "execute", "fakeminjun-platform-local",
+    "--local", "--persist-to", stateDirectory,
+    "--command",
+    `UPDATE physics_files SET antivirus_status = 'clean', scanned_r2_etag = r2_etag,
+      scan_engine_version = 'local-contract', scan_database_version = 'fixture',
+      scan_database_updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+      scan_completed_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+      WHERE id = '${physicsFileId}';`,
+  ]);
 
   await run(wrangler, [
     "d1", "execute", "fakeminjun-platform-local",
@@ -709,7 +739,10 @@ try {
   const boundedLongQuery = "x".repeat(160);
   const longAnalysisSearch = await request(`/api/v1/analyses?q=${boundedLongQuery}&limit=8`);
   assert.equal(longAnalysisSearch.response.status, 200, JSON.stringify(longAnalysisSearch.body));
-  const longPhysicsSearch = await request(`/api/v1/physics/resources?q=${boundedLongQuery}&limit=8`);
+  const longPhysicsSearch = await request(
+    "/api/v1/physics/resources/search",
+    jsonMutation("POST", { query: boundedLongQuery, limit: 8 }, "physics-search-long"),
+  );
   assert.equal(longPhysicsSearch.response.status, 200, JSON.stringify(longPhysicsSearch.body));
 
   const session = await request("/api/v1/session");
@@ -763,6 +796,10 @@ try {
       INSERT INTO physics_search_usage_ledger (id, owner_id, query_hash)
       SELECT 'quota-search-' || n, id, printf('%064x', n)
       FROM users, seq WHERE external_subject = 'local-development-user';
+      WITH RECURSIVE seq(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM seq WHERE n < 20)
+      INSERT INTO physics_upload_usage_ledger (id, owner_id, idempotency_key, request_hash)
+      SELECT 'quota-upload-' || n, id, 'quota-upload-key-' || n, '${"5".repeat(64)}'
+      FROM users, seq WHERE external_subject = 'local-development-user';
       UPDATE physics_files SET object_key = 'missing/quota-test' WHERE id = '${physicsFileId}';
       WITH RECURSIVE seq(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM seq WHERE n < 20)
       INSERT INTO analysis_usage_ledger (id, owner_id, mode, idempotency_key, request_hash)
@@ -791,9 +828,27 @@ try {
   assert.equal(persistedSourceItems.response.status, 200);
   assert.equal(persistedSourceItems.body.data.some(({ providerItemId }) => providerItemId === "fixture-1"), true);
 
-  const searchQuotaExceeded = await request("/api/v1/physics/resources?q=quota-unique-query&limit=10");
+  const readOnlySearch = await request("/api/v1/physics/resources?q=quota-unique-query&limit=10");
+  assert.equal(readOnlySearch.response.status, 200, JSON.stringify(readOnlySearch.body));
+  assert.equal(readOnlySearch.body.meta.externalSearch.status, "read-only");
+
+  const searchQuotaExceeded = await request(
+    "/api/v1/physics/resources/search",
+    jsonMutation("POST", { query: "quota-unique-query", limit: 10 }, "physics-search-over-quota"),
+  );
   assert.equal(searchQuotaExceeded.response.status, 429, JSON.stringify(searchQuotaExceeded.body));
   assert.equal(searchQuotaExceeded.body.error.code, "physics_search_rate_limited");
+
+  const uploadQuotaExceeded = await request(
+    "/api/v1/physics/files",
+    physicsFileMutation(
+      new Blob([new TextEncoder().encode("%PDF-1.7\nupload operation quota\n%%EOF\n")], { type: "application/pdf" }),
+      "upload-operation-quota.pdf",
+      "physics-upload-over-quota",
+    ),
+  );
+  assert.equal(uploadQuotaExceeded.response.status, 429, JSON.stringify(uploadQuotaExceeded.body));
+  assert.equal(uploadQuotaExceeded.body.error.code, "physics_upload_rate_limited");
 
   const fileAnalysisOverQuota = await request(
     `/api/v1/physics/files/${physicsFileId}/analyses`,
@@ -815,7 +870,7 @@ try {
     `
       DELETE FROM analysis_usage_ledger WHERE id LIKE 'quota-analysis-%';
       UPDATE physics_files
-      SET object_key = 'owners/' || owner_id || '/physics/' || id || '.pdf'
+      SET object_key = 'quarantine/owners/' || owner_id || '/physics/' || id || '.pdf'
       WHERE id = '${physicsFileId}';
     `,
   ]);
@@ -844,6 +899,19 @@ try {
   const persistedPhysicsDownload = await requestText(`/api/v1/physics/files/${physicsFileId}/download`);
   assert.equal(persistedPhysicsDownload.response.status, 200);
   assert.equal(persistedPhysicsDownload.body, new TextDecoder().decode(physicsPdfBytes));
+
+  await run(wrangler, [
+    "d1", "execute", "fakeminjun-platform-local",
+    "--local", "--persist-to", stateDirectory,
+    "--command",
+    `UPDATE physics_files
+      SET object_deleted_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+      WHERE id = '${physicsFileId}' AND object_deleted_at IS NULL;`,
+  ]);
+  const filesAfterScannerRelease = await request("/api/v1/physics/files");
+  assert.deepEqual(filesAfterScannerRelease.body.data.map(({ id }) => id), [physicsFileId]);
+  assert.equal(filesAfterScannerRelease.body.meta.quota.usedFiles, 0);
+  assert.equal(filesAfterScannerRelease.body.meta.quota.usedBytes, 0);
 
   const removedPhysicsFile = await request(`/api/v1/physics/files/${physicsFileId}`, {
     method: "DELETE",
