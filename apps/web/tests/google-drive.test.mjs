@@ -104,9 +104,95 @@ test("Drive authorization-code exchange uses the fixed token endpoint and reject
   });
   assert.equal(result.scope, GOOGLE_DRIVE_FILE_SCOPE);
   assert.equal(calls[0].url, "https://oauth2.googleapis.com/token");
-  assert.equal(calls[0].options.redirect, "error");
+  assert.equal(calls[0].options.redirect, "manual");
   assert.equal(calls[0].options.body.get("grant_type"), "authorization_code");
   assert.equal(calls[0].options.body.get("code_verifier"), "v".repeat(43));
+
+  await assert.rejects(
+    () => exchangeGoogleAuthorizationCode({
+      code: "valid-code-1234",
+      verifier: "v".repeat(43),
+      clientId: "client-id",
+      clientSecret: "client-secret",
+      redirectUri: "https://app.example.test/physics/library",
+      fetchImpl: async () => new Response(null, {
+        status: 302,
+        headers: { location: "https://attacker.example/token" },
+      }),
+    }),
+    (error) => error.code === "google_oauth_redirect_rejected",
+  );
+
+  await assert.rejects(
+    () => exchangeGoogleAuthorizationCode({
+      code: "valid-code-1234",
+      verifier: "v".repeat(43),
+      clientId: "client-id",
+      clientSecret: "client-secret",
+      redirectUri: "https://app.example.test/physics/library",
+      fetchImpl: async () => ({
+        redirected: false,
+        type: "basic",
+        status: 200,
+        url: "https://attacker.example/token",
+        body: { async cancel() {} },
+        headers: new Headers(),
+      }),
+    }),
+    (error) => error.code === "google_oauth_redirect_rejected",
+  );
+
+  await assert.rejects(
+    () => exchangeGoogleAuthorizationCode({
+      code: "valid-code-1234",
+      verifier: "v".repeat(43),
+      clientId: "client-id",
+      clientSecret: "client-secret",
+      redirectUri: "https://app.example.test/physics/library",
+      fetchImpl: async () => new Response(JSON.stringify({
+        error: "invalid_client",
+        error_description: "must never be exposed",
+      }), { status: 401 }),
+    }),
+    (error) => error.code === "google_oauth_client_invalid"
+      && !error.message.includes("must never be exposed"),
+  );
+
+  await assert.rejects(
+    () => exchangeGoogleAuthorizationCode({
+      code: "valid-code-1234",
+      verifier: "v".repeat(43),
+      clientId: "client-id",
+      clientSecret: "client-secret",
+      redirectUri: "https://app.example.test/physics/library",
+      fetchImpl: async () => new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 }),
+    }),
+    (error) => error.code === "google_oauth_grant_invalid",
+  );
+
+  await assert.rejects(
+    () => exchangeGoogleAuthorizationCode({
+      code: "valid-code-1234",
+      verifier: "v".repeat(43),
+      clientId: "client-id",
+      clientSecret: "client-secret",
+      redirectUri: "https://app.example.test/physics/library",
+      fetchImpl: async () => new Response(JSON.stringify({ error: "unexpected_provider_error" }), { status: 400 }),
+    }),
+    (error) => error.code === "google_oauth_exchange_failed",
+  );
+
+  await assert.rejects(
+    () => exchangeGoogleAuthorizationCode({
+      code: "valid-code-1234",
+      verifier: "v".repeat(43),
+      clientId: "client-id",
+      clientSecret: "client-secret",
+      redirectUri: "https://app.example.test/physics/library",
+      fetchImpl: async () => new Response(JSON.stringify({ error: "constructor" }), { status: 400 }),
+    }),
+    (error) => error.code === "google_oauth_exchange_failed",
+  );
 
   await assert.rejects(
     () => exchangeGoogleAuthorizationCode({
@@ -169,8 +255,22 @@ test("Drive access refresh sends the stored refresh token only to Google's fixed
   });
   assert.equal(result.accessToken, "access-token-value-1234567890");
   assert.equal(calls[0].url, "https://oauth2.googleapis.com/token");
+  assert.equal(calls[0].options.redirect, "manual");
   assert.equal(calls[0].options.body.get("grant_type"), "refresh_token");
   assert.equal(calls[0].options.body.get("refresh_token"), "refresh-token-value-1234567890");
+
+  await assert.rejects(
+    () => refreshGoogleAccessToken({
+      refreshToken: "refresh-token-value-1234567890",
+      clientId: "client-id",
+      clientSecret: "client-secret",
+      fetchImpl: async () => new Response(null, {
+        status: 302,
+        headers: { location: "https://attacker.example/token" },
+      }),
+    }),
+    (error) => error.code === "google_oauth_redirect_rejected",
+  );
 
   await assert.rejects(
     () => refreshGoogleAccessToken({
@@ -205,9 +305,22 @@ test("Drive physics folder is app-owned and created only when the fixed property
   assert.equal(calls.length, 2);
   assert.match(calls[0].url.searchParams.get("q"), /physics-root/u);
   assert.equal(calls[0].options.headers.authorization, "Bearer access-token-value-1234567890");
+  assert.equal(calls[0].options.redirect, "manual");
+  assert.equal(calls[1].options.redirect, "manual");
   const body = JSON.parse(calls[1].options.body);
   assert.equal(body.name, "STUDIO 7321 Physics");
   assert.deepEqual(body.appProperties, { studio7321Kind: "physics-root" });
+
+  await assert.rejects(
+    () => findOrCreateGoogleDrivePhysicsFolder({
+      accessToken: "access-token-value-1234567890",
+      fetchImpl: async () => new Response(null, {
+        status: 302,
+        headers: { location: "https://attacker.example/drive" },
+      }),
+    }),
+    (error) => error.code === "google_drive_redirect_rejected",
+  );
 });
 
 test("Drive resumable PDF initiation pins metadata, folder, size, and returned Google endpoint", async () => {
@@ -228,6 +341,7 @@ test("Drive resumable PDF initiation pins metadata, folder, size, and returned G
   });
   assert.match(upload.sessionUrl, /^https:\/\/www\.googleapis\.com\/upload\/drive\/v3\/files/u);
   assert.equal(calls[0].url.searchParams.get("uploadType"), "resumable");
+  assert.equal(calls[0].options.redirect, "manual");
   assert.equal(calls[0].options.headers["x-upload-content-length"], String(400 * 1024 * 1024));
   assert.deepEqual(JSON.parse(calls[0].options.body), {
     name: "Mechanics.pdf",
@@ -238,6 +352,21 @@ test("Drive resumable PDF initiation pins metadata, folder, size, and returned G
       studio7321UploadSession: "9f165cbb-0315-4a0e-bf07-0c8c602e3da5",
     },
   });
+
+  await assert.rejects(
+    () => initiateGoogleDrivePdfUpload({
+      accessToken: "access-token-value-1234567890",
+      folderId: "folder-id-123456",
+      uploadSessionId: "9f165cbb-0315-4a0e-bf07-0c8c602e3da5",
+      name: "Mechanics.pdf",
+      byteSize: 100,
+      fetchImpl: async () => new Response(null, {
+        status: 302,
+        headers: { location: "https://attacker.example/upload" },
+      }),
+    }),
+    (error) => error.code === "google_drive_redirect_rejected",
+  );
 
   await assert.rejects(
     () => initiateGoogleDrivePdfUpload({

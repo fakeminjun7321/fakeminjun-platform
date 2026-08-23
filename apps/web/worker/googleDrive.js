@@ -24,6 +24,56 @@ export class GoogleDriveIntegrationError extends Error {
   }
 }
 
+const GOOGLE_OAUTH_PROVIDER_ERRORS = Object.freeze({
+  invalid_client: {
+    code: "google_oauth_client_invalid",
+    message: "서버의 Google 연결 비밀번호가 현재 OAuth 클라이언트와 일치하지 않습니다.",
+  },
+  invalid_grant: {
+    code: "google_oauth_grant_invalid",
+    message: "Google 연결 코드가 만료됐거나 연결 검증값이 일치하지 않습니다.",
+  },
+  redirect_uri_mismatch: {
+    code: "google_oauth_redirect_mismatch",
+    message: "Google 연결 복귀 주소가 OAuth 클라이언트 설정과 일치하지 않습니다.",
+  },
+  unauthorized_client: {
+    code: "google_oauth_client_unauthorized",
+    message: "현재 OAuth 클라이언트에서 이 Google 연결 방식을 사용할 수 없습니다.",
+  },
+  invalid_request: {
+    code: "google_oauth_request_invalid",
+    message: "Google 연결 토큰 요청 형식이 올바르지 않습니다.",
+  },
+});
+
+function googleOAuthExchangeError(body) {
+  const providerError = typeof body?.error === "string"
+    && Object.hasOwn(GOOGLE_OAUTH_PROVIDER_ERRORS, body.error)
+    ? GOOGLE_OAUTH_PROVIDER_ERRORS[body.error]
+    : null;
+  return providerError
+    ? new GoogleDriveIntegrationError(502, providerError.code, providerError.message)
+    : new GoogleDriveIntegrationError(502, "google_oauth_exchange_failed", "Google Drive 연결 토큰을 받지 못했습니다.");
+}
+
+async function rejectGoogleRedirect(response, expectedUrl, code, message) {
+  const redirected = response.redirected
+    || response.type === "opaqueredirect"
+    || (response.status >= 300 && response.status < 400);
+  let originMismatch = false;
+  if (response.url) {
+    try {
+      originMismatch = new URL(response.url).origin !== new URL(expectedUrl).origin;
+    } catch {
+      originMismatch = true;
+    }
+  }
+  if (!redirected && !originMismatch) return;
+  await response.body?.cancel?.("google redirect rejected");
+  throw new GoogleDriveIntegrationError(502, code, message);
+}
+
 function bytesToBase64Url(bytes) {
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
@@ -337,7 +387,10 @@ async function authorizedGoogleJsonRequest(url, {
   try {
     const response = await fetchImpl(url, {
       method,
-      redirect: "error",
+      // Cloudflare Workers supports manual/follow, but rejects redirect:"error"
+      // before issuing the request. Manual mode plus an explicit 3xx check keeps
+      // bearer credentials from being forwarded to another destination.
+      redirect: "manual",
       signal: controller.signal,
       headers: {
         accept: "application/json",
@@ -346,6 +399,12 @@ async function authorizedGoogleJsonRequest(url, {
       },
       body,
     });
+    await rejectGoogleRedirect(
+      response,
+      url,
+      "google_drive_redirect_rejected",
+      "Google Drive 요청이 예상하지 못한 주소로 이동해 중단했습니다.",
+    );
     if (response.status === 401 || response.status === 403) {
       await response.body?.cancel?.("reauthorization required");
       throw new GoogleDriveIntegrationError(401, "google_drive_reauthorization_required", "Google Drive 연결을 다시 승인해야 합니다.");
@@ -387,7 +446,9 @@ export async function exchangeGoogleAuthorizationCode({
   try {
     const response = await fetchImpl(GOOGLE_TOKEN_URL, {
       method: "POST",
-      redirect: "error",
+      // Never follow a redirect while the client secret or authorization code
+      // is in the request body. Cloudflare does not implement redirect:"error".
+      redirect: "manual",
       signal: controller.signal,
       headers: { accept: "application/json", "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -399,9 +460,15 @@ export async function exchangeGoogleAuthorizationCode({
         code_verifier: verifier,
       }),
     });
+    await rejectGoogleRedirect(
+      response,
+      GOOGLE_TOKEN_URL,
+      "google_oauth_redirect_rejected",
+      "Google 인증 서버가 예상하지 못한 주소로 이동해 연결을 중단했습니다.",
+    );
     const body = await readBoundedJson(response);
     if (!response.ok) {
-      throw new GoogleDriveIntegrationError(502, "google_oauth_exchange_failed", "Google Drive 연결 토큰을 받지 못했습니다.");
+      throw googleOAuthExchangeError(body);
     }
     const returnedScopes = new Set(String(body.scope ?? "").split(/\s+/u).filter(Boolean));
     if (returnedScopes.size !== 1 || !returnedScopes.has(GOOGLE_DRIVE_FILE_SCOPE)) {
@@ -437,7 +504,7 @@ export async function refreshGoogleAccessToken({
   try {
     const response = await fetchImpl(GOOGLE_TOKEN_URL, {
       method: "POST",
-      redirect: "error",
+      redirect: "manual",
       signal: controller.signal,
       headers: { accept: "application/json", "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -447,6 +514,12 @@ export async function refreshGoogleAccessToken({
         grant_type: "refresh_token",
       }),
     });
+    await rejectGoogleRedirect(
+      response,
+      GOOGLE_TOKEN_URL,
+      "google_oauth_redirect_rejected",
+      "Google 인증 서버가 예상하지 못한 주소로 이동해 연결을 중단했습니다.",
+    );
     const body = await readBoundedJson(response);
     if (!response.ok) {
       const authorizationError = ["invalid_grant", "invalid_client", "unauthorized_client"].includes(body?.error);
@@ -579,7 +652,7 @@ export async function initiateGoogleDrivePdfUpload({
   try {
     const response = await fetchImpl(uploadUrl, {
       method: "POST",
-      redirect: "error",
+      redirect: "manual",
       signal: controller.signal,
       headers: {
         accept: "application/json",
@@ -598,6 +671,12 @@ export async function initiateGoogleDrivePdfUpload({
         },
       }),
     });
+    await rejectGoogleRedirect(
+      response,
+      uploadUrl,
+      "google_drive_redirect_rejected",
+      "Google Drive 업로드 요청이 예상하지 못한 주소로 이동해 중단했습니다.",
+    );
     if (response.status === 401 || response.status === 403) {
       await response.body?.cancel?.("reauthorization required");
       throw new GoogleDriveIntegrationError(401, "google_drive_reauthorization_required", "Google Drive 연결을 다시 승인해야 합니다.");
