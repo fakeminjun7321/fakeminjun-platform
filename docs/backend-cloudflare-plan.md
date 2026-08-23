@@ -184,7 +184,7 @@ Worker와 D1에는 이 계약의 사건 목록·상세 API가 구현되어 있�
 ## 작업·수집 안전 경계
 
 - Queue는 at-least-once 전달을 전제로 작업별 idempotency key, D1 unique constraint 또는 처리 영수증을 둔다.
-- scan Queue는 최대 3회 재시도 뒤 DLQ로 보내고, DLQ 소비 결과를 D1 `error`로 남긴다. 정상 파일과 EICAR의 실제 clean/blocked 결과, 탐지 객체 삭제와 DLQ를 production 목적지에서 확인하기 전에는 Antivirus-verified로 보고하지 않는다.
+- scan Queue는 최대 3회 재시도 뒤 DLQ로 보내고, DLQ 소비 결과를 파일과 작업 D1 행의 `error`로 남기며 lease를 해제한다. production에서 실제 전달 시도 1~4, DLQ 소비, API 차단과 목적지 정리를 확인했다.
 - retry 횟수와 backoff, DLQ, 운영자 재처리, Cron 중첩 방지와 cursor 원자적 갱신을 정의한다.
 - 외부 수집기는 공급자별 HTTPS hostname allowlist만 사용하고 redirect마다 scheme과 host를 다시 검증한다. 사용자 URL을 서버가 임의 fetch하지 않으며 private·link-local·metadata endpoint 접근을 차단한다.
 - 수집 HTML은 렌더 전에 sanitize하고, 원문 텍스트는 신뢰할 수 없는 데이터로 취급한다. 원문 속 지시가 AI 도구 호출·삭제·외부 요청을 유발할 수 없게 분리한다.
@@ -223,7 +223,7 @@ preview와 production 바인딩은 자동 상속된다고 가정하지 않고 �
 - 지도에서 사건 선택 → 출처 확인
 - 현재 프론트 화면을 API client에 연결
 
-### 2. 자료·AI — scanner 저장소 구현, 운영 검증 대기
+### 2. 자료·AI — scanner 구현·운영 검증됨
 
 - PDF·이미지 R2 quarantine, scan Queue·DLQ, ClamAV Container, D1 판정·lease와 clean+ETag API 잠금 구현
 - R2 파생물, D1 메타데이터, Vectorize 근거 검색
@@ -254,9 +254,9 @@ preview와 production 바인딩은 자동 상속된다고 가정하지 않고 �
 - **Local-runtime-verified**: 임시 D1·R2에서 물리 파일 중복 제거·총량 한도·격리 중 다운로드/분석 차단, D1에 clean을 직접 주입한 뒤 다운로드, 영속성·삭제, 검색/분석 사용량 차단, 분석 기록 검색, 독립 지지 출처 2개와 위치를 요구하는 지도 승격 확인. 실제 악성코드 판정은 아님
 - **Browser-verified**: 실제 수집함 12건 표시와 안전한 원문 링크에 더해 자료 2건 선택 → 실제 OpenAI 후보 생성 → 검토 메모 저장 → 새로고침 후 유지 경로를 인앱 브라우저에서 확인. 콘솔 warning/error 0건, 390×844 브라우저 viewport 수평 overflow 없음
 - **Simulator-verified**: **Not verified / 미검증**
-- **Physical-device-verified**: 실제 macOS Chrome에서 production Access 로그인, 국제정세·물리 AI 결과 표시를 확인. 모바일 물리기기는 **Not verified / 미검증**
+- **Physical-device-verified**: 이전 production 버전은 실제 macOS Chrome에서 Access 로그인, 국제정세·물리 AI 결과 표시를 확인. 현재 배포 버전과 모바일 물리기기는 **Not verified / 미검증**
 - **Live-service-verified**: 원격 D1·Access·프론트/API Worker·DNS/TLS·OpenAI 분석 2회와 D1 완료 기록·`workers.dev` 404를 확인. 10분 Cron 배포 직후 2026-08-22 15:00 UTC 자동 실행에서 4개 stream이 모두 성공해 원격 D1에 기록됨
 - 60초 자동 동기화·탭 복귀 즉시 갱신·수동 새로고침 버튼의 production Chrome 경로와 production 후보/검토/승격 잠금: **Not verified / 미검증**
-- 로컬 R2 수명주기: **Local-runtime-verified**. production R2의 기존 scanner 도입 전 PDF 업로드/다운로드/삭제와 OpenAI 파일 분석은 **Live-service-verified**. 새 scan Queue·R2 notification·Container 경로를 증명하지는 않음
-- production 0018 migration, Queue·DLQ, R2 PutObject notification, scanner Worker/Container 배포와 정상 파일 clean·EICAR blocked+객체 삭제·retry/DLQ: **Not verified / 미검증**
-- ClamAV 검사는 EDR이나 모든 악성 행위 탐지를 대신하지 않음. 실제 업로드 악성코드 검사: **Not verified / 미검증**
+- production R2의 scan Queue·R2 notification·ClamAV Container 경로에서 정상 PDF clean·다운로드·OpenAI 파일 분석과 EICAR blocked·객체 삭제를 **Live-service-verified**함
+- production 0018 migration, Queue·DLQ, scanner Worker/Container, 전달 시도 1~4 뒤 DLQ의 file/job error·lease 해제·HTTP 423 차단과 시험 데이터 정리를 **Live-service-verified**함
+- ClamAV 검사는 EDR이나 모든 악성 행위 탐지를 대신하지 않음. signature 기반 production 경로만 **Antivirus-verified**임

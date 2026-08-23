@@ -170,7 +170,7 @@ API 응답은 기본적으로 `Cache-Control: no-store`, `X-Content-Type-Options
 
 다운로드 직전에도 `clean`과 ETag 일치를 확인하고 R2 조건부 읽기를 사용한다. 응답은 원래 MIME으로 브라우저 실행하지 않고 `application/octet-stream` 첨부로 강제한다. ClamAV clean은 알려진 signature에 대한 검사 결과일 뿐 PDF 능동 콘텐츠의 안전성이나 자료 내용의 신뢰성을 보증하지 않는다.
 
-scanner core 단위 테스트는 R2 이벤트와 ClamAV 출력 fixture만 검증한다. 로컬 backend 수명주기 테스트의 clean 상태는 D1에 직접 주입하므로 실제 ClamAV 실행이 아니다. production Queue·R2 event notification·Container와 정상 파일/EICAR/DLQ의 목적지 결과를 확인하기 전에는 **Antivirus-verified**가 아니다.
+scanner core 단위 테스트는 R2 이벤트와 ClamAV 출력 fixture만 검증한다. 로컬 backend 수명주기 테스트의 clean 상태는 D1에 직접 주입하므로 실제 ClamAV 실행이 아니다. 별도의 production 검증에서 Queue·R2 event notification·Container를 거친 정상 파일 clean, EICAR blocked와 객체 삭제, retry/DLQ의 file/job error·lease 해제, 다운로드·분석 차단과 시험 데이터 정리를 확인했다. 이 결과는 signature 기반 ClamAV 경로의 **Antivirus-verified** 증거이며 EDR이나 모든 악성 행위 탐지 증거는 아니다.
 
 외부 물리 검색은 cache miss에만 소유자별 10분 30회·하루 200회·30일 2,000회 한도를 소비한다. 만료 cache와 30일 지난 검색 원장, 90일 지난 미보관 외부 catalog 항목을 정리하고, 개인 링크 보관소는 최대 2,000개다. 개인 파일 분석은 R2 객체를 읽기 전에 원자적 분석 사용량 예약을 끝낸다.
 
@@ -195,4 +195,4 @@ scanner core 단위 테스트는 R2 이벤트와 ClamAV 출력 fixture만 검증
 - 수집 실패는 기존 성공 자료를 삭제하지 않으며 오류 코드만 기록
 - scheduled handler와 `*/10 * * * *` production Cron Trigger가 배포되어 있으며, 2026-08-22 15:00 UTC 시간창에서 4개 stream의 성공 기록을 원격 D1에서 확인함. source inbox client는 열린 동안 60초마다 읽기 API를 다시 확인하고 탭 복귀 시 즉시 동기화함
 
-production D1에는 0015·0016 migration과 새 테이블 생성까지 확인했다. APAC Standard production R2 버킷과 기존 Worker 경로에서 PDF 업로드·동일 바이트 다운로드·GPT-5.6 Luna 분석·근거 인용·기록 재조회·삭제와 시험 데이터 정리를 확인했지만, 이는 scanner 도입 전 경로의 결과다. 새 0018 scan migration, Queue·R2 event notification·ClamAV Container와 clean/EICAR/DLQ 결과는 별도 **Not verified / 미검증**이다. 이번 배포 버전의 로그인 후 Chrome UI 조작도 **Not verified / 미검증**이다.
+production D1에는 0015·0016·0018 migration과 scan 테이블을 확인했다. APAC Standard production R2, Queue·DLQ, scanner Worker와 ClamAV Container에서 정상 PDF clean·다운로드·GPT-5.6 Luna 분석·근거 인용·기록 재조회, EICAR blocked·객체 삭제, retry/DLQ의 terminal error·lease 해제·HTTP 423 차단과 시험 데이터 정리를 확인했다. 현재 배포 버전의 로그인 후 Chrome UI 조작은 **Not verified / 미검증**이다.

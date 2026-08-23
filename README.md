@@ -24,7 +24,7 @@
 - 국제정세·물리의 호출형 AI 패널은 로컬 Worker를 거쳐 OpenAI Responses API에 연결되고, 결과·사용량·요청 중복 방지 기록을 소유자별 D1에 저장
 - 일반 분석은 비용 효율적인 OpenAI 단일 모델, 정밀 분석은 OpenAI 전문 검토 2회와 최종 통합 1회로 제한
 - 분석 요청 당시 서버가 제공한 사건·출처·물리 자료·개인 파일·캡처의 근거 ID와 스냅샷을 분석 기록에 저장하고, 모델이 허용되지 않은 ID를 인용하면 실패 처리. 분석 기록은 분야·상태·검색어로 다시 열 수 있음
-- `fakeminjun.vip`는 Cloudflare Access 뒤의 프론트/API Worker, production D1, APAC Standard R2, OpenAI secret과 10분 Cron에 연결됨. 0015·0016 D1 migration과 이번 Worker/프론트 배포를 완료함
+- `fakeminjun.vip`는 Cloudflare Access 뒤의 프론트/API Worker, production D1, APAC Standard R2, OpenAI secret과 10분 Cron에 연결됨. 0015·0016·0018 D1 migration과 frontend/API/scanner 배포를 완료함
 
 ## 확정된 방향
 
@@ -46,6 +46,7 @@
 - [fakeminjun.vip 운영 배포 절차](docs/production-deployment.md)
 - [로컬 API v1 계약](docs/api-v1.md)
 - [구현·검증 기준](docs/verification-plan.md)
+- [2026-08-23 운영 보안 검증 기록](docs/security-operations-verification-2026-08-23.md)
 - [보안·공급망 정책](SECURITY.md)
 
 ## 로컬 프로토타입
@@ -81,11 +82,12 @@ Vite는 `/api`를 `127.0.0.1:8787`의 Worker로 전달한다. 로컬 Access 개�
 ## 검증 상태
 
 - **Implemented**: 기존 국제정세·물리 기능에 arXiv/Crossref 검색·캐시, 비공개 물리 파일 API/UI, 격리 Queue·ClamAV Container scanner, clean+ETag 다운로드/AI 잠금, 파일 분석, 근거 ID 인용·분석 기록 검색, 독립 근거 기반 지도 승격 경로가 저장소에 존재
-- **Unit-verified**: 기존 `npm test` 98건, Sites worker 5건에 더해 scanner core·운영 구성 집중 테스트 8건 통과. 집중 테스트는 R2 이벤트 계약과 ClamAV 출력 fixture를 검사하며 실제 Container에서 ClamAV를 실행하지 않음
+- **Unit-verified**: `npm test` 114건, 운영 배포 경계 5건, Sites worker 5건과 로컬 D1·R2 백엔드 통합 테스트 통과. 공급망 검사에서 npm 취약점 0건, registry signature 127개와 attestation 65개를 확인했고 PR #23 CI의 고정 ClamAV 이미지 취약점 검사·Worker 번들 검사도 통과함
 - **Local-runtime-verified**: 임시 D1·R2에서 migration, 물리 파일 중복 제거·총량 한도·격리 중 다운로드/분석 차단, 테스트가 D1에 주입한 clean 상태 뒤 다운로드, 재시작 영속성·삭제, 외부 검색/분석 선예약 한도, 160자 검색, 분석 기록 검색, 독립 출처 지지 근거 2개+위치 확인 후 지도 승격과 사건-출처 보존을 확인. 이 clean 주입은 실제 백신 판정이 아님
 - **Browser-verified**: 인앱 브라우저에서 실제 공식 자료 선택 → 실제 OpenAI 후보 생성 → 검토 메모 저장 → 새로고침 후 유지 경로를 확인. 콘솔 `warn`/`error`는 0건이었고 390×844 브라우저 viewport에서 수평 overflow가 없었음
 - **Simulator-verified**: 미검증 — 390×844는 데스크톱 브라우저 viewport 확인이며 모바일 시뮬레이터 실행이 아님
-- **Physical-device-verified**: 이전 production 버전은 실제 macOS Chrome에서 Access 로그인, 국제정세·물리 화면과 OpenAI 응답을 확인. 이번 배포 버전과 모바일 물리기기는 미검증
-- **Live-service-verified**: DNS·TLS·미로그인 Access 차단·D1·OpenAI·Cron, arXiv/Crossref 실제 검색 응답, production D1 0015·0016 migration을 확인. 이번 배포에서는 실제 production D1·R2 remote binding으로 71,168바이트 PDF 업로드·동일 바이트 다운로드·GPT-5.6 Luna 분석·인용 1개·근거 링크 1개·기록 재조회·삭제와 시험 데이터 정리까지 확인
-- **Not verified / 미검증**: 이번 배포 버전의 실제 Chrome 로그인 후 파일·인용/기록 UI 조작, 비허용 계정 거부, 모바일 화면, WAF·DDoS 부하 경로
-- **Antivirus-verified**: **Not verified / 미검증** — scanner 코드·Container 구성·fail-closed API는 구현됐지만 production Queue/R2 알림/Container/D1 migration 배포, 최신 signature DB를 사용한 정상 파일 clean 판정, EICAR 차단·R2 삭제·DLQ 실패 경로의 실제 목적지 결과를 아직 확인하지 않음
+- **Physical-device-verified**: 이전 production 버전은 실제 macOS Chrome에서 Access 로그인, 국제정세·물리 화면과 OpenAI 응답을 확인. 현재 frontend/API/scanner 버전의 Chrome 사용자 경로와 모바일 물리기기는 **Not verified / 미검증**
+- **Live-service-verified**: DNS·TLS·미로그인 Access 차단·D1·OpenAI·Cron, arXiv/Crossref 실제 검색·캐시 hit, production D1 0015·0016·0018 migration을 확인. production Queue/R2/ClamAV 경로에서 정상 PDF `clean`·동일 바이트 다운로드·GPT-5.6 Luna 분석·인용/기록 재조회, EICAR `blocked`·R2 삭제·다운로드/AI 차단, 전달 시도 1~4 뒤 DLQ의 `scan_retries_exhausted`·file/job `error`·lease 해제·HTTP 423 차단을 확인하고 모든 시험 데이터를 삭제함
+- **Security-control-verified**: HTTP→HTTPS 301, 미로그인 루트/API의 Access 302, 잘못된 origin의 쓰기 요청 403, 앱의 물리 외부 검색 한도 429와 시험 원장 정리를 확인. 이는 원격 WAF 규칙이나 DDoS 부하 방어 검증이 아님
+- **Not verified / 미검증**: 현재 배포 버전의 실제 Chrome 로그인 후 파일·인용/기록 UI 조작, 비허용 계정 거부, 모바일 화면, Cloudflare Access 정책 상세·WAF 규칙·비용 경보, 실제 DDoS/부하 경로
+- **Antivirus-verified**: production 정상 파일, EICAR, retry/DLQ와 목적지 D1·R2·API 결과 및 정리를 모두 확인함. 단, ClamAV signature 검사는 EDR이나 모든 악성 행위 탐지를 의미하지 않음
