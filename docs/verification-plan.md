@@ -48,10 +48,9 @@
 - **Local-runtime-verified**: 임시 D1·R2에서 파일 중복 제거·총량 한도·업로드·다운로드·재시작 후 영속성·삭제, 외부 검색/분석 한도, 160자 검색, 분석 기록 검색, 독립 지지 출처 2개와 위치를 요구하는 지도 승격 및 사건-출처 저장 확인
 - **Browser-verified**: 인앱 브라우저에서 실제 공식 자료 선택 → 실제 OpenAI 후보 생성 → 검토 메모 저장 → 새로고침 후 유지 경로를 확인. 콘솔 `warn`/`error` 0건, 390×844 브라우저 viewport 수평 overflow 없음
 - **Simulator-verified**: 미검증 — 모바일 시뮬레이터는 사용하지 않음
-- **Physical-device-verified**: 실제 macOS Chrome에서 production Access 로그인, 국제정세·물리 화면과 OpenAI 결과 표시 확인. 모바일 물리기기는 미검증
-- **Live-service-verified**: 기존 배포의 DNS·TLS·Access·D1·OpenAI·Cron을 확인했고, 이번 작업에서는 arXiv/Crossref 실제 응답, production D1 0015·0016 migration, 로컬 Worker·R2의 실제 PDF OpenAI 분석과 인용·기록 재조회를 추가로 확인
-- **Blocked / 차단됨**: production R2 계정 비활성화로 버킷 생성과 이번 API 배포 차단
-- **Not verified / 미검증**: production 파일 저장·PDF 분석·분석 인용/기록 UI, 이번 변경분 실제 Chrome 조작, 모바일, 백신 엔진
+- **Physical-device-verified**: 이전 production 버전은 실제 macOS Chrome에서 Access 로그인, 국제정세·물리 화면과 OpenAI 결과 표시를 확인. 이번 배포 버전과 모바일 물리기기는 미검증
+- **Live-service-verified**: DNS·TLS·미로그인 Access 차단·D1·OpenAI·Cron, arXiv/Crossref 실제 응답과 production D1 0015·0016 migration을 확인. 실제 production D1·R2 remote binding에서는 PDF 업로드·동일 바이트 다운로드·GPT-5.6 Luna 분석·인용/근거 저장·기록 재조회·삭제와 시험 데이터 정리까지 확인
+- **Not verified / 미검증**: 이번 배포 버전의 production Chrome 로그인 후 파일·분석 인용/기록 UI 조작, 비허용 계정, 모바일, 백신 엔진, WAF·DDoS 부하 경로
 - **Antivirus-verified**: 미검증 — 변경분 보안 검토와 npm advisory·registry signature 검사는 수행했으나 백신·EDR 엔진은 실행하지 않음
 
 ## 5. 프론트와 백엔드의 다음 연결 기준

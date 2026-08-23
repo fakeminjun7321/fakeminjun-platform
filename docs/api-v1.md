@@ -181,4 +181,4 @@ API 응답은 기본적으로 `Cache-Control: no-store`, `X-Content-Type-Options
 - 수집 실패는 기존 성공 자료를 삭제하지 않으며 오류 코드만 기록
 - scheduled handler와 `*/10 * * * *` production Cron Trigger가 배포되어 있으며, 2026-08-22 15:00 UTC 시간창에서 4개 stream의 성공 기록을 원격 D1에서 확인함. source inbox client는 열린 동안 60초마다 읽기 API를 다시 확인하고 탭 복귀 시 즉시 동기화함
 
-production D1에는 0015·0016 migration과 새 테이블 생성까지 확인했다. 다만 Cloudflare 계정 R2가 아직 비활성화되어 production 버킷·이번 Worker 배포·production 파일 분석은 **Not verified / 미검증**이다. 로컬 임시 D1·R2에서는 업로드·중복 제거·총량 한도·영속성·다운로드·삭제와 독립 근거 지도 승격을 확인했고, 지속 로컬 R2에서는 기존 OpenAI 키로 실제 PDF 분석·근거 인용·기록 재조회를 확인했다.
+production D1에는 0015·0016 migration과 새 테이블 생성까지 확인했다. APAC Standard production R2 버킷과 이번 Worker를 배포했고, 실제 production D1·R2 remote binding에서는 기존 OpenAI 키로 PDF 업로드·동일 바이트 다운로드·GPT-5.6 Luna 분석·근거 인용·기록 재조회·삭제와 시험 데이터 정리까지 확인했다. 다만 이번 배포 버전의 로그인 후 Chrome UI 조작은 **Not verified / 미검증**이다. 로컬 임시 D1·R2에서는 별도로 업로드·중복 제거·총량 한도·재시작 영속성·다운로드·삭제와 독립 근거 지도 승격을 확인했다.

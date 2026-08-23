@@ -55,8 +55,7 @@
 
 - **Implemented**: 기존 프론트/API 분리·Access·D1·OpenAI·Cron 경계와 이번 변경의 production D1 0015·0016 migration, 물리 검색·파일·분석 근거·사용량 schema
 - **Unit-verified**: 애플리케이션 테스트 98건과 운영 배포 경계 테스트 4건, Sites worker 5건 통과. 로컬 D1·R2 통합 경로와 production build 통과
-- **Live-service-verified**: 공용 DNS·TLS, 미로그인 루트/API의 Access 302 차단, HTTP→HTTPS 301, 허용 계정 로그인, 국제정세·물리 깊은 SPA 경로, 실제 OpenAI 표준 분석 2회, 원격 D1의 완료 기록 2건·총 4,036 tokens, `workers.dev` 우회 주소 404를 확인. 10분 Cron 배포 직후 2026-08-22 15:00 UTC 시간창에서 4개 공식 RSS가 모두 성공해 원격 D1에 기록됨
-- **Blocked / 차단됨**: Cloudflare 계정 R2가 비활성화되어 `fakeminjun-physics-vault` 생성과 이번 API Worker 배포가 불가능. 대시보드에서 R2 활성화 조건 확인 필요
-- **Not verified / 미검증**: 이번 프론트/API 버전의 production Chrome 경로, production R2 파일 저장·삭제와 PDF OpenAI 분석, 비허용 계정 거부, WAF·DDoS 부하 경로, 모바일 화면. 로컬 Worker·R2→실제 OpenAI PDF 분석은 별도로 확인함
+- **Live-service-verified**: 공용 DNS·TLS, 미로그인 루트/API의 Access 302 차단, HTTP→HTTPS 301, 이전 버전의 허용 계정 로그인·깊은 SPA 경로·실제 OpenAI 표준 분석, `workers.dev` 우회 주소 404와 10분 Cron 수집을 확인. 2026-08-23에는 APAC Standard `fakeminjun-physics-vault`, API version `78a1dbd1-b2df-4d47-902e-b88753f89767`, frontend version `489490dd-fb91-4197-a92b-057016430d99`를 배포하고 실제 production D1·R2 remote binding으로 71,168바이트 PDF 업로드·바이트 일치 다운로드·GPT-5.6 Luna 분석·인용/근거 저장·기록 재조회·삭제와 시험 데이터 정리를 확인함
+- **Not verified / 미검증**: 이번 배포 버전의 production Chrome 로그인 후 파일·인용/기록 UI 경로, 비허용 계정 거부, WAF·DDoS 부하 경로, 모바일 화면
 - **Simulator-verified**: **Not verified / 미검증**
 - **Physical-device-verified**: 실제 macOS Chrome에서 Access 로그인, 국제정세·물리 렌더, 실제 AI 응답 표시를 확인. 모바일 물리기기는 **Not verified / 미검증**

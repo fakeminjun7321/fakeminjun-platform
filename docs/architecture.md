@@ -136,6 +136,6 @@ AI 응답은 자유형 Markdown 한 덩어리가 아니라 다음 구조를 기�
 - 후속 추천: Workflows, Vectorize, OpenAI-only 비동기 분석 작업
 - 배포·검증됨: 분리된 production 프론트/API Worker, D1, 전체 도메인 Access, OpenAI secret, 10분 Cron 구성과 공식 RSS 4개 metadata-only 저장
 - 클라이언트 갱신 경계: 국제정세 화면이 보이는 동안 60초마다 읽기 API를 확인하고 탭 복귀 시 즉시 동기화하되, 백그라운드 탭에서는 요청하지 않음
-- 아직 미확정: 자동 원문 본문 검증 범위, production R2·Queue·Workflow 도입 시점, 공개 사용자 인증 범위. 현재 개인용 검색·AI·파일·링크 보관 상한은 Worker와 D1 원장에서 강제한다.
+- 아직 미확정: 자동 원문 본문 검증 범위, Queue·Workflow 도입 시점, 공개 사용자 인증 범위. production R2는 APAC Standard 버킷으로 도입했으며 현재 개인용 검색·AI·파일·링크 보관 상한은 Worker와 D1 원장에서 강제한다.
 
 선택 기준은 시각적 선호가 아니라 실제 데이터 수집, 캡처 업로드, 저장, 검색, 인용 검증을 가장 작은 비용으로 끝까지 실행할 수 있는지다. Firebase는 공개 회원가입·소셜 로그인·모바일 오프라인 동기화가 첫 출시의 핵심이 될 때 다시 비교한다.

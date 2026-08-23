@@ -248,5 +248,5 @@ preview와 production 바인딩은 자동 상속된다고 가정하지 않고 �
 - **Physical-device-verified**: 실제 macOS Chrome에서 production Access 로그인, 국제정세·물리 AI 결과 표시를 확인. 모바일 물리기기는 **Not verified / 미검증**
 - **Live-service-verified**: 원격 D1·Access·프론트/API Worker·DNS/TLS·OpenAI 분석 2회와 D1 완료 기록·`workers.dev` 404를 확인. 10분 Cron 배포 직후 2026-08-22 15:00 UTC 자동 실행에서 4개 stream이 모두 성공해 원격 D1에 기록됨
 - 60초 자동 동기화·탭 복귀 즉시 갱신·수동 새로고침 버튼의 production Chrome 경로와 production 후보/검토/승격 잠금: **Not verified / 미검증**
-- 로컬 R2 수명주기: **Local-runtime-verified**. production R2는 계정 비활성화로 **Blocked / 차단됨**. Queue, Workflows, Vectorize는 **Not verified / 미검증**
+- 로컬 R2 수명주기: **Local-runtime-verified**. production R2는 APAC Standard 버킷 생성·Worker 바인딩·실제 PDF 업로드/다운로드/삭제와 OpenAI 파일 분석까지 **Live-service-verified**. Queue, Workflows, Vectorize는 **Not verified / 미검증**
 - 실제 업로드 악성코드 검사와 antivirus/EDR: **Not verified / 미검증**

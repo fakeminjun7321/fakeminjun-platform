@@ -24,7 +24,7 @@
 - 국제정세·물리의 호출형 AI 패널은 로컬 Worker를 거쳐 OpenAI Responses API에 연결되고, 결과·사용량·요청 중복 방지 기록을 소유자별 D1에 저장
 - 일반 분석은 비용 효율적인 OpenAI 단일 모델, 정밀 분석은 OpenAI 전문 검토 2회와 최종 통합 1회로 제한
 - 분석 요청 당시 서버가 제공한 사건·출처·물리 자료·개인 파일·캡처의 근거 ID와 스냅샷을 분석 기록에 저장하고, 모델이 허용되지 않은 ID를 인용하면 실패 처리. 분석 기록은 분야·상태·검색어로 다시 열 수 있음
-- `fakeminjun.vip`는 Cloudflare Access 뒤의 프론트/API Worker, production D1, OpenAI secret과 10분 Cron에 연결됨. 0015·0016 D1 migration은 적용됐지만 Cloudflare 계정의 R2 활성화와 이번 Worker/프론트 배포는 아직 차단 상태
+- `fakeminjun.vip`는 Cloudflare Access 뒤의 프론트/API Worker, production D1, APAC Standard R2, OpenAI secret과 10분 Cron에 연결됨. 0015·0016 D1 migration과 이번 Worker/프론트 배포를 완료함
 
 ## 확정된 방향
 
@@ -85,7 +85,7 @@ Vite는 `/api`를 `127.0.0.1:8787`의 Worker로 전달한다. 로컬 Access 개�
 - **Local-runtime-verified**: 임시 D1·R2에서 migration, 물리 파일 중복 제거·총량 한도·업로드→다운로드→재시작 후 영속성→삭제, 외부 검색/분석 선예약 한도, 160자 검색, 분석 기록 검색, 독립 출처 지지 근거 2개+위치 확인 후 지도 승격과 사건-출처 보존을 확인
 - **Browser-verified**: 인앱 브라우저에서 실제 공식 자료 선택 → 실제 OpenAI 후보 생성 → 검토 메모 저장 → 새로고침 후 유지 경로를 확인. 콘솔 `warn`/`error`는 0건이었고 390×844 브라우저 viewport에서 수평 overflow가 없었음
 - **Simulator-verified**: 미검증 — 390×844는 데스크톱 브라우저 viewport 확인이며 모바일 시뮬레이터 실행이 아님
-- **Physical-device-verified**: 실제 macOS Chrome에서 production Access 로그인, 국제정세·물리 화면과 OpenAI 응답을 확인. 모바일 물리기기는 미검증
-- **Live-service-verified**: 기존 배포의 DNS·TLS·Access·D1·OpenAI·Cron을 확인했고, 이번 작업에서는 arXiv/Crossref 실제 검색 응답, production D1 0015·0016 migration, 로컬 Worker·R2에서 기존 키를 사용한 실제 PDF OpenAI 분석 1회와 근거 인용·기록 재조회를 추가로 확인
-- **Not verified / 미검증**: 이번 프론트/API Worker 배포와 production R2 파일 경로. Cloudflare 계정에서 R2가 비활성화되어 버킷 생성이 차단됨. production PDF 분석·인용/기록 UI, 이번 변경분의 실제 Chrome 조작, 모바일 화면도 미검증
+- **Physical-device-verified**: 이전 production 버전은 실제 macOS Chrome에서 Access 로그인, 국제정세·물리 화면과 OpenAI 응답을 확인. 이번 배포 버전과 모바일 물리기기는 미검증
+- **Live-service-verified**: DNS·TLS·미로그인 Access 차단·D1·OpenAI·Cron, arXiv/Crossref 실제 검색 응답, production D1 0015·0016 migration을 확인. 이번 배포에서는 실제 production D1·R2 remote binding으로 71,168바이트 PDF 업로드·동일 바이트 다운로드·GPT-5.6 Luna 분석·인용 1개·근거 링크 1개·기록 재조회·삭제와 시험 데이터 정리까지 확인
+- **Not verified / 미검증**: 이번 배포 버전의 실제 Chrome 로그인 후 파일·인용/기록 UI 조작, 비허용 계정 거부, 모바일 화면, WAF·DDoS 부하 경로
 - **Antivirus-verified**: 미검증 — 백신·EDR 엔진은 실행하지 못했으며, 변경분 보안 검토와 npm advisory·registry signature 검사만 수행

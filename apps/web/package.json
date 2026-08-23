@@ -18,7 +18,8 @@
     "test:sites": "node --test tests/sites-worker.test.mjs",
     "test:backend": "npm run build && node scripts/test-backend.mjs",
     "deploy:frontend": "npm run build && wrangler deploy --config wrangler.frontend.production.jsonc",
-    "deploy:api": "node scripts/validate-production-config.mjs && wrangler deploy --config wrangler.api.production.jsonc"
+    "deploy:api": "node scripts/validate-production-config.mjs && wrangler deploy --config wrangler.api.production.jsonc",
+    "verify:live:physics": "node scripts/verify-live-physics.mjs"
   },
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
