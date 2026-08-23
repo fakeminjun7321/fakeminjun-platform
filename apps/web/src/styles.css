@@ -1614,6 +1614,61 @@ p { margin-block: 0; }
 .resource-load-more { display: block; margin: 14px auto 0; }
 .resource-type-filter { margin: 12px 0; }
 
+.google-drive-vault {
+  margin-top: 30px;
+  border-top: 1px solid #2b4038;
+  border-bottom: 1px solid #2b4038;
+}
+.google-drive-vault > header {
+  min-height: 82px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 14px 0;
+}
+.google-drive-vault > header > div:first-child { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 4px 10px; }
+.google-drive-vault > header h3 { color: #e3e9e5; font-family: var(--display); font-size: 20px; font-weight: 600; }
+.google-drive-vault > header p { grid-column: 1 / -1; color: var(--muted); font-size: 11px; }
+.google-drive-vault > header > div:last-child { display: flex; align-items: center; gap: 14px; }
+.google-drive-vault > header > div:last-child > span { color: var(--faint); font-family: var(--mono); font-size: 10px; }
+.google-drive-vault > header button {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 13px;
+  border: 1px solid #476a5d;
+  color: #e3ece8;
+  background: #14231e;
+  font-size: 11px;
+}
+.google-drive-vault > header button:hover:not(:disabled) { background: #1b3028; }
+.google-drive-vault > header button:disabled { cursor: not-allowed; opacity: 0.5; }
+.drive-connection-state {
+  padding: 3px 7px;
+  color: #b7a878;
+  background: #242013;
+  font-family: var(--mono);
+  font-size: 8px;
+  letter-spacing: 0.06em;
+}
+.drive-connection-state.is-connected { color: #9dcdb5; background: #12261d; }
+.drive-access-boundary {
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding: 9px 12px;
+  border-top: 1px solid #30423b;
+  border-bottom: 1px solid #26372f;
+  color: #a7b9b1;
+  background: #0d1613;
+}
+.drive-access-boundary p { font-size: 10px; line-height: 1.55; }
+.drive-access-boundary strong { margin-right: 7px; color: #cce1d7; font-size: 10px; }
+
 .physics-file-vault {
   margin-top: 34px;
   border-top: 1px solid var(--line-strong);
@@ -2450,7 +2505,9 @@ mjx-container {
   .resource-provider { text-align: right; }
   .resource-actions { position: static; grid-column: 1 / -1; display: flex; justify-content: flex-end; padding-top: 9px !important; opacity: 1; }
   .finder-query input { font-size: 14px; }
+  .google-drive-vault > header,
   .physics-file-vault > header { align-items: flex-start; flex-direction: column; }
+  .google-drive-vault > header > div:last-child,
   .physics-file-vault > header > div:last-child { width: 100%; justify-content: space-between; }
   .physics-file-list > article { grid-template-columns: 28px minmax(0, 1fr); }
   .physics-file-actions { grid-column: 1 / -1; justify-content: flex-end; }
@@ -2784,6 +2841,11 @@ body {
 .resource-load-more { min-height: 38px; border: 0 !important; border-radius: 8px; }
 .resource-query-status { border-color: var(--line); font-size: 12px; line-height: 1.65; }
 .physics-file-vault { margin-top: 26px; border-color: var(--line); }
+.google-drive-vault { margin-top: 22px; border-color: #263a33; }
+.google-drive-vault > header { min-height: 72px; }
+.google-drive-vault > header h3 { font-size: 18px; }
+.google-drive-vault > header button { border: 0; border-radius: 8px; }
+.drive-access-boundary { border-color: #2d3d36; border-radius: 8px; }
 .physics-file-vault > header { min-height: 70px; }
 .physics-file-vault > header h3 { font-size: 19px; }
 .physics-file-vault > header button { border: 0; border-radius: 8px; }

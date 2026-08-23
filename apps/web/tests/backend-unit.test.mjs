@@ -273,6 +273,7 @@ test("candidate mutations reject an untrusted origin before identity, D1, or Ope
     ["/api/v1/event-candidates/candidate-1/promote", "POST"],
     ["/api/v1/visual-analyses", "POST"],
     ["/api/v1/physics/library", "POST"],
+    ["/api/v1/integrations/google-drive/connect", "POST"],
   ]) {
     const response = await worker.fetch(new Request(`https://example.test${pathname}`, {
       method,

@@ -31,6 +31,16 @@ scanner core fixture, mock Queue, 직접 주입한 D1 `clean` 상태는 실제 �
 
 2026-08-23 production 검증에서 위 조건을 모두 실행했다. 정상 PDF는 ClamAV 1.5.4와 signature DB 28101로 `clean` 판정 뒤 동일 바이트 다운로드·OpenAI 분석이 성공했고, EICAR PDF는 `blocked`·R2 삭제·다운로드/분석 423을 확인했다. 별도 고장 주입에서는 전달 시도 1~4 뒤 DLQ가 파일과 작업을 `scan_retries_exhausted`로 닫고 lease를 해제했으며 다운로드·분석 423과 D1/R2 시험 데이터 삭제까지 확인했다. 따라서 이 배포의 signature 기반 파일 경로는 **Antivirus-verified**지만 EDR 또는 모든 악성 행위에 대한 보증은 아니다.
 
+## Google Drive 물리 원본
+
+- Google OAuth는 앱이 만들었거나 사용자가 명시적으로 선택한 파일만 다루는 `drive.file` 범위만 요청한다. Drive 전체 읽기·쓰기 범위는 요청하지 않는다.
+- OAuth `state`는 원문 대신 SHA-256만 D1에 저장하고 10분 뒤 만료하며 한 번 사용하면 삭제한다. PKCE verifier와 refresh token은 32바이트 운영 secret에서 만든 AES-GCM 키로 암호화한다.
+- Google client secret, 토큰 암호화 키, refresh token과 access token은 브라우저 응답·Git·로그에 노출하지 않는다. access token은 D1에 영구 저장하지 않는다.
+- D1 카탈로그는 Access 소유자, Drive file ID, 이름·크기·수정 시각, 인덱스 상태와 파일별 AI 허용 여부만 저장한다. PDF 원본은 Google Drive가 소유한다.
+- Drive 파일을 OpenAI로 전송하는 기능은 파일별 명시적 허용, 필요한 페이지/장만 추출, 크기·페이지·시간·비용 제한을 갖춘 별도 단계 전까지 닫아 둔다.
+- `/Users/minjun/공부자료/Physics`와 중첩 Obsidian vault는 별도 사용자 승인 전 수정·이동·병합·대량 업로드하지 않는다.
+- OAuth 단위 테스트나 로컬 미설정 상태 화면은 실제 Google 계정 연결·Drive 파일 접근·폴더 생성·업로드를 증명하지 않는다.
+
 ## 보고 경계
 
 - `npm audit`과 registry signature는 알려진 패키지 위험 신호를 확인할 뿐 백신·EDR 검사가 아니다.

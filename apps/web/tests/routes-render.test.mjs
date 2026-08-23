@@ -64,6 +64,12 @@ for (const [pathname, expectedText] of ROUTE_EXPECTATIONS) {
       assert.ok(physicsHtml.includes(PHYSICS_PROFILE_SUMMARY));
       assert.ok(!physicsHtml.includes("물리 설명 수준"));
       assert.ok(!physicsHtml.includes('class="level-selector"'));
+      if (pathname === "/physics/library") {
+        assert.ok(physicsHtml.includes("Google Drive 원본 보관소"));
+        assert.ok(physicsHtml.includes("Drive 전체 권한을 요청하지 않습니다."));
+        assert.ok(physicsHtml.includes("Google Drive 연결"));
+        assert.ok(!physicsHtml.includes("Google Drive 연결됨"));
+      }
     } else {
       assert.ok(html.includes(expectedText));
     }

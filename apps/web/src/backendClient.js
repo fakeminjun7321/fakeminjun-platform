@@ -247,6 +247,18 @@ export function createBackendClient({ baseUrl = "", fetchImpl = globalThis.fetch
       signal,
     }),
     session: () => request("/api/v1/session"),
+    getGoogleDriveStatus: ({ signal } = {}) => request(
+      "/api/v1/integrations/google-drive",
+      { signal },
+    ),
+    startGoogleDriveConnection: ({ signal } = {}) => request(
+      "/api/v1/integrations/google-drive/connect",
+      { method: "POST", body: JSON.stringify({}), signal },
+    ),
+    listPhysicsDriveItems: ({ signal } = {}) => request(
+      "/api/v1/physics/drive/items",
+      { signal, returnEnvelope: true },
+    ),
     listNotes: ({ subjectType, subjectId }) => request(
       `/api/v1/notes?${new URLSearchParams({ subjectType, subjectId: String(subjectId) })}`,
     ),

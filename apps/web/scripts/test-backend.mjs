@@ -46,8 +46,8 @@ function run(command, args) {
   });
 }
 
-async function startWorker({ externalSearchEnabled = false, openAIKey = "disabled" } = {}) {
-  const child = spawn(wrangler, [
+async function startWorker({ externalSearchEnabled = false, openAIKey = "disabled", googleOAuthConfigured = false } = {}) {
+  const args = [
     "dev",
     "--local",
     "--ip", "127.0.0.1",
@@ -56,7 +56,15 @@ async function startWorker({ externalSearchEnabled = false, openAIKey = "disable
     "--var", "EVENT_EDITOR_SUBJECT:local-development-user",
     "--var", `OPENAI_API_KEY:${openAIKey}`,
     "--var", `PHYSICS_EXTERNAL_SEARCH_ENABLED:${externalSearchEnabled ? "true" : "false"}`,
-  ], {
+  ];
+  if (googleOAuthConfigured) {
+    args.push(
+      "--var", "GOOGLE_OAUTH_CLIENT_ID:local-test-client.apps.googleusercontent.com",
+      "--var", "GOOGLE_OAUTH_CLIENT_SECRET:local-test-secret",
+      "--var", `GOOGLE_TOKEN_ENCRYPTION_KEY:${Buffer.alloc(32, 17).toString("base64url")}`,
+    );
+  }
+  const child = spawn(wrangler, args, {
     cwd: root,
     env: { ...process.env, CI: "1", NO_COLOR: "1" },
     stdio: ["ignore", "pipe", "pipe"],
@@ -290,6 +298,29 @@ try {
   ]);
 
   workerProcess = await startWorker();
+
+  const driveStatus = await request("/api/v1/integrations/google-drive");
+  assert.equal(driveStatus.response.status, 200, JSON.stringify(driveStatus.body));
+  assert.deepEqual({
+    configured: driveStatus.body.data.configured,
+    connected: driveStatus.body.data.connected,
+    permission: driveStatus.body.data.permission,
+    catalogItemCount: driveStatus.body.data.catalogItemCount,
+  }, {
+    configured: false,
+    connected: false,
+    permission: "selected-files-only",
+    catalogItemCount: 0,
+  });
+  const driveItems = await request("/api/v1/physics/drive/items");
+  assert.equal(driveItems.response.status, 200, JSON.stringify(driveItems.body));
+  assert.deepEqual(driveItems.body.data, []);
+  const unconfiguredDriveConnect = await request(
+    "/api/v1/integrations/google-drive/connect",
+    jsonMutation("POST", {}),
+  );
+  assert.equal(unconfiguredDriveConnect.response.status, 503);
+  assert.equal(unconfiguredDriveConnect.body.error.code, "google_drive_unconfigured");
 
   const events = await request("/api/v1/events?bbox=110,0,140,45&layers=korea-core&limit=10");
   assert.equal(events.response.status, 200);
@@ -839,7 +870,33 @@ try {
   workerProcess = await startWorker({
     externalSearchEnabled: true,
     openAIKey: "test-openai-key-not-sent-because-quota",
+    googleOAuthConfigured: true,
   });
+
+  const configuredDriveStatus = await request("/api/v1/integrations/google-drive");
+  assert.equal(configuredDriveStatus.response.status, 200, JSON.stringify(configuredDriveStatus.body));
+  assert.equal(configuredDriveStatus.body.data.configured, true);
+  assert.equal(configuredDriveStatus.body.data.connected, false);
+  const driveConnect = await request(
+    "/api/v1/integrations/google-drive/connect",
+    jsonMutation("POST", {}),
+  );
+  assert.equal(driveConnect.response.status, 201, JSON.stringify(driveConnect.body));
+  const driveAuthorizationUrl = new URL(driveConnect.body.data.authorizationUrl);
+  assert.equal(driveAuthorizationUrl.origin, "https://accounts.google.com");
+  const driveState = driveAuthorizationUrl.searchParams.get("state");
+  const cancelledDriveCallback = await fetch(
+    `${apiOrigin}/api/v1/integrations/google-drive/callback?${new URLSearchParams({ state: driveState, error: "access_denied" })}`,
+    { redirect: "manual" },
+  );
+  assert.equal(cancelledDriveCallback.status, 303);
+  assert.equal(cancelledDriveCallback.headers.get("location"), `${frontendOrigin}/physics/library?drive=cancelled`);
+  const replayedDriveCallback = await fetch(
+    `${apiOrigin}/api/v1/integrations/google-drive/callback?${new URLSearchParams({ state: driveState, error: "access_denied" })}`,
+    { redirect: "manual" },
+  );
+  assert.equal(replayedDriveCallback.status, 400);
+  assert.equal((await replayedDriveCallback.json()).error.code, "google_oauth_state_expired");
 
   const persistedNotes = await request("/api/v1/notes?subjectType=event&subjectId=1");
   assert.equal(persistedNotes.response.status, 200);

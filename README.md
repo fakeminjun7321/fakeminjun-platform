@@ -14,6 +14,7 @@
 - MapLibre 기반 확대·이동·URL 상태·레이어가 있는 세계 상황지도, 3개 핵심 신호, 별도 오늘 브리핑·이슈 추적 화면, 사건 선택, 호출형 AI 패널의 화면 흐름 구현
 - 물리: 7개 학습 모드, 혼합형 자료 보관소, KPhO→IPhO 준비 화면과 개인 올림피아드 학습 프로필 구현. 난이도 선택 UI 없이 P3 숙달·P4 완성 단계의 수학적 구조·이론·유도 중심 분석으로 고정
 - 물리 자료 찾기는 고정 MIT OpenCourseWare·KPhO·IPhO 링크와 arXiv 프리프린트·Crossref DOI 메타데이터 검색을 함께 사용하고, 외부 결과를 24시간 캐시하며 검증 전 메타데이터로 표시. 외부 검색은 소유자별 10분 30회·하루 200회·30일 2,000회로 제한하고 만료 cache·오래된 미보관 자료를 정리함
+- 대용량 물리 PDF는 Google Drive를 원본 보관소로 쓰는 선택 파일 전용 OAuth·암호화 토큰·소유자별 D1 카탈로그 기반을 구현. 실제 Google 계정 연결, 폴더 선택, 파일 등록·업로드는 아직 수행하지 않음
 - PDF·PNG·JPEG 개인 파일은 소유자별 비공개 R2 격리 키와 D1 메타데이터로 보관한다. R2 `PutObject` 이벤트를 단일 동시성 Queue로 받아 digest 고정 ClamAV Container에서 비동기 검사하고, `clean` 판정과 동일 R2 ETag가 함께 확인된 파일만 다운로드·OpenAI 분석을 허용하는 fail-closed 경로가 저장소에 구현되어 있다. 파일은 최대 250개·총 2GiB이며 링크 보관소는 2,000개로 제한한다
 - 상황지도와 분석용 데모 신호는 모두 `NON-LIVE DEMO`이며 실제 수집 자료나 사건 후보와 분리함
 - 공식 RSS 4개(외교부·통일부·백악관·UN 평화·안보)의 제목·기관·원문 링크·시각을 로컬 D1에 수집하고 오늘 브리핑의 별도 `실제 수집 · 미검증` 영역에 표시
@@ -45,6 +46,7 @@
 - [Cloudflare-first 백엔드 구현 계획](docs/backend-cloudflare-plan.md)
 - [fakeminjun.vip 운영 배포 절차](docs/production-deployment.md)
 - [로컬 API v1 계약](docs/api-v1.md)
+- [Google Drive 물리 자료 연동](docs/google-drive-integration.md)
 - [구현·검증 기준](docs/verification-plan.md)
 - [2026-08-23 운영 보안 검증 기록](docs/security-operations-verification-2026-08-23.md)
 - [보안·공급망 정책](SECURITY.md)

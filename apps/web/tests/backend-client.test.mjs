@@ -467,6 +467,34 @@ test("backend client searches, saves, removes, and exports private physics resou
   assert.deepEqual(JSON.parse(calls[5].options.body), { query: "역학", limit: 20 });
 });
 
+test("backend client reads Drive status and starts the server-owned OAuth flow", async () => {
+  const calls = [];
+  const client = createBackendClient({
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      if (url.endsWith("/connect")) {
+        return jsonResponse({ data: { authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth?state=safe" } }, { status: 201 });
+      }
+      if (url.endsWith("/items")) return jsonResponse({ data: [], meta: { sourceOfTruth: "google-drive" } });
+      return jsonResponse({ data: { configured: true, connected: false, permission: "selected-files-only" } });
+    },
+  });
+  const controller = new AbortController();
+  const status = await client.getGoogleDriveStatus({ signal: controller.signal });
+  const connection = await client.startGoogleDriveConnection({ signal: controller.signal });
+  const items = await client.listPhysicsDriveItems({ signal: controller.signal });
+
+  assert.equal(status.permission, "selected-files-only");
+  assert.match(connection.authorizationUrl, /^https:\/\/accounts\.google\.com\//);
+  assert.equal(items.meta.sourceOfTruth, "google-drive");
+  assert.equal(calls[0].url, "/api/v1/integrations/google-drive");
+  assert.equal(calls[0].options.signal, controller.signal);
+  assert.equal(calls[1].url, "/api/v1/integrations/google-drive/connect");
+  assert.equal(calls[1].options.method, "POST");
+  assert.deepEqual(JSON.parse(calls[1].options.body), {});
+  assert.equal(calls[2].url, "/api/v1/physics/drive/items");
+});
+
 test("visual analysis uses browser multipart boundaries instead of forcing JSON content type", async () => {
   const calls = [];
   const client = createBackendClient({
