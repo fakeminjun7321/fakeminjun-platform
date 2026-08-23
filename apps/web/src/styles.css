@@ -941,6 +941,43 @@ p { margin-block: 0; }
 .source-empty.is-error,
 .candidate-empty.is-error { color: #d1a5a5; }
 
+.source-intro {
+  max-width: 580px;
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.source-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.source-filter-bar::-webkit-scrollbar { display: none; }
+.source-filter-bar button {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 11px;
+  cursor: pointer;
+}
+.source-filter-bar button:hover { color: var(--text-soft); background: var(--surface-1); }
+.source-filter-bar button.is-active { color: #d7e7e6; background: #173033; }
+.source-filter-bar strong { color: inherit; font-family: var(--mono); font-size: 9px; font-weight: 500; }
+
 .source-item-list {
   margin: 0;
   padding: 0;
@@ -1015,6 +1052,24 @@ p { margin-block: 0; }
 .source-item-list a:hover { color: #b8d8d6; }
 .source-item-list a svg { color: var(--cyan); }
 .source-title-without-link { color: var(--text-soft); font-size: 14px; font-weight: 500; line-height: 1.55; }
+
+.source-load-more {
+  width: 100%;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  color: #b8c8ca;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.source-load-more:hover { color: var(--text); background: rgba(255, 255, 255, 0.018); }
+.source-load-more span { color: var(--muted); font-family: var(--mono); font-size: 9px; font-weight: 500; }
 
 .source-selection-command {
   min-height: 74px;
@@ -2906,6 +2961,9 @@ body {
   .source-header-actions { align-items: stretch; flex-direction: row; justify-content: space-between; }
   .source-boundary,
   .candidate-boundary { max-width: none; justify-content: flex-start; }
+  .source-header-actions { flex-wrap: wrap; }
+  .source-sync-state { flex: 1 1 170px; }
+  .source-refresh { flex: 0 0 auto; }
   .issues-workspace { display: block; }
   .issue-index { padding: 22px 14px 14px; }
   .issue-dossier { padding: 26px 16px 46px; }

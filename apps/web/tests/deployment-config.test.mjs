@@ -35,6 +35,19 @@ test("production static assets carry restrictive security headers without blocki
   assert.match(headersFile, /X-Robots-Tag: noindex, nofollow/);
 });
 
+test("map engine assets stay off non-map routes and use the available OpenFreeMap font stack", async () => {
+  const mainSource = await readFile(new URL("../src/main.jsx", import.meta.url), "utf8");
+  const mapSource = await readFile(new URL("../src/WorldSituationMap.jsx", import.meta.url), "utf8");
+  const viteConfig = await readFile(new URL("../vite.config.mjs", import.meta.url), "utf8");
+  const indexHtml = await readFile(new URL("../index.html", import.meta.url), "utf8");
+
+  assert.doesNotMatch(mainSource, /maplibre-gl\/dist\/maplibre-gl\.css/);
+  assert.match(mapSource, /import "maplibre-gl\/dist\/maplibre-gl\.css"/);
+  assert.match(mapSource, /const MAP_FONT_STACK = \["Noto Sans Regular"\]/);
+  assert.match(viteConfig, /return "map-engine"/);
+  assert.match(indexHtml, /rel="preconnect" href="https:\/\/tiles\.openfreemap\.org"/);
+});
+
 test("production API is isolated to the API route without static assets", async () => {
   const config = await readConfig("wrangler.api.production.jsonc");
 

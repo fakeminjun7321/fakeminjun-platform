@@ -17,14 +17,35 @@ function latestTimestamp(values, fallback = null) {
   return latest ?? fallback;
 }
 
+function sourceItemTimestamp(item) {
+  const parsed = new Date(item?.publishedAt ?? item?.lastSeenAt ?? item?.collectedAt ?? 0).getTime();
+  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+}
+
+function sourceItemIdentity(item, index) {
+  if (item?.id !== undefined && item?.id !== null) return `id:${item.id}`;
+  const sourceKey = item?.source?.key ?? "unknown-source";
+  return `${sourceKey}:${item?.providerItemId ?? item?.originalUrl ?? index}`;
+}
+
 export function aggregateSourceGroups(groups, checkedAt = new Date().toISOString()) {
   const statuses = groups.map(({ meta }) => meta?.collectionStatus ?? "unknown");
   const collectionStatus = COLLECTION_STATUS_PRIORITY.find((status) => statuses.includes(status))
     ?? (statuses.length > 0 && statuses.every((status) => status === "current") ? "current" : "unknown");
   const streams = groups.flatMap(({ meta }) => Array.isArray(meta?.streams) ? meta.streams : []);
 
+  const uniqueItems = new Map();
+  groups.flatMap(({ data }) => Array.isArray(data) ? data : []).forEach((item, index) => {
+    const identity = sourceItemIdentity(item, index);
+    const current = uniqueItems.get(identity);
+    if (!current || sourceItemTimestamp(item) > sourceItemTimestamp(current)) uniqueItems.set(identity, item);
+  });
+  const items = [...uniqueItems.values()].sort((left, right) => (
+    sourceItemTimestamp(right) - sourceItemTimestamp(left)
+  ));
+
   return {
-    items: groups.flatMap(({ data }) => Array.isArray(data) ? data : []),
+    items,
     collectionStatus,
     checkedAt: latestTimestamp(groups.map(({ meta }) => meta?.generatedAt), checkedAt),
     lastCollectedAt: latestTimestamp(streams.map(({ lastSuccessAt }) => lastSuccessAt)),

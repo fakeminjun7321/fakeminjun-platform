@@ -73,6 +73,7 @@ for (const [pathname, expectedText] of ROUTE_EXPECTATIONS) {
     }
     if (pathname === "/international/briefing") {
       assert.ok(html.includes("공식 자료 · 검증 전"));
+      assert.ok(html.includes("공식 업데이트"));
     } else {
       assert.ok(html.includes("개인 공간"));
     }
@@ -85,7 +86,7 @@ for (const [pathname, expectedText] of ROUTE_EXPECTATIONS) {
       assert.ok(html.includes("자료 묶음 후보"));
       assert.ok(html.includes("검증 전"));
       assert.ok(html.includes("지도 반영 전"));
-      assert.ok(html.includes("공식 출처 새로고침"));
+      assert.ok(html.includes("새 소식 확인"));
       assert.ok(html.includes("사건 후보 만들기"));
       assert.ok(html.includes("60초마다 확인"));
       assert.ok(html.includes("첫 동기화 대기"));

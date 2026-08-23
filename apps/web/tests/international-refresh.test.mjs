@@ -12,10 +12,10 @@ test("international refresh intervals keep browser reads lighter than source col
   assert.equal(SOURCE_INGESTION_CADENCE_MINUTES, 10);
 });
 
-test("source groups preserve all lanes and report the newest successful collection", () => {
+test("source groups preserve all lanes, remove duplicates, and order newest first", () => {
   const result = aggregateSourceGroups([
     {
-      data: [{ id: 1, lane: "korea-core" }],
+      data: [{ id: 1, lane: "korea-core", publishedAt: "2026-08-22T13:00:00.000Z" }],
       meta: {
         collectionStatus: "current",
         generatedAt: "2026-08-22T14:00:00.000Z",
@@ -23,7 +23,10 @@ test("source groups preserve all lanes and report the newest successful collecti
       },
     },
     {
-      data: [{ id: 2, lane: "us-impact" }],
+      data: [
+        { id: 2, lane: "us-impact", publishedAt: "2026-08-22T13:30:00.000Z" },
+        { id: 1, lane: "korea-core", publishedAt: "2026-08-22T13:00:00.000Z" },
+      ],
       meta: {
         collectionStatus: "current",
         generatedAt: "2026-08-22T14:00:01.000Z",
@@ -32,7 +35,7 @@ test("source groups preserve all lanes and report the newest successful collecti
     },
   ], "2026-08-22T14:00:02.000Z");
 
-  assert.deepEqual(result.items.map(({ id }) => id), [1, 2]);
+  assert.deepEqual(result.items.map(({ id }) => id), [2, 1]);
   assert.equal(result.collectionStatus, "current");
   assert.equal(result.checkedAt, "2026-08-22T14:00:01.000Z");
   assert.equal(result.lastCollectedAt, "2026-08-22T13:59:00.000Z");

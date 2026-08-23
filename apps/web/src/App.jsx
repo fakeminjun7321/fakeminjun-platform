@@ -249,10 +249,21 @@ function TodaySignalsPanel({ events, selectedId, onSelect, onOpenBriefing }) {
 }
 
 const SOURCE_LANE_LABELS = {
-  "korea-core": "한국 공식",
-  "us-impact": "미국 공식",
-  "rapid-change": "국제안보 관측",
+  "korea-core": "한국",
+  "us-impact": "미국",
+  "rapid-change": "국제안보",
 };
+
+const SOURCE_FILTERS = [
+  { id: "all", label: "전체" },
+  { id: "korea-core", label: "한국" },
+  { id: "us-impact", label: "미국" },
+  { id: "rapid-change", label: "국제안보" },
+];
+
+const SOURCE_INITIAL_VISIBLE = 18;
+const SOURCE_VISIBLE_STEP = 18;
+const SOURCE_FETCH_PER_LANE = 20;
 
 function briefingDateLabel() {
   return new Intl.DateTimeFormat("ko-KR", {
@@ -298,19 +309,36 @@ function SourceInbox({
   onCancelCreate,
   onRunIngestion,
 }) {
+  const [laneFilter, setLaneFilter] = useState("all");
+  const [visibleLimit, setVisibleLimit] = useState(SOURCE_INITIAL_VISIBLE);
   const selectedCount = selectedIds.size;
   const selectionReady = selectedCount >= 2 && selectedCount <= 8;
   const resolved = ["ready", "refreshing"].includes(state.status);
+  const filteredItems = laneFilter === "all"
+    ? state.items
+    : state.items.filter(({ lane }) => lane === laneFilter);
+  const visibleItems = filteredItems.slice(0, visibleLimit);
+  const hiddenCount = Math.max(0, filteredItems.length - visibleItems.length);
+  const laneCounts = Object.fromEntries(SOURCE_FILTERS.map(({ id }) => [
+    id,
+    id === "all" ? state.items.length : state.items.filter(({ lane }) => lane === id).length,
+  ]));
   const syncLabel = state.status === "refreshing"
     ? "최신 자료 확인 중"
     : state.checkedAt ? `마지막 확인 ${eventTimeLabel(state.checkedAt)} KST` : "첫 동기화 대기";
+
+  function changeLaneFilter(nextFilter) {
+    setLaneFilter(nextFilter);
+    setVisibleLimit(SOURCE_INITIAL_VISIBLE);
+  }
 
   return (
     <section className="source-inbox" aria-labelledby="source-inbox-title">
       <header>
         <div>
-          <p className="system-kicker">공식 출처</p>
-          <h3 id="source-inbox-title">공식 출처 수집함</h3>
+          <p className="system-kicker">공식 기관 발표</p>
+          <h3 id="source-inbox-title">공식 업데이트</h3>
+          <p className="source-intro">공식 기관이 공개한 최신 발표입니다. 사건으로 검증되거나 지도에 배치된 자료는 아닙니다.</p>
         </div>
         <div className="source-header-actions">
           <div className={`source-sync-state is-${state.status}`} role="status" aria-live="polite">
@@ -319,10 +347,10 @@ function SourceInbox({
             <strong>{syncLabel}</strong>
           </div>
           <div className="source-boundary" aria-label="자료 상태">
-            <span>실제 수집</span><span>미검증 자료</span><span>사건·지도 미반영</span>
+            <span>공식 원문</span><span>사건 검증 전</span>
           </div>
           <button className="source-refresh" type="button" disabled={ingestionState.status === "submitting"} onClick={onRunIngestion}>
-            {ingestionState.status === "submitting" ? "수집 중…" : "공식 출처 새로고침"}
+            {ingestionState.status === "submitting" ? "확인 중…" : "새 소식 확인"}
           </button>
         </div>
       </header>
@@ -341,8 +369,22 @@ function SourceInbox({
         <p className="source-empty">아직 저장된 공식 출처 자료가 없습니다. 수집 실행 후 이곳에 표시됩니다.</p>
       )}
       {state.items.length > 0 && (
-        <ol className="source-item-list">
-          {state.items.map((item) => {
+        <>
+          <nav className="source-filter-bar" aria-label="공식 업데이트 분야">
+            {SOURCE_FILTERS.map(({ id, label }) => (
+              <button
+                className={laneFilter === id ? "is-active" : ""}
+                type="button"
+                key={id}
+                aria-pressed={laneFilter === id}
+                onClick={() => changeLaneFilter(id)}
+              >
+                <span>{label}</span><strong>{laneCounts[id]}</strong>
+              </button>
+            ))}
+          </nav>
+          <ol className="source-item-list">
+          {visibleItems.map((item) => {
             const selected = selectedIds.has(item.id);
             const sourceUrl = safeExternalUrl(item.originalUrl);
             return (
@@ -372,7 +414,13 @@ function SourceInbox({
               </li>
             );
           })}
-        </ol>
+          </ol>
+          {hiddenCount > 0 ? (
+            <button className="source-load-more" type="button" onClick={() => setVisibleLimit((current) => current + SOURCE_VISIBLE_STEP)}>
+              업데이트 더 보기 <span>{hiddenCount}건 남음</span>
+            </button>
+          ) : null}
+        </>
       )}
       <footer className="source-selection-command" aria-busy={createState.status === "submitting"}>
         <div>
@@ -585,7 +633,7 @@ function BriefingPage({
           <h2>오늘 브리핑</h2>
           <p>한국을 중심으로 미국의 영향과 급격한 변화를 분리해 읽습니다.</p>
         </div>
-        <span className="workspace-count">데모 신호 {events.length}개</span>
+        <span className="workspace-count">공식 업데이트 {sourceState.items.length}건 · 분석용 데모 {events.length}개</span>
       </header>
       <SourceInbox
         state={sourceState}
@@ -872,9 +920,9 @@ export function App() {
       status: current.status === "idle" ? "loading" : "refreshing",
     }));
     const sourceRequest = Promise.all([
-      backendClient.listSourceItems({ lanes: ["korea-core"], limit: 4, signal: controller.signal }),
-      backendClient.listSourceItems({ lanes: ["us-impact"], limit: 4, signal: controller.signal }),
-      backendClient.listSourceItems({ lanes: ["rapid-change"], limit: 4, signal: controller.signal }),
+      backendClient.listSourceItems({ lanes: ["korea-core"], limit: SOURCE_FETCH_PER_LANE, signal: controller.signal }),
+      backendClient.listSourceItems({ lanes: ["us-impact"], limit: SOURCE_FETCH_PER_LANE, signal: controller.signal }),
+      backendClient.listSourceItems({ lanes: ["rapid-change"], limit: SOURCE_FETCH_PER_LANE, signal: controller.signal }),
     ]);
 
     void sourceRequest
