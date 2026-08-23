@@ -40,7 +40,7 @@ function run(command, args) {
   });
 }
 
-async function startWorker() {
+async function startWorker({ externalSearchEnabled = false, openAIKey = "disabled" } = {}) {
   const child = spawn(wrangler, [
     "dev",
     "--local",
@@ -48,7 +48,8 @@ async function startWorker() {
     "--port", String(port),
     "--persist-to", stateDirectory,
     "--var", "EVENT_EDITOR_SUBJECT:local-development-user",
-    "--var", "OPENAI_API_KEY:disabled",
+    "--var", `OPENAI_API_KEY:${openAIKey}`,
+    "--var", `PHYSICS_EXTERNAL_SEARCH_ENABLED:${externalSearchEnabled ? "true" : "false"}`,
   ], {
     cwd: root,
     env: { ...process.env, CI: "1", NO_COLOR: "1" },
@@ -114,6 +115,16 @@ function visualMutation(metadata, image, idempotencyKey, { duplicateMetadata = f
   body.append("metadata", JSON.stringify(metadata));
   if (duplicateMetadata) body.append("metadata", JSON.stringify(metadata));
   body.append("image", image);
+  return {
+    method: "POST",
+    headers: { origin: frontendOrigin, "idempotency-key": idempotencyKey },
+    body,
+  };
+}
+
+function physicsFileMutation(file, filename, idempotencyKey) {
+  const body = new FormData();
+  body.append("file", file, filename);
   return {
     method: "POST",
     headers: { origin: frontendOrigin, "idempotency-key": idempotencyKey },
@@ -380,19 +391,21 @@ try {
   assert.equal(supportingEvidence.response.status, 201, JSON.stringify(supportingEvidence.body));
   assert.equal(supportingEvidence.body.data.readiness.ready, false);
 
-  const contextEvidence = await request(
+  const secondSupportingEvidence = await request(
     "/api/v1/event-candidates/candidate-local/evidence-reviews",
     jsonMutation("POST", {
       sourceItemId: evidenceSnapshots[1].sourceItemId,
-      relationship: "context",
+      relationship: "supports",
       locatorType: "url",
       locatorValue: evidenceSnapshots[1].originalUrl,
+      excerpt: "독립된 두 번째 공식 출처에서 확인한 지지 근거",
       candidateHash: "a".repeat(64),
     }, "candidate-evidence-2"),
   );
-  assert.equal(contextEvidence.response.status, 201, JSON.stringify(contextEvidence.body));
-  assert.equal(contextEvidence.body.data.readiness.counts.reviewedEvidence, 2);
-  assert.equal(contextEvidence.body.data.readiness.reason, "location-confirmation-required");
+  assert.equal(secondSupportingEvidence.response.status, 201, JSON.stringify(secondSupportingEvidence.body));
+  assert.equal(secondSupportingEvidence.body.data.readiness.counts.reviewedEvidence, 2);
+  assert.equal(secondSupportingEvidence.body.data.readiness.counts.independentSupportingSources, 2);
+  assert.equal(secondSupportingEvidence.body.data.readiness.reason, "location-confirmation-required");
 
   const locatedCandidate = await request(
     "/api/v1/event-candidates/candidate-local/location",
@@ -414,6 +427,7 @@ try {
     candidateReviewed: true,
     evidenceComplete: true,
     supportingEvidence: true,
+    independentSources: true,
     locationConfirmed: true,
     laneResolved: true,
   });
@@ -464,10 +478,10 @@ try {
       "/api/v1/event-candidates/candidate-race/evidence-reviews",
       jsonMutation("POST", {
         sourceItemId: snapshot.sourceItemId,
-        relationship: index === 0 ? "supports" : "context",
+        relationship: "supports",
         locatorType: "url",
         locatorValue: snapshot.originalUrl,
-        excerpt: index === 0 ? "동시 승격 무결성 테스트에서 확인한 지지 근거" : undefined,
+        excerpt: `동시 승격 무결성 테스트에서 확인한 독립 근거 ${index + 1}`,
         candidateHash: raceHash,
       }, `candidate-race-evidence-${index + 1}`),
     );
@@ -528,7 +542,7 @@ try {
   assert.equal(promotedEvent.body.data.sources.length, 2);
   assert.deepEqual(
     promotedEvent.body.data.sources.map(({ relationship }) => relationship).sort(),
-    ["context", "supports"],
+    ["supports", "supports"],
   );
 
   const eventsAfterPromotion = await request("/api/v1/events?limit=100");
@@ -575,6 +589,75 @@ try {
   assert.match(physicsExport.body, /MIT 8\.01SC Classical Mechanics/);
   assert.match(physicsExport.body, /역학 유도 순서를 정리한다/);
 
+  const physicsPdfBytes = new TextEncoder().encode("%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n%%EOF\n");
+  const uploadedPhysicsFile = await request(
+    "/api/v1/physics/files",
+    physicsFileMutation(new Blob([physicsPdfBytes], { type: "application/pdf" }), "mechanics-notes.pdf", "physics-file-upload-1"),
+  );
+  assert.equal(uploadedPhysicsFile.response.status, 201, JSON.stringify(uploadedPhysicsFile.body));
+  assert.equal(uploadedPhysicsFile.body.data.filename, "mechanics-notes.pdf");
+  assert.equal(uploadedPhysicsFile.body.data.antivirusStatus, "not-scanned");
+  assert.equal(uploadedPhysicsFile.body.data.signatureStatus, "verified");
+  const physicsFileId = uploadedPhysicsFile.body.data.id;
+
+  const physicsFiles = await request("/api/v1/physics/files");
+  assert.equal(physicsFiles.response.status, 200, JSON.stringify(physicsFiles.body));
+  assert.deepEqual(physicsFiles.body.data.map(({ id }) => id), [physicsFileId]);
+  assert.equal(physicsFiles.body.meta.quota.usedFiles, 1);
+  assert.equal(physicsFiles.body.meta.quota.usedBytes, physicsPdfBytes.byteLength);
+
+  const duplicatePhysicsFile = await request(
+    "/api/v1/physics/files",
+    physicsFileMutation(new Blob([physicsPdfBytes], { type: "application/pdf" }), "mechanics-notes-copy.pdf", "physics-file-upload-duplicate"),
+  );
+  assert.equal(duplicatePhysicsFile.response.status, 200, JSON.stringify(duplicatePhysicsFile.body));
+  assert.equal(duplicatePhysicsFile.body.data.id, physicsFileId);
+  const filesAfterDuplicate = await request("/api/v1/physics/files");
+  assert.equal(filesAfterDuplicate.body.meta.quota.usedFiles, 1);
+
+  await run(wrangler, [
+    "d1", "execute", "fakeminjun-platform-local",
+    "--local", "--persist-to", stateDirectory,
+    "--command",
+    "UPDATE physics_storage_usage SET file_count = 250 WHERE owner_id = (SELECT owner_id FROM physics_files LIMIT 1);",
+  ]);
+  const storageQuotaExceeded = await request(
+    "/api/v1/physics/files",
+    physicsFileMutation(
+      new Blob([new TextEncoder().encode("%PDF-1.7\nquota fixture\n%%EOF\n")], { type: "application/pdf" }),
+      "quota-fixture.pdf",
+      "physics-file-storage-quota",
+    ),
+  );
+  assert.equal(storageQuotaExceeded.response.status, 429, JSON.stringify(storageQuotaExceeded.body));
+  assert.equal(storageQuotaExceeded.body.error.code, "physics_storage_quota_exceeded");
+  await run(wrangler, [
+    "d1", "execute", "fakeminjun-platform-local",
+    "--local", "--persist-to", stateDirectory,
+    "--command",
+    "UPDATE physics_storage_usage SET file_count = (SELECT COUNT(*) FROM physics_files WHERE owner_id = physics_storage_usage.owner_id), byte_size = (SELECT COALESCE(SUM(byte_size), 0) FROM physics_files WHERE owner_id = physics_storage_usage.owner_id);",
+  ]);
+
+  const downloadedPhysicsFile = await requestText(`/api/v1/physics/files/${physicsFileId}/download`);
+  assert.equal(downloadedPhysicsFile.response.status, 200);
+  assert.equal(downloadedPhysicsFile.response.headers.get("content-type"), "application/octet-stream");
+  assert.match(downloadedPhysicsFile.response.headers.get("content-disposition"), /mechanics-notes\.pdf/);
+  assert.equal(downloadedPhysicsFile.body, new TextDecoder().decode(physicsPdfBytes));
+
+  const fileAnalysisWithoutProvider = await request(
+    `/api/v1/physics/files/${physicsFileId}/analyses`,
+    jsonMutation("POST", {
+      domain: "physics",
+      mode: "auto",
+      taskType: "full-derivation",
+      prompt: "문서의 핵심 식을 페이지 근거와 함께 설명해줘.",
+      level: "P4",
+      context: { kind: "physics-file", refId: physicsFileId, title: "mechanics-notes.pdf" },
+    }, "physics-file-analysis-no-provider"),
+  );
+  assert.equal(fileAnalysisWithoutProvider.response.status, 503);
+  assert.equal(fileAnalysisWithoutProvider.body.error.code, "ai_unavailable");
+
   const visualMetadata = {
     domain: "physics",
     mode: "auto",
@@ -620,6 +703,15 @@ try {
   assert.equal(recoveredAnalysis.body.data.steps.length, 3);
   assert.equal(recoveredAnalysis.body.data.steps.every(({ status, errorCode }) => status === "failed" && errorCode === "analysis_stale"), true);
 
+  const analysisHistory = await request("/api/v1/analyses?domain=physics&status=failed&q=fixture&limit=8");
+  assert.equal(analysisHistory.response.status, 200);
+  assert.deepEqual(analysisHistory.body.data.map(({ id }) => id), ["aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"]);
+  const boundedLongQuery = "x".repeat(160);
+  const longAnalysisSearch = await request(`/api/v1/analyses?q=${boundedLongQuery}&limit=8`);
+  assert.equal(longAnalysisSearch.response.status, 200, JSON.stringify(longAnalysisSearch.body));
+  const longPhysicsSearch = await request(`/api/v1/physics/resources?q=${boundedLongQuery}&limit=8`);
+  assert.equal(longPhysicsSearch.response.status, 200, JSON.stringify(longPhysicsSearch.body));
+
   const session = await request("/api/v1/session");
   assert.equal(session.response.status, 200);
   assert.equal(session.body.data.authenticated, true);
@@ -662,9 +754,26 @@ try {
     "d1", "execute", "fakeminjun-platform-local",
     "--local", "--persist-to", stateDirectory,
     "--command",
-    "INSERT INTO users (external_subject, email) VALUES ('other-test-user', 'other@fakeminjun.invalid'); INSERT INTO notes (id, owner_id, subject_type, subject_id, body) SELECT 'other-user-note', id, 'event', '1', '다른 사용자의 비공개 노트' FROM users WHERE external_subject = 'other-test-user';",
+    `
+      INSERT INTO users (external_subject, email) VALUES ('other-test-user', 'other@fakeminjun.invalid');
+      INSERT INTO notes (id, owner_id, subject_type, subject_id, body)
+      SELECT 'other-user-note', id, 'event', '1', '다른 사용자의 비공개 노트'
+      FROM users WHERE external_subject = 'other-test-user';
+      WITH RECURSIVE seq(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM seq WHERE n < 30)
+      INSERT INTO physics_search_usage_ledger (id, owner_id, query_hash)
+      SELECT 'quota-search-' || n, id, printf('%064x', n)
+      FROM users, seq WHERE external_subject = 'local-development-user';
+      UPDATE physics_files SET object_key = 'missing/quota-test' WHERE id = '${physicsFileId}';
+      WITH RECURSIVE seq(n) AS (SELECT 1 UNION ALL SELECT n + 1 FROM seq WHERE n < 20)
+      INSERT INTO analysis_usage_ledger (id, owner_id, mode, idempotency_key, request_hash)
+      SELECT 'quota-analysis-' || n, owner_id, 'standard', 'quota-analysis-key-' || n, '${"8".repeat(64)}'
+      FROM physics_files, seq WHERE physics_files.id = '${physicsFileId}';
+    `,
   ]);
-  workerProcess = await startWorker();
+  workerProcess = await startWorker({
+    externalSearchEnabled: true,
+    openAIKey: "test-openai-key-not-sent-because-quota",
+  });
 
   const persistedNotes = await request("/api/v1/notes?subjectType=event&subjectId=1");
   assert.equal(persistedNotes.response.status, 200);
@@ -681,6 +790,35 @@ try {
   const persistedSourceItems = await request("/api/v1/source-items?limit=10");
   assert.equal(persistedSourceItems.response.status, 200);
   assert.equal(persistedSourceItems.body.data.some(({ providerItemId }) => providerItemId === "fixture-1"), true);
+
+  const searchQuotaExceeded = await request("/api/v1/physics/resources?q=quota-unique-query&limit=10");
+  assert.equal(searchQuotaExceeded.response.status, 429, JSON.stringify(searchQuotaExceeded.body));
+  assert.equal(searchQuotaExceeded.body.error.code, "physics_search_rate_limited");
+
+  const fileAnalysisOverQuota = await request(
+    `/api/v1/physics/files/${physicsFileId}/analyses`,
+    jsonMutation("POST", {
+      domain: "physics",
+      mode: "auto",
+      taskType: "full-derivation",
+      prompt: "사용량 한도를 넘으면 저장소를 읽기 전에 차단해줘.",
+      level: "P4",
+      context: { kind: "physics-file", refId: physicsFileId, title: "mechanics-notes.pdf" },
+    }, "physics-file-analysis-over-quota"),
+  );
+  assert.equal(fileAnalysisOverQuota.response.status, 429, JSON.stringify(fileAnalysisOverQuota.body));
+  assert.equal(fileAnalysisOverQuota.body.error.code, "analysis_rate_limited");
+  await run(wrangler, [
+    "d1", "execute", "fakeminjun-platform-local",
+    "--local", "--persist-to", stateDirectory,
+    "--command",
+    `
+      DELETE FROM analysis_usage_ledger WHERE id LIKE 'quota-analysis-%';
+      UPDATE physics_files
+      SET object_key = 'owners/' || owner_id || '/physics/' || id || '.pdf'
+      WHERE id = '${physicsFileId}';
+    `,
+  ]);
 
   const persistedCandidates = await request("/api/v1/event-candidates?limit=10");
   assert.equal(persistedCandidates.response.status, 200);
@@ -700,6 +838,22 @@ try {
   assert.equal(persistedPhysicsLibrary.body.data[0].personalNote, "역학 유도 순서를 정리한다.");
   assert.deepEqual(persistedPhysicsLibrary.body.data[0].tags, ["역학", "IPhO"]);
 
+  const persistedPhysicsFiles = await request("/api/v1/physics/files");
+  assert.equal(persistedPhysicsFiles.response.status, 200);
+  assert.deepEqual(persistedPhysicsFiles.body.data.map(({ id }) => id), [physicsFileId]);
+  const persistedPhysicsDownload = await requestText(`/api/v1/physics/files/${physicsFileId}/download`);
+  assert.equal(persistedPhysicsDownload.response.status, 200);
+  assert.equal(persistedPhysicsDownload.body, new TextDecoder().decode(physicsPdfBytes));
+
+  const removedPhysicsFile = await request(`/api/v1/physics/files/${physicsFileId}`, {
+    method: "DELETE",
+    headers: { origin: frontendOrigin },
+  });
+  assert.equal(removedPhysicsFile.response.status, 204);
+  const physicsFilesAfterDelete = await request("/api/v1/physics/files");
+  assert.equal(physicsFilesAfterDelete.body.meta.quota.usedFiles, 0);
+  assert.equal(physicsFilesAfterDelete.body.meta.quota.usedBytes, 0);
+
   const removedPhysics = await request("/api/v1/physics/library/mit-801", {
     method: "DELETE",
     headers: { origin: frontendOrigin },
@@ -712,7 +866,7 @@ try {
   });
   assert.equal(removed.response.status, 204);
 
-  console.log("Backend integration passed: D1 migrations, unverified candidate evidence/location promotion with event-source persistence, physics catalog/library/Markdown export, owner isolation, persistence, optimistic locking, levels, and deletion.");
+  console.log("Backend integration passed: D1 migrations, independent-evidence map promotion, physics catalog/library/private R2 file persistence, analysis history, owner isolation, optimistic locking, and deletion.");
 } finally {
   await stopWorker(workerProcess);
   await rm(stateDirectory, { recursive: true, force: true });

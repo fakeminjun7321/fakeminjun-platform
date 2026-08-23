@@ -1,6 +1,6 @@
 # 구현·검증 기준
 
-작성일: 2026-08-22
+작성일: 2026-08-23
 
 화면이 보이는 것과 기능이 실제로 작동하는 것을 구분한다. 목업 데이터, 활성화된 버튼, 생성된 AI 문구만으로 외부 API·업로드·저장·검색·인용 기능이 작동한다고 판단하지 않는다.
 
@@ -43,14 +43,15 @@
 
 ## 4. 현재 상태
 
-- **Implemented**: 제품 문서, 국제정세·물리 프론트엔드, Worker BFF, D1 schema/seed, 사건·수집함·노트·수준·AI 분석·사건 후보·검토 API와 프론트 API client. 메타데이터 후보의 지도 승격은 fail-closed
-- **Unit-verified**: `npm test` 88건, `npm run test:sites` 5건, 운영 배포 경계 4건 통과
-- **Local-runtime-verified**: 실제 로컬 Wrangler와 임시 D1로 migration, HTTP 사건·수집함 조회, Access 개발 신원, 수준·노트 저장과 사용자 격리, 2~8개 불변 메타데이터 스냅샷 후보, 검토 메모 재조회, 지도 승격 차단을 확인
+- **Implemented**: 기존 범위에 arXiv/Crossref, 비공개 물리 파일, 파일 분석, 근거 ID 인용·분석 기록 검색, 독립 근거 지도 승격 추가
+- **Unit-verified**: `npm test` 98건, `npm run test:sites` 5건, 운영 배포 경계 4건 통과
+- **Local-runtime-verified**: 임시 D1·R2에서 파일 중복 제거·총량 한도·업로드·다운로드·재시작 후 영속성·삭제, 외부 검색/분석 한도, 160자 검색, 분석 기록 검색, 독립 지지 출처 2개와 위치를 요구하는 지도 승격 및 사건-출처 저장 확인
 - **Browser-verified**: 인앱 브라우저에서 실제 공식 자료 선택 → 실제 OpenAI 후보 생성 → 검토 메모 저장 → 새로고침 후 유지 경로를 확인. 콘솔 `warn`/`error` 0건, 390×844 브라우저 viewport 수평 overflow 없음
 - **Simulator-verified**: 미검증 — 모바일 시뮬레이터는 사용하지 않음
 - **Physical-device-verified**: 실제 macOS Chrome에서 production Access 로그인, 국제정세·물리 화면과 OpenAI 결과 표시 확인. 모바일 물리기기는 미검증
-- **Live-service-verified**: 원격 Cloudflare DNS·TLS·Access·프론트/API Worker·D1·OpenAI 국제정세/물리 표준 분석 2회·`workers.dev` 404를 확인. 10분 Cron 배포 직후 2026-08-22 15:00 UTC 자동 실행에서 4개 공식 RSS가 모두 성공해 원격 D1에 기록됨
-- **Not verified / 미검증**: 60초 자동 동기화와 탭 복귀 즉시 갱신의 production Chrome 경로, 수동 새로고침 버튼, production 수준·노트·후보/검토 경로, 파일 저장소, 인증 후 정적 CSP/HSTS 응답
+- **Live-service-verified**: 기존 배포의 DNS·TLS·Access·D1·OpenAI·Cron을 확인했고, 이번 작업에서는 arXiv/Crossref 실제 응답, production D1 0015·0016 migration, 로컬 Worker·R2의 실제 PDF OpenAI 분석과 인용·기록 재조회를 추가로 확인
+- **Blocked / 차단됨**: production R2 계정 비활성화로 버킷 생성과 이번 API 배포 차단
+- **Not verified / 미검증**: production 파일 저장·PDF 분석·분석 인용/기록 UI, 이번 변경분 실제 Chrome 조작, 모바일, 백신 엔진
 - **Antivirus-verified**: 미검증 — 변경분 보안 검토와 npm advisory·registry signature 검사는 수행했으나 백신·EDR 엔진은 실행하지 않음
 
 ## 5. 프론트와 백엔드의 다음 연결 기준
@@ -61,7 +62,7 @@
 - 상황지도 사건 목록·상세를 D1 API에서 읽되 `non-live-demo` 상태를 그대로 표시하는지 확인
 - 노트·수준 설정을 화면에서 저장한 뒤 새로고침하고 다시 표시되는지 확인
 - production Access에서 미인증·다른 사용자·로그아웃 경로가 실제로 차단되는지 확인
-- 보관소의 `자료 추가`가 R2 경로 구현 전에는 저장 완료처럼 오해되지 않는지 확인
+- 보관소가 `백신 검사 미연결`을 명시하고, production R2가 없을 때 저장 성공처럼 보이지 않는지 확인
 - 공개 자료 링크가 실제 공식 목적지를 열고, 깨진 링크나 비공식 재배포 자료가 섞이지 않았는지 확인
 - 신규 화면의 콘솔 오류와 키보드 포커스 경로 확인
 - 메타데이터 사건 후보는 검증된 사건이 아니다. 원문·독립 근거·확인 위치 검증과 지도 사건 승격, R2 업로드 영속성, 캡처·OCR는 각각 별도 세로 조각으로 구현·검증

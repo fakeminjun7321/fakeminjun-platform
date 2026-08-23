@@ -30,4 +30,8 @@ assert.notEqual(
   "Create the production D1 database and replace the placeholder database_id before deployment",
 );
 
+const physicsFiles = api.r2_buckets?.find((binding) => binding.binding === "PHYSICS_FILES");
+assert.ok(physicsFiles, "Production private physics file R2 binding is missing");
+assert.equal(physicsFiles.bucket_name, "fakeminjun-physics-vault");
+
 console.log("Production deployment config is safe to use.");

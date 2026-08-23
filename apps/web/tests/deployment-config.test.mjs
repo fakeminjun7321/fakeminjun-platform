@@ -53,6 +53,10 @@ test("production API is isolated to the API route without static assets", async 
   const database = config.d1_databases?.find((binding) => binding.binding === "DB");
   assert.equal(database?.database_name, "fakeminjun-platform-prod");
   assert.match(database?.database_id ?? "", /^[0-9a-f-]{36}$/i);
+  assert.deepEqual(config.r2_buckets, [{
+    binding: "PHYSICS_FILES",
+    bucket_name: "fakeminjun-physics-vault",
+  }]);
 });
 
 test("frontend guard never serves the SPA shell for a missing API route", async () => {

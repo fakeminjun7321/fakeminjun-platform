@@ -12,6 +12,12 @@
       "migrations_dir": "migrations"
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "PHYSICS_FILES",
+      "bucket_name": "fakeminjun-physics-vault-local"
+    }
+  ],
   "vars": {
     "APP_ENV": "local",
     "APP_ORIGIN": "http://127.0.0.1:5173",

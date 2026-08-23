@@ -1,9 +1,13 @@
 import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowRight,
   Brain,
   Camera,
+  ClockCounterClockwise,
   MapTrifold,
+  MagnifyingGlass,
   PaperPlaneTilt,
+  Quotes,
   Selection,
   Trash,
   X,
@@ -98,6 +102,7 @@ function AgentRunPanel({ analysis, requestedMode, requestState }) {
 function AnalysisResult({ analysis }) {
   const result = analysis.result;
   if (!result) return null;
+  const evidenceById = new Map((analysis.evidence ?? []).map((item) => [item.evidenceId, item]));
   return (
     <article className="analysis-result" aria-labelledby="analysis-result-title">
       <header>
@@ -124,6 +129,20 @@ function AnalysisResult({ analysis }) {
       <section className="analysis-boundary">
         <strong>모델이 밝힌 근거 범위 · 자동 검증 전</strong><p>{result.sourceBoundary}</p>
       </section>
+      {result.citations?.length ? (
+        <section className="analysis-citations" aria-label="서버가 ID를 검증한 분석 근거">
+          <strong><Quotes size={16} /> 근거 ID 검증</strong>
+          <ol>{result.citations.map((citation, index) => {
+            const evidence = evidenceById.get(citation.evidenceId);
+            const locator = evidence?.snapshot?.locator;
+            const content = <><b>{citation.claim}</b><span>{citation.locator} · {citation.support}</span><small>{citation.evidenceId}</small></>;
+            return <li key={`${citation.evidenceId}-${index}`}>{typeof locator === "string" && locator.startsWith("https://")
+              ? <a href={locator} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">{content}</a>
+              : <div>{content}</div>}</li>;
+          })}</ol>
+          <p>서버는 근거 ID가 실제 요청 묶음에 있었는지 확인합니다. 인용 문장 자체의 진실성은 별도 검토 대상입니다.</p>
+        </section>
+      ) : null}
       {result.uncertainties?.length ? (
         <section className="analysis-list"><strong>불확실성</strong><ul>{result.uncertainties.map((item) => <li key={item}>{item}</li>)}</ul></section>
       ) : null}
@@ -175,13 +194,50 @@ export function AiDrawer({ analysisContext, onClose }) {
   const [captureOpen, setCaptureOpen] = useState(false);
   const [capture, setCapture] = useState(null);
   const [captureUrl, setCaptureUrl] = useState("");
+  const [historyQuery, setHistoryQuery] = useState("");
+  const [historyState, setHistoryState] = useState({ status: "loading", items: [], message: "분석 기록을 불러오는 중" });
   const drawerRef = useRef(null);
   const closeButtonRef = useRef(null);
   const requestRef = useRef(null);
+  const historyRef = useRef(null);
 
   useEffect(() => { closeButtonRef.current?.focus(); }, []);
   useEffect(() => () => requestRef.current?.abort(), []);
+  useEffect(() => () => historyRef.current?.abort(), []);
   useEffect(() => () => { if (captureUrl) URL.revokeObjectURL(captureUrl); }, [captureUrl]);
+
+  async function loadHistory(query = "") {
+    const controller = new AbortController();
+    historyRef.current?.abort();
+    historyRef.current = controller;
+    setHistoryState((current) => ({ ...current, status: "loading", message: "분석 기록을 불러오는 중" }));
+    try {
+      const response = await backendClient.listAnalyses({ domain: analysisContext.domain, query, limit: 8, signal: controller.signal });
+      setHistoryState({ status: "ready", items: response.data ?? [], message: "" });
+    } catch (error) {
+      if (error?.name !== "AbortError") setHistoryState((current) => ({ ...current, status: "error", message: error?.message ?? "분석 기록을 불러오지 못했습니다." }));
+    } finally {
+      if (historyRef.current === controller) historyRef.current = null;
+    }
+  }
+
+  useEffect(() => { void loadHistory(); }, [analysisContext.domain]);
+
+  async function openHistoryItem(item) {
+    const controller = new AbortController();
+    historyRef.current?.abort();
+    historyRef.current = controller;
+    try {
+      const loaded = await backendClient.getAnalysis(item.id, { signal: controller.signal });
+      setAnalysis(loaded);
+      setRequestState(loaded.status === "completed" ? "success" : loaded.status === "failed" ? "error" : "submitting");
+      setNotice("저장된 분석 기록을 열었습니다.");
+    } catch (error) {
+      if (error?.name !== "AbortError") setNotice(error?.message ?? "분석 기록을 열지 못했습니다.");
+    } finally {
+      if (historyRef.current === controller) historyRef.current = null;
+    }
+  }
 
   function handleKeyDown(eventObject) {
     if (eventObject.key === "Escape") {
@@ -255,6 +311,13 @@ export function AiDrawer({ analysisContext, onClose }) {
           { metadata: payload, image: capture.file },
           { signal: controller.signal, idempotencyKey: attempt.idempotencyKey },
         );
+      } else if (analysisContext.contextKind === "physics-file" && analysisContext.contextId) {
+        attempt = await getAnalysisAttempt(payload);
+        clearAttempt = clearAnalysisAttempt;
+        created = await backendClient.createPhysicsFileAnalysis(analysisContext.contextId, payload, {
+          signal: controller.signal,
+          idempotencyKey: attempt.idempotencyKey,
+        });
       } else {
         attempt = await getAnalysisAttempt(payload);
         clearAttempt = clearAnalysisAttempt;
@@ -275,6 +338,7 @@ export function AiDrawer({ analysisContext, onClose }) {
       setAnalysis(completed);
       setRequestState("success");
       setNotice(capture ? "캡처 기반 분석이 완료되었습니다. 이미지 해석도 자동 검증된 사실은 아닙니다." : "분석이 완료되었습니다.");
+      void loadHistory(historyQuery.trim());
     } catch (error) {
       if (error?.name === "AbortError") return;
       if (attempt && shouldClearAnalysisAttempt(error, { hasCreatedAnalysis: Boolean(createdAnalysisId) })) {
@@ -330,6 +394,19 @@ export function AiDrawer({ analysisContext, onClose }) {
           ))}
         </div>
         <AgentRunPanel {...activity} />
+        <details className="analysis-history">
+          <summary><ClockCounterClockwise size={16} /> 저장된 분석 기록 <span>{historyState.items.length}</span></summary>
+          <form onSubmit={(eventObject) => { eventObject.preventDefault(); void loadHistory(historyQuery.trim()); }}>
+            <label><MagnifyingGlass size={15} /><span className="sr-only">분석 기록 검색</span><input value={historyQuery} onChange={(eventObject) => setHistoryQuery(eventObject.target.value)} maxLength={160} placeholder="질문·결과 검색" /></label>
+            <button type="submit" disabled={historyState.status === "loading"}>검색</button>
+          </form>
+          {historyState.message ? <p>{historyState.message}</p> : null}
+          <ol>{historyState.items.map((item) => (
+            <li key={item.id}><button type="button" onClick={() => void openHistoryItem(item)}>
+              <span>{item.domain.toUpperCase()} · {item.mode.toUpperCase()}</span><strong>{item.result?.headline ?? item.prompt}</strong><small>{new Date(item.createdAt).toLocaleString("ko-KR")}</small><ArrowRight size={14} />
+            </button></li>
+          ))}</ol>
+        </details>
         <form className="analysis-form" onSubmit={submit} aria-busy={requestState === "submitting"}>
           <label htmlFor="analysis-prompt">무엇을 분석할까요?</label>
           <textarea id="analysis-prompt" value={prompt} onChange={(eventObject) => setPrompt(eventObject.target.value)} maxLength={4000} placeholder={analysisContext.placeholder} />

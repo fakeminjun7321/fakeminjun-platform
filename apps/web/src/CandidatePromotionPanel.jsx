@@ -5,7 +5,8 @@ import { backendClient } from "./backendClient.js";
 const REQUIREMENT_LABELS = {
   candidateReviewed: "후보 검토 완료",
   evidenceComplete: "선택 출처 전체 근거 검토",
-  supportingEvidence: "지지 근거 1개 이상",
+  supportingEvidence: "지지 근거 2개 이상",
+  independentSources: "서로 다른 발행기관 2곳 이상",
   locationConfirmed: "위치 사용자 확인",
   laneResolved: "지도 분류 확정",
 };

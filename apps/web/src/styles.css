@@ -1622,6 +1622,85 @@ p { margin-block: 0; }
 .resource-load-more { display: block; margin: 14px auto 0; }
 .resource-type-filter { margin: 12px 0; }
 
+.physics-file-vault {
+  margin-top: 34px;
+  border-top: 1px solid var(--line-strong);
+  border-bottom: 1px solid var(--line-strong);
+}
+.physics-file-vault > header {
+  min-height: 78px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 14px 0;
+}
+.physics-file-vault > header h3 { color: #e2e8e4; font-family: var(--display); font-size: 22px; font-weight: 600; }
+.physics-file-vault > header p { margin-top: 5px; color: var(--muted); font-size: 11px; }
+.physics-file-vault > header > div:last-child { display: flex; align-items: center; gap: 14px; }
+.physics-file-vault > header > div:last-child > span { color: var(--faint); font-family: var(--mono); font-size: 10px; }
+.physics-file-vault > header button {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 12px;
+  border: 1px solid #4c6955;
+  color: #e5ece7;
+  background: #19281d;
+  font-size: 11px;
+}
+.physics-file-vault > header button:hover { background: #223528; }
+.physics-file-vault > header button:disabled { cursor: wait; opacity: 0.5; }
+.physics-file-security {
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  padding: 9px 12px;
+  border-top: 1px solid #564a36;
+  border-bottom: 1px solid #403728;
+  color: #d0b786;
+  background: #15130f;
+}
+.physics-file-security p { font-size: 10px; line-height: 1.55; }
+.physics-file-security strong { margin-right: 7px; color: #e3c996; font-family: var(--mono); font-size: 9px; letter-spacing: 0.035em; }
+.physics-file-list { display: grid; }
+.physics-file-list > article {
+  min-height: 88px;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 0;
+  border-top: 1px solid var(--line);
+}
+.physics-file-list > article > svg { color: var(--physics); }
+.physics-file-list > article > div:nth-child(2) { min-width: 0; display: grid; gap: 4px; }
+.physics-file-list > article strong { overflow: hidden; color: #dce4df; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.physics-file-list > article span { color: var(--muted); font-size: 10px; }
+.physics-file-list > article small { color: var(--faint); font-family: var(--mono); font-size: 9px; }
+.physics-file-list > p { padding: 24px 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 11px; }
+.physics-file-actions { display: flex; align-items: center; gap: 7px; }
+.physics-file-actions a,
+.physics-file-actions button {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 9px;
+  border: 1px solid var(--line-strong);
+  color: var(--text-soft);
+  background: var(--surface-1);
+  text-decoration: none;
+  font-size: 10px;
+}
+.physics-file-actions a:hover,
+.physics-file-actions button:hover { color: #edf1ef; border-color: #627269; }
+.physics-file-actions .is-danger { color: #c99898; }
+.physics-file-actions .is-danger:hover { border-color: #8a5558; color: #e5b0b2; background: #211416; }
+
 .ipho-layout {
   max-width: 1460px;
   display: grid;
@@ -1800,6 +1879,56 @@ mjx-container {
 .analysis-list > strong { color: #c3d3d2; font-size: 11px; }
 .analysis-boundary p { margin-top: 6px; color: var(--muted); font-size: 11px; line-height: 1.65; }
 .analysis-list ul { margin: 9px 0 0; padding-left: 18px; color: var(--text-soft); font-size: 11px; line-height: 1.7; }
+.analysis-citations { display: grid; gap: 11px; padding: 15px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.analysis-citations > strong { display: flex; align-items: center; gap: 7px; color: #c7d7d4; font-size: 11px; }
+.analysis-citations ol { display: grid; margin: 0; padding: 0; list-style: none; }
+.analysis-citations li { border-top: 1px solid var(--line); }
+.analysis-citations li:last-child { border-bottom: 1px solid var(--line); }
+.analysis-citations li > a,
+.analysis-citations li > div { display: grid; gap: 4px; padding: 11px 9px; color: inherit; text-decoration: none; }
+.analysis-citations li > a:hover { background: var(--surface-1); }
+.analysis-citations b { color: #dce5e2; font-size: 11px; font-weight: 600; line-height: 1.5; }
+.analysis-citations span { color: var(--muted); font-size: 10px; line-height: 1.5; }
+.analysis-citations small { overflow-wrap: anywhere; color: var(--cyan); font-family: var(--mono); font-size: 9px; }
+.analysis-citations > p { color: var(--faint); font-size: 9px; line-height: 1.55; }
+.analysis-history { margin: 0 0 18px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.analysis-history > summary {
+  min-height: 44px;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  color: var(--text-soft);
+  cursor: pointer;
+  font-size: 11px;
+  list-style: none;
+}
+.analysis-history > summary::-webkit-details-marker { display: none; }
+.analysis-history > summary > span { color: var(--faint); font-family: var(--mono); font-size: 9px; }
+.analysis-history > form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; padding: 10px 0; border-top: 1px solid var(--line); }
+.analysis-history > form label { min-height: 36px; display: flex; align-items: center; gap: 7px; padding: 0 9px; border: 1px solid var(--line); }
+.analysis-history > form label:focus-within { border-color: var(--focus); }
+.analysis-history > form input { width: 100%; min-width: 0; border: 0; outline: 0; color: var(--text); background: transparent; font-size: 11px; }
+.analysis-history > form input::placeholder { color: var(--faint); }
+.analysis-history > form button { padding: 0 11px; border: 1px solid var(--line-strong); color: var(--text-soft); font-size: 10px; }
+.analysis-history > form button:disabled { opacity: 0.5; }
+.analysis-history > p { padding: 8px 0; color: var(--muted); font-size: 10px; }
+.analysis-history > ol { display: grid; margin: 0; padding: 0; list-style: none; }
+.analysis-history li { border-top: 1px solid var(--line); }
+.analysis-history li button {
+  width: 100%;
+  min-height: 70px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 18px;
+  gap: 4px 8px;
+  padding: 11px 8px;
+  text-align: left;
+}
+.analysis-history li button:hover { background: var(--surface-1); }
+.analysis-history li span,
+.analysis-history li small { color: var(--faint); font-family: var(--mono); font-size: 9px; }
+.analysis-history li strong { overflow: hidden; color: #d3dcda; font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.analysis-history li button > *:not(svg) { grid-column: 1; }
+.analysis-history li svg { grid-column: 2; grid-row: 1 / span 3; align-self: center; color: var(--faint); }
 .analysis-visual { display: grid; gap: 11px; padding: 14px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .analysis-visual > strong { color: #c5d3d2; font-size: 11px; }
 .analysis-visual ol { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; margin: 0; padding: 0; border-top: 1px solid var(--line); border-left: 1px solid var(--line); list-style: none; }
@@ -2308,6 +2437,10 @@ mjx-container {
   .resource-provider { text-align: right; }
   .resource-actions { position: static; grid-column: 1 / -1; display: flex; justify-content: flex-end; padding-top: 9px !important; opacity: 1; }
   .finder-query input { font-size: 14px; }
+  .physics-file-vault > header { align-items: flex-start; flex-direction: column; }
+  .physics-file-vault > header > div:last-child { width: 100%; justify-content: space-between; }
+  .physics-file-list > article { grid-template-columns: 28px minmax(0, 1fr); }
+  .physics-file-actions { grid-column: 1 / -1; justify-content: flex-end; }
   .ipho-layout > * { border-right: 0; border-bottom: 1px solid var(--line); }
   .ipho-topic-matrix > div { grid-template-columns: 1fr; }
   .official-olympiad-links a { display: grid; width: 100%; margin-right: 0; }

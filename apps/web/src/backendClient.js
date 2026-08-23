@@ -143,6 +143,16 @@ function physicsResourcesQuery(params = {}) {
   return encoded ? `?${encoded}` : "";
 }
 
+function analysesQuery(params = {}) {
+  const query = new URLSearchParams();
+  if (params.query?.trim()) query.set("q", params.query.trim());
+  if (params.domain) query.set("domain", params.domain);
+  if (params.status) query.set("status", params.status);
+  if (params.limit !== undefined) query.set("limit", String(params.limit));
+  const encoded = query.toString();
+  return encoded ? `?${encoded}` : "";
+}
+
 export function createBackendClient({ baseUrl = "", fetchImpl = globalThis.fetch } = {}) {
   if (typeof fetchImpl !== "function") throw new TypeError("fetchImpl must be a function");
   const base = normalizeBaseUrl(baseUrl);
@@ -283,6 +293,21 @@ export function createBackendClient({ baseUrl = "", fetchImpl = globalThis.fetch
       "/api/v1/physics/library/export/obsidian",
       { signal, responseType: "blob" },
     ),
+    listPhysicsFiles: ({ signal } = {}) => request("/api/v1/physics/files", { signal, returnEnvelope: true }),
+    uploadPhysicsFile: (file, { signal, idempotencyKey = crypto.randomUUID() } = {}) => {
+      const body = new FormData();
+      body.append("file", file);
+      return request("/api/v1/physics/files", {
+        method: "POST",
+        body,
+        headers: { "idempotency-key": idempotencyKey },
+        signal,
+      });
+    },
+    deletePhysicsFile: (fileId, { signal } = {}) => request(
+      `/api/v1/physics/files/${encodeURIComponent(fileId)}`,
+      { method: "DELETE", signal },
+    ),
     createAnalysis: (analysis, { signal, idempotencyKey = crypto.randomUUID() } = {}) => request(
       "/api/v1/analyses",
       {
@@ -291,6 +316,19 @@ export function createBackendClient({ baseUrl = "", fetchImpl = globalThis.fetch
         headers: { "idempotency-key": idempotencyKey },
         signal,
       },
+    ),
+    createPhysicsFileAnalysis: (fileId, analysis, { signal, idempotencyKey = crypto.randomUUID() } = {}) => request(
+      `/api/v1/physics/files/${encodeURIComponent(fileId)}/analyses`,
+      {
+        method: "POST",
+        body: JSON.stringify(analysis),
+        headers: { "idempotency-key": idempotencyKey },
+        signal,
+      },
+    ),
+    listAnalyses: ({ signal, ...params } = {}) => request(
+      `/api/v1/analyses${analysesQuery(params)}`,
+      { signal, returnEnvelope: true },
     ),
     createVisualAnalysis: ({ metadata, image }, { signal, idempotencyKey = crypto.randomUUID() } = {}) => {
       const body = new FormData();
