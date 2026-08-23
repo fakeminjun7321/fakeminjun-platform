@@ -34,7 +34,7 @@ PDF 원본을 D1이나 Obsidian에 복제하지 않는다. 로컬 절대 경로 
 Google Cloud에서 Web application OAuth client를 만든 뒤 다음 callback 주소를 정확히 등록한다.
 
 ```text
-https://fakeminjun.vip/api/v1/integrations/google-drive/callback
+https://fakeminjun.vip/oauth/google-drive/finish
 ```
 
 API Worker에는 값 자체를 Git에 넣지 않고 다음 secret을 등록한다.

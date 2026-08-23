@@ -1,6 +1,7 @@
 import { runAllSourceStreams } from "./ingestion.js";
 import { searchExternalPhysicsProviders } from "./physicsProviders.js";
 import {
+  GOOGLE_DRIVE_CALLBACK_PATH,
   GOOGLE_DRIVE_FILE_SCOPE,
   GOOGLE_DRIVE_MAX_PDF_BYTES,
   GoogleDriveIntegrationError,
@@ -5165,7 +5166,7 @@ async function handleApiRequest(request, env, ctx) {
       if (request.method !== "POST") return methodNotAllowed(["POST"], requestId);
       return await startGoogleDriveConnection(request, env, ctx, requestId);
     }
-    if (pathname === `${API_PREFIX}/integrations/google-drive/callback`) {
+    if (pathname === GOOGLE_DRIVE_CALLBACK_PATH) {
       if (request.method !== "GET") return methodNotAllowed(["GET"], requestId);
       return await finishGoogleDriveConnection(request, env, ctx, requestId);
     }
@@ -5293,7 +5294,9 @@ async function handleAssets(request, env) {
 export default {
   async fetch(request, env, ctx) {
     const pathname = new URL(request.url).pathname;
-    if (pathname.startsWith("/api/")) return handleApiRequest(request, env, ctx);
+    if (pathname.startsWith("/api/") || pathname === GOOGLE_DRIVE_CALLBACK_PATH) {
+      return handleApiRequest(request, env, ctx);
+    }
     return handleAssets(request, env);
   },
   async scheduled(_controller, env, ctx) {
