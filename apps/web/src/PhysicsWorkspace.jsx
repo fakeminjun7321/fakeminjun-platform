@@ -5,15 +5,17 @@ import {
   BookmarkSimple,
   Brain,
   DownloadSimple,
+  FileArrowUp,
   FileText,
   MagnifyingGlass,
+  ShieldWarning,
   Trash,
   Trophy,
 } from "@phosphor-icons/react";
 import { backendClient } from "./backendClient.js";
 import { IPHO_TOPICS, PHYSICS_RESOURCES, PHYSICS_TOOLS, filterPhysicsResources } from "./physicsData.js";
 
-const RESOURCE_TYPES = ["전체", "강의·문제", "강의 영상", "논문", "기출문제", "공식 문서"];
+const RESOURCE_TYPES = ["전체", "강의·문제", "강의 영상", "동료평가 논문", "프리프린트", "기출문제", "공식 문서"];
 
 function safeResourceUrl(value) {
   try {
@@ -187,7 +189,8 @@ function LibraryPage({ level, onLevelChange, onOpenAi, onNotice }) {
 
   return (
     <main className="focused-workspace domain-workspace physics-workspace">
-      <PhysicsHeading level={level} onLevelChange={onLevelChange} title="물리 자료 보관소" description="검증된 공개 자료 카탈로그에서 저장한 항목을 소유자별로 관리하고 Markdown으로 내보냅니다." countLabel={`${state.items.length} PRIVATE ITEMS`} />
+      <PhysicsHeading level={level} onLevelChange={onLevelChange} title="물리 자료 보관소" description="공개 자료 링크와 직접 올린 PDF·이미지를 분리해 개인 보관소에서 관리합니다." countLabel={`${state.items.length} SAVED LINKS`} />
+      <PhysicsFileVault level={level} onOpenAi={onOpenAi} onNotice={onNotice} />
       <section className="resource-workspace">
         <div className="resource-toolbar">
           <label className="workspace-search"><MagnifyingGlass size={17} /><span className="sr-only">보관 자료 검색</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="제목·분야·출처 검색" /></label>
@@ -197,6 +200,148 @@ function LibraryPage({ level, onLevelChange, onOpenAi, onNotice }) {
         <ResourceTable resources={resources} onOpenAi={onOpenAi} onRemove={removeResource} pendingIds={pendingIds} emptyLabel={state.status === "loading" ? "개인 보관소를 불러오는 중입니다." : "저장된 자료가 없거나 검색 결과가 없습니다."} level={level} />
       </section>
     </main>
+  );
+}
+
+function formatFileSize(bytes) {
+  if (!Number.isFinite(bytes)) return "크기 미상";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+}
+
+function antivirusLabel(status) {
+  return ({
+    clean: "백신 확인",
+    blocked: "보안 검사 차단",
+    error: "백신 검사 오류",
+    "not-scanned": "백신 미검사",
+  })[status] ?? "검사 상태 미상";
+}
+
+function PhysicsFileVault({ level, onOpenAi, onNotice }) {
+  const [state, setState] = useState({
+    status: "loading",
+    items: [],
+    quota: null,
+    storage: "unknown",
+    message: "개인 파일 목록을 불러오는 중입니다.",
+  });
+  const [pendingId, setPendingId] = useState(null);
+  const inputRef = useRef(null);
+  const requestRef = useRef(null);
+
+  async function loadFiles() {
+    const controller = new AbortController();
+    requestRef.current?.abort();
+    requestRef.current = controller;
+    try {
+      const response = await backendClient.listPhysicsFiles({ signal: controller.signal });
+      setState({
+        status: "ready",
+        items: response.data ?? [],
+        quota: response.meta?.quota ?? null,
+        storage: response.meta?.storage ?? "unavailable",
+        message: "",
+      });
+      return true;
+    } catch (error) {
+      if (error?.name !== "AbortError") setState((current) => ({ ...current, status: "error", message: error?.message ?? "개인 파일을 불러오지 못했습니다." }));
+      return false;
+    } finally {
+      if (requestRef.current === controller) requestRef.current = null;
+    }
+  }
+
+  useEffect(() => {
+    void loadFiles();
+    return () => requestRef.current?.abort();
+  }, []);
+
+  async function upload(event) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      onNotice("파일은 10MiB 이하여야 합니다.");
+      return;
+    }
+    setPendingId("upload");
+    setState((current) => ({ ...current, message: `${file.name}을 비공개 저장소에 올리는 중입니다.` }));
+    try {
+      const saved = await backendClient.uploadPhysicsFile(file);
+      const existed = state.items.some((item) => item.id === saved.id);
+      const refreshed = await loadFiles();
+      if (refreshed) {
+        setState((current) => ({ ...current, message: existed
+          ? "이미 보관 중인 동일 파일을 다시 사용합니다. 저장 용량은 늘어나지 않았습니다."
+          : "파일 시그니처를 확인해 저장했습니다. 백신 검사는 아직 수행되지 않았습니다." }));
+        onNotice("개인 물리 파일을 저장했습니다. 현재 상태는 백신 미검사입니다.");
+      } else {
+        onNotice("파일은 저장됐지만 최신 목록을 다시 불러오지 못했습니다.");
+      }
+    } catch (error) {
+      setState((current) => ({ ...current, status: "error", message: error?.message ?? "파일을 저장하지 못했습니다." }));
+    } finally {
+      setPendingId(null);
+    }
+  }
+
+  async function remove(file) {
+    setPendingId(file.id);
+    try {
+      await backendClient.deletePhysicsFile(file.id);
+      const refreshed = await loadFiles();
+      if (refreshed) {
+        setState((current) => ({ ...current, message: "파일 원본과 메타데이터를 삭제했습니다." }));
+        onNotice("개인 물리 파일을 삭제했습니다.");
+      } else {
+        onNotice("파일은 삭제됐지만 최신 목록을 다시 불러오지 못했습니다.");
+      }
+    } catch (error) {
+      onNotice(error?.message ?? "파일을 삭제하지 못했습니다.");
+    } finally {
+      setPendingId(null);
+    }
+  }
+
+  return (
+    <section className="physics-file-vault" aria-labelledby="physics-file-vault-title">
+      <header>
+        <div><h3 id="physics-file-vault-title">개인 파일</h3><p>PDF·PNG·JPEG · 최대 10MiB · {state.storage === "private-r2" ? "비공개 R2" : "저장소 연결 확인 필요"}</p></div>
+        <div><span>{state.quota
+          ? `${state.quota.usedFiles}/${state.quota.maxFiles} FILES · ${formatFileSize(state.quota.usedBytes)} / ${formatFileSize(state.quota.maxBytes)}`
+          : `${state.items.length} FILES`}</span><button type="button" onClick={() => inputRef.current?.click()} disabled={pendingId === "upload" || state.storage !== "private-r2"}><FileArrowUp size={17} />{pendingId === "upload" ? "업로드 중" : "파일 추가"}</button></div>
+        <input ref={inputRef} className="sr-only" type="file" accept="application/pdf,image/png,image/jpeg" onChange={upload} />
+      </header>
+      <div className="physics-file-security"><ShieldWarning size={17} /><p><strong>{state.storage === "unavailable" ? "비공개 저장소 미연결" : "백신 검사 미연결"}</strong> {state.storage === "unavailable"
+        ? "현재 환경에서는 업로드·다운로드·파일 분석을 사용할 수 없습니다."
+        : "확장자와 내부 시그니처를 확인하고 강제 다운로드하지만, 악성코드 무해 판정은 아닙니다."}</p></div>
+      {state.message ? <p className={`resource-query-status is-${state.status}`} role="status">{state.message}</p> : null}
+      <div className="physics-file-list">
+        {state.items.map((file) => {
+          const blocked = file.antivirusStatus === "blocked";
+          const actionsAvailable = state.storage === "private-r2" && !blocked;
+          return <article key={file.id}>
+            <FileText size={20} />
+            <div><strong>{file.filename}</strong><span>{formatFileSize(file.byteSize)} · {file.mimeType}</span><small>SHA-256 {file.sha256.slice(0, 12)}… · {antivirusLabel(file.antivirusStatus)}</small></div>
+            <div className="physics-file-actions">
+              {actionsAvailable ? <a href={file.downloadUrl}>다운로드</a> : <span>다운로드 차단</span>}
+              <button type="button" onClick={() => onOpenAi({
+                level: `P${level}`,
+                contextKind: "physics-file",
+                contextId: file.id,
+                title: file.filename,
+                meta: `${file.mimeType} · ${formatFileSize(file.byteSize)} · ${antivirusLabel(file.antivirusStatus)}`,
+                placeholder: "이 자료의 핵심 개념과 수식을 페이지 근거와 함께 분석해줘.",
+              })} disabled={!actionsAvailable}>AI 분석</button>
+              <button type="button" className="is-danger" onClick={() => void remove(file)} disabled={pendingId === file.id}><Trash size={14} />{pendingId === file.id ? "삭제 중" : "삭제"}</button>
+            </div>
+          </article>;
+        })}
+        {state.status === "ready" && !state.items.length ? <p>직접 올린 파일이 없습니다.</p> : null}
+      </div>
+    </section>
   );
 }
 
@@ -224,7 +369,9 @@ function FinderPage({ level, onLevelChange, onOpenAi, onNotice }) {
         status: "ready",
         items: append ? [...current.items, ...items.filter((item) => !current.items.some((existing) => existing.id === item.id))] : items,
         cursor: result.meta?.nextCursor ?? null,
-        message: items.length ? `실제 공개 자료 검색 결과 ${items.length}건을 불러왔습니다.` : "검색 결과가 없습니다.",
+        message: items.length
+          ? `공개 자료 ${items.length}건 · arXiv/Crossref 결과는 메타데이터이며 내용 검증 전입니다.`
+          : "검색 결과가 없습니다.",
       }));
     } catch (error) {
       if (error?.name !== "AbortError") setState((current) => ({ ...current, status: "error", message: error?.message ?? "공개 자료 검색에 실패했습니다." }));

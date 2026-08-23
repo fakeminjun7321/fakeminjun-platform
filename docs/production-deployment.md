@@ -14,6 +14,7 @@
     ├─ fakeminjun.vip/*      → fakeminjun-platform-web (정적 SPA 전용)
     └─ fakeminjun.vip/api/*  → fakeminjun-platform-api
                                 ├─ D1
+                                ├─ private R2 physics vault
                                 └─ OpenAI Responses API
 ```
 
@@ -32,7 +33,8 @@
 5. Cloudflare Access self-hosted application을 `fakeminjun.vip` 전체에 만들고 소유자 계정만 허용한다. 이 private alpha 경계가 준비되기 전에는 custom domain을 공개하지 않는다.
 6. `npm run deploy:frontend`로 루트 custom domain과 정적 SPA를 먼저 배포한다.
 7. 로컬 `.dev.vars`의 `OPENAI_API_KEY`를 API Worker secret으로 등록한다. 키 값은 Git, Wrangler 설정, 셸 기록, 로그에 기록하지 않는다.
-8. `npm run deploy:api`로 `/api/*` 전용 Worker와 10분 Cron을 배포한다.
+8. `fakeminjun-physics-vault` R2 버킷을 만들고 `PHYSICS_FILES` 바인딩 이름과 정확히 일치하는지 확인한다.
+9. `npm run deploy:api`로 `/api/*` 전용 Worker와 10분 Cron을 배포한다.
 
 `validate-production-config.mjs`는 D1 ID가 placeholder이거나 프론트/API 분리 경계가 바뀌면 배포 전에 중단한다.
 
@@ -51,9 +53,9 @@
 
 ## 현재 상태
 
-- **Implemented**: 프론트/API Worker 분리, 전체 도메인 Access, production D1, OpenAI secret, 소유자 운영 권한, 10분 Cron, 60초 화면 자동 동기화, 정적 CSP·프레임 차단·보안 헤더
-- **Unit-verified**: 애플리케이션 테스트 88건과 운영 배포 경계 테스트 4건, Sites worker 5건 통과. 로컬 D1 통합 경로와 production build 통과
-- **Live-service-verified**: 공용 DNS·TLS, 미로그인 루트/API의 Access 302 차단, HTTP→HTTPS 301, 허용 계정 로그인, 국제정세·물리 깊은 SPA 경로, 실제 OpenAI 표준 분석 2회, 원격 D1의 완료 기록 2건·총 4,036 tokens, `workers.dev` 우회 주소 404를 확인. 10분 Cron 배포 직후 2026-08-22 15:00 UTC 시간창에서 4개 공식 RSS가 모두 성공해 원격 D1에 기록됨
-- **Not verified / 미검증**: 60초 자동 동기화·탭 복귀 즉시 갱신·수동 새로고침 버튼의 production Chrome 경로, 수준·노트 production UI 저장/재조회, 비허용 계정 거부, 인증 후 정적 응답의 CSP/HSTS, WAF·DDoS 부하 경로, 모바일 화면
+- **Implemented**: 기존 프론트/API 분리·Access·D1·OpenAI·Cron 경계와 이번 변경의 production D1 0015·0016 migration, 물리 검색·파일·분석 근거·사용량 schema
+- **Unit-verified**: 애플리케이션 테스트 98건과 운영 배포 경계 테스트 4건, Sites worker 5건 통과. 로컬 D1·R2 통합 경로와 production build 통과
+- **Live-service-verified**: 공용 DNS·TLS, 미로그인 루트/API의 Access 302 차단, HTTP→HTTPS 301, 이전 버전의 허용 계정 로그인·깊은 SPA 경로·실제 OpenAI 표준 분석, `workers.dev` 우회 주소 404와 10분 Cron 수집을 확인. 2026-08-23에는 APAC Standard `fakeminjun-physics-vault`, API version `78a1dbd1-b2df-4d47-902e-b88753f89767`, frontend version `489490dd-fb91-4197-a92b-057016430d99`를 배포하고 실제 production D1·R2 remote binding으로 71,168바이트 PDF 업로드·바이트 일치 다운로드·GPT-5.6 Luna 분석·인용/근거 저장·기록 재조회·삭제와 시험 데이터 정리를 확인함
+- **Not verified / 미검증**: 이번 배포 버전의 production Chrome 로그인 후 파일·인용/기록 UI 경로, 비허용 계정 거부, WAF·DDoS 부하 경로, 모바일 화면
 - **Simulator-verified**: **Not verified / 미검증**
 - **Physical-device-verified**: 실제 macOS Chrome에서 Access 로그인, 국제정세·물리 렌더, 실제 AI 응답 표시를 확인. 모바일 물리기기는 **Not verified / 미검증**

@@ -469,3 +469,48 @@ test("visual analysis uses browser multipart boundaries instead of forcing JSON 
   assert.equal(JSON.parse(calls[0].options.body.get("metadata")).mode, "auto");
   assert.equal(calls[0].options.body.get("image").type, "image/png");
 });
+
+test("backend client uploads private physics files and starts file analysis", async () => {
+  const calls = [];
+  const client = createBackendClient({
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return jsonResponse({ data: { id: calls.length === 1 ? "file-1" : "analysis-file-1" } }, { status: 201 });
+    },
+  });
+  const file = new File(["%PDF-1.7\n%%EOF\n"], "mechanics.pdf", { type: "application/pdf" });
+  const uploaded = await client.uploadPhysicsFile(file, { idempotencyKey: "file-upload-1" });
+  assert.equal(uploaded.id, "file-1");
+  assert.equal(calls[0].url, "/api/v1/physics/files");
+  assert.equal(calls[0].options.body instanceof FormData, true);
+  assert.equal(calls[0].options.headers["content-type"], undefined);
+  assert.equal(calls[0].options.headers["idempotency-key"], "file-upload-1");
+
+  const payload = {
+    domain: "physics",
+    mode: "auto",
+    prompt: "유도 구조를 설명해줘.",
+    context: { kind: "physics-file", refId: "file-1" },
+  };
+  const analysis = await client.createPhysicsFileAnalysis("file-1", payload, { idempotencyKey: "file-analysis-1" });
+  assert.equal(analysis.id, "analysis-file-1");
+  assert.equal(calls[1].url, "/api/v1/physics/files/file-1/analyses");
+  assert.deepEqual(JSON.parse(calls[1].options.body), payload);
+});
+
+test("backend client searches private analysis history without owner parameters", async () => {
+  const calls = [];
+  const client = createBackendClient({
+    baseUrl: "https://app.example.test/",
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      return jsonResponse({ data: [{ id: "analysis-1" }], meta: { limit: 8 } });
+    },
+  });
+  const result = await client.listAnalyses({ domain: "physics", query: "역학", status: "completed", limit: 8 });
+  assert.equal(result.data[0].id, "analysis-1");
+  const calledUrl = new URL(calls[0].url);
+  assert.equal(calledUrl.pathname, "/api/v1/analyses");
+  assert.equal(calledUrl.searchParams.get("q"), "역학");
+  assert.equal(calledUrl.searchParams.has("ownerId"), false);
+});

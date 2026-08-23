@@ -143,21 +143,23 @@ PUT    /api/v1/profile/levels
 ### 파일과 분석
 
 ```http
-POST /api/v1/files/initiate
-POST /api/v1/files/:fileId/complete
-GET  /api/v1/files/:fileId/status
+GET  /api/v1/physics/files
+POST /api/v1/physics/files
+GET  /api/v1/physics/files/:fileId/download
+DELETE /api/v1/physics/files/:fileId
+POST /api/v1/physics/files/:fileId/analyses
+GET  /api/v1/analyses
 POST /api/v1/analyses
 GET  /api/v1/analyses/:analysisId
 DELETE /api/v1/analyses/:analysisId
 ```
 
-- 업로드는 무작위 단일 객체 키와 짧은 만료의 R2 업로드 URL을 사용하고, 정확한 앱 origin의 `PUT` CORS만 허용한다.
-- 업로드 직후 객체는 비공개 `quarantine/`에 두고 완료 API가 R2 `HEAD`로 키·크기·Content-Type을 다시 검증한다.
+- 현재 개인용 10MiB 상한에서는 정확한 앱 origin의 multipart 요청을 Worker가 읽고, 무작위 소유자별 객체 키로 비공개 R2에 직접 저장한다. 브라우저는 R2 주소나 객체 키를 받지 않는다.
 - 크기·MIME·확장자·파일 시그니처 검사는 악성코드 검사가 아니다. 압축 폭탄·PDF 객체 수·페이지 수 제한과 별도의 실제 malware scanner를 두기 전에는 `Antivirus-verified`라고 표시하지 않는다.
-- 검사 통과 전에는 다운로드, AI 입력, 텍스트 추출과 임베딩을 금지하고 감염·실패·시간초과 상태 및 삭제 정책을 기록한다.
+- 현재는 시그니처·크기·해시 검사만 수행하고 `not-scanned`를 명시한다. 알려진 `blocked` 상태는 다운로드와 AI 입력을 차단하지만, 실제 악성코드 판정 엔진은 아직 없다.
 - 현재 AI 분석은 분야·모드·질문·사건 ID·설명 수준·제한된 화면 맥락을 받고, 사건 상세는 서버가 D1에서 다시 읽는다.
 - 일반 작업은 `gpt-5.6-luna` 한 번, 정밀 작업은 `gpt-5.6-terra` 두 번과 `gpt-5.6-sol` 통합 한 번으로 고정한다.
-- 현재 모델 출력의 근거 분류는 자동 검증된 인용이 아니다. 실제 출처 수집을 붙일 때 `analysis_evidence`와 서버 검증 evidence ID를 추가해야 한다.
+- 분석 당시 서버가 제공한 근거 ID와 스냅샷을 `analysis_evidence_links`에 저장하고 모델의 ID 집합을 후검증한다. 이 검사는 인용 내용 자체의 진실성 검증이 아니다.
 - 사건 후보 생성은 이와 별도로 `gpt-5.6-luna` 한 번만 직접 호출한다. 도구와 Agents SDK 루프를 쓰지 않으며, immutable metadata snapshot을 묶는 제한된 분류 작업으로만 사용한다.
 
 ## 지도 데이터 경로
@@ -238,13 +240,13 @@ preview와 production 바인딩은 자동 상속된다고 가정하지 않고 �
 
 ## 현재 검증 경계
 
-- **Implemented**: Worker BFF, D1 schema/seed, 사건·수집함·세션·노트·수준·OpenAI 분석 API, 고정 공식 RSS 수집기, metadata-only 사건 후보·검토·승격 잠금, same-origin 프론트 client와 로컬 개발 설정
-- **Unit-verified**: 일반 Node 테스트 88건, Sites 전용 테스트 5건, 운영 배포 경계 테스트 4건 통과
-- **Local-runtime-verified**: 실제 로컬 Wrangler와 임시 D1에서 migration, 사건·수집함 HTTP 요청, 사건 후보 목록·검토 idempotency·사용자 격리·승격 0건 잠금, 재시작 후 영속성과 삭제 확인
+- **Implemented**: 기존 Worker/D1/OpenAI/RSS 경로에 arXiv/Crossref, 비공개 물리 파일, 근거 ID·분석 기록, 독립 근거 지도 승격 경로 추가
+- **Unit-verified**: 일반 Node 테스트 98건, Sites 전용 테스트 5건, 운영 배포 경계 테스트 4건 통과
+- **Local-runtime-verified**: 임시 D1·R2에서 물리 파일 중복 제거·총량 한도·업로드·영속성·다운로드·삭제, 검색/분석 사용량 차단, 분석 기록 검색, 독립 지지 출처 2개와 위치를 요구하는 지도 승격 확인
 - **Browser-verified**: 실제 수집함 12건 표시와 안전한 원문 링크에 더해 자료 2건 선택 → 실제 OpenAI 후보 생성 → 검토 메모 저장 → 새로고침 후 유지 경로를 인앱 브라우저에서 확인. 콘솔 warning/error 0건, 390×844 브라우저 viewport 수평 overflow 없음
 - **Simulator-verified**: **Not verified / 미검증**
 - **Physical-device-verified**: 실제 macOS Chrome에서 production Access 로그인, 국제정세·물리 AI 결과 표시를 확인. 모바일 물리기기는 **Not verified / 미검증**
 - **Live-service-verified**: 원격 D1·Access·프론트/API Worker·DNS/TLS·OpenAI 분석 2회와 D1 완료 기록·`workers.dev` 404를 확인. 10분 Cron 배포 직후 2026-08-22 15:00 UTC 자동 실행에서 4개 stream이 모두 성공해 원격 D1에 기록됨
 - 60초 자동 동기화·탭 복귀 즉시 갱신·수동 새로고침 버튼의 production Chrome 경로와 production 후보/검토/승격 잠금: **Not verified / 미검증**
-- R2, Queue, Workflows, Vectorize: **Not verified / 미검증**
+- 로컬 R2 수명주기: **Local-runtime-verified**. production R2는 APAC Standard 버킷 생성·Worker 바인딩·실제 PDF 업로드/다운로드/삭제와 OpenAI 파일 분석까지 **Live-service-verified**. Queue, Workflows, Vectorize는 **Not verified / 미검증**
 - 실제 업로드 악성코드 검사와 antivirus/EDR: **Not verified / 미검증**

@@ -19,6 +19,12 @@
       "migrations_dir": "migrations"
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "PHYSICS_FILES",
+      "bucket_name": "fakeminjun-physics-vault"
+    }
+  ],
   "vars": {
     "APP_ENV": "production",
     "APP_ORIGIN": "https://fakeminjun.vip"

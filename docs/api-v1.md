@@ -1,6 +1,6 @@
 # 로컬 API v1 계약
 
-작성일: 2026-08-22
+작성일: 2026-08-23
 
 현재 API는 `apps/web/worker/index.js`의 Cloudflare Worker BFF와 로컬 D1에 구현되어 있다. 기본 경로는 `/api/v1`이다. seed 사건은 모두 `is_live=0`이며 실제 뉴스 수집 결과가 아니다.
 
@@ -82,7 +82,15 @@ API 응답은 기본적으로 `Cache-Control: no-store`, `X-Content-Type-Options
 | `POST` | `/api/v1/event-candidates` | 공식 출처 자료 2~8개로 미검증 후보 생성 |
 | `POST` | `/api/v1/event-candidates/:candidateId/reviews` | 후보 보류·검토 완료·기각 영수증 저장 |
 | `POST` | `/api/v1/event-candidates/:candidateId/promote` | 편집자 전용 승격 잠금 확인; 현재 항상 409이며 사건을 쓰지 않음 |
+| `GET` | `/api/v1/physics/resources` | 고정 catalog + arXiv/Crossref 메타데이터 검색 |
+| `GET` | `/api/v1/physics/library` | 현재 사용자의 링크 보관소 조회 |
+| `POST` | `/api/v1/physics/files` | PDF·PNG·JPEG 개인 파일을 비공개 R2에 저장 |
+| `GET` | `/api/v1/physics/files` | 현재 사용자의 개인 파일 목록 |
+| `GET` | `/api/v1/physics/files/:fileId/download` | 첨부 강제 다운로드 |
+| `DELETE` | `/api/v1/physics/files/:fileId` | R2 객체와 D1 메타데이터 삭제 |
+| `POST` | `/api/v1/physics/files/:fileId/analyses` | 명시적으로 선택한 개인 파일을 OpenAI로 분석 |
 | `POST` | `/api/v1/analyses` | OpenAI 구조화 분석 생성 |
+| `GET` | `/api/v1/analyses` | 현재 사용자의 분석 기록 검색 (`q`, `domain`, `status`, `limit`) |
 | `GET` | `/api/v1/analyses/:analysisId` | 현재 사용자의 분석 상태·결과 조회 |
 | `DELETE` | `/api/v1/analyses/:analysisId` | 완료·실패 분석의 개인 내용 삭제 |
 | `POST` | `/api/v1/ingestion/runs` | 정확한 관리자 subject만 허용하는 수동 공식 피드 수집 |
@@ -134,9 +142,9 @@ API 응답은 기본적으로 `Cache-Control: no-store`, `X-Content-Type-Options
 }
 ```
 
-같은 `Idempotency-Key`와 동일 본문의 재전송은 같은 검토 영수증을 반환하고, 같은 키에 다른 본문을 쓰면 `409 idempotency_conflict`다. `reviewed`는 사용자가 후보를 검토했다는 뜻일 뿐 `verified`가 아니다. 후보 API는 항상 `verificationStatus: unverified`, `evidenceScope: source-metadata-only`, `mapReadiness.ready: false`를 반환한다.
+같은 `Idempotency-Key`와 동일 본문의 재전송은 같은 검토 영수증을 반환하고, 같은 키에 다른 본문을 쓰면 `409 idempotency_conflict`다. `reviewed`는 사용자가 후보를 검토했다는 뜻일 뿐 `verified`가 아니다.
 
-승격 경로는 정확한 Origin, Access 신원, `EVENT_EDITOR_SUBJECT` 일치를 모두 확인한 뒤에도 `409 candidate_not_map_ready`와 `eventsWritten: 0`을 반환한다. 원문 근거와 사용자 확인 위치를 위한 별도 계약이 생기기 전에는 `events`, `event_locations`, `event_sources`에 쓰지 않는다.
+승격은 정확한 Origin, Access 신원, `EVENT_EDITOR_SUBJECT`, 후보 hash/revision을 확인한다. 후보 검토 완료, 모든 출처 원문 검토, 서로 다른 publisher/source key의 `supports` 근거 2개 이상, 사용자 확인 좌표, 허용 lane을 모두 만족해야만 `events`, `event_locations`, `event_sources`에 원자적으로 기록한다. 승격 뒤에도 사건 상태는 `unverified`이고, 어느 조건이든 빠지면 `409 candidate_not_map_ready`와 `eventsWritten: 0`으로 닫힌다.
 
 분석 생성은 `domain`, `mode`, `prompt`, 선택적인 `eventId`, `level`, 제한된 화면 맥락만 받는다. 모델 이름, 소유자, 도구와 공급자 URL은 브라우저가 정할 수 없다. `Idempotency-Key`가 필수이며 같은 키에 다른 본문을 쓰면 `409 idempotency_conflict`다. 삭제 후에도 별도 사용량 원장은 남아 삭제→재호출로 한도를 우회할 수 없다.
 
@@ -145,7 +153,12 @@ API 응답은 기본적으로 `Cache-Control: no-store`, `X-Content-Type-Options
 - 10분 20회, 하루 50회, 30일 500회, 정밀 분석 하루 10회
 - `store: false`, 모델 도구 없음, strict JSON schema와 서버의 2차 형태 검사
 - OpenAI 응답 전체 90초 제한, 응답 본문 1 MiB 제한
-- 모델이 적은 `basis`, `confidence`, `sourceBoundary`는 자동 검증된 인용이 아니며 화면에도 그렇게 표시
+- 사건·출처·물리 자료·개인 파일·캡처는 요청 당시 `evidenceId`와 스냅샷으로 저장. 모델이 서버가 제공하지 않은 ID를 인용하면 실패 처리하고, `provided-evidence` 단락에는 최소 한 개의 citation을 요구
+- ID 집합 검사는 출처 내용의 진실성이나 인용 문장의 정확성을 보증하지 않으며 화면에도 이 경계를 표시
+
+개인 파일은 10MiB 이하 PDF·PNG·JPEG만 받는다. 서버는 PDF header/EOF 또는 이미지 시그니처·크기와 SHA-256을 확인하고 무작위 소유자 경로에 저장한다. 소유자별 250개·총 2GiB를 원자적으로 예약한 뒤 R2에 쓰며, 동일 내용은 SHA-256으로 중복 제거한다. 다운로드는 원래 MIME으로 브라우저 실행하지 않고 `application/octet-stream` 첨부로 강제한다. `antivirusStatus: not-scanned`는 악성코드 무해 판정이 아니며 production 백신 엔진은 아직 없다.
+
+외부 물리 검색은 cache miss에만 소유자별 10분 30회·하루 200회·30일 2,000회 한도를 소비한다. 만료 cache와 30일 지난 검색 원장, 90일 지난 미보관 외부 catalog 항목을 정리하고, 개인 링크 보관소는 최대 2,000개다. 개인 파일 분석은 R2 객체를 읽기 전에 원자적 분석 사용량 예약을 끝낸다.
 
 ## 쓰기 요청 경계
 
@@ -168,4 +181,4 @@ API 응답은 기본적으로 `Cache-Control: no-store`, `X-Content-Type-Options
 - 수집 실패는 기존 성공 자료를 삭제하지 않으며 오류 코드만 기록
 - scheduled handler와 `*/10 * * * *` production Cron Trigger가 배포되어 있으며, 2026-08-22 15:00 UTC 시간창에서 4개 stream의 성공 기록을 원격 D1에서 확인함. source inbox client는 열린 동안 60초마다 읽기 API를 다시 확인하고 탭 복귀 시 즉시 동기화함
 
-production Access, 원격 D1, 분리된 프론트/API Worker, OpenAI secret과 10분 Cron은 배포됐다. 실제 macOS Chrome에서 Access 로그인 뒤 국제정세·물리 표준 분석 2회를 실행했고 원격 D1 완료 기록과 사용량을 확인했다. 60초 자동 동기화·탭 복귀 즉시 갱신·수동 새로고침 UI, production 수준·노트 저장, 사건 후보 생성·검토·승격 잠금의 원격 경로는 아직 별도 검증 대상이다. R2 파일과 캡처·OCR은 이 계약에 포함되지 않는다.
+production D1에는 0015·0016 migration과 새 테이블 생성까지 확인했다. APAC Standard production R2 버킷과 이번 Worker를 배포했고, 실제 production D1·R2 remote binding에서는 기존 OpenAI 키로 PDF 업로드·동일 바이트 다운로드·GPT-5.6 Luna 분석·근거 인용·기록 재조회·삭제와 시험 데이터 정리까지 확인했다. 다만 이번 배포 버전의 로그인 후 Chrome UI 조작은 **Not verified / 미검증**이다. 로컬 임시 D1·R2에서는 별도로 업로드·중복 제거·총량 한도·재시작 영속성·다운로드·삭제와 독립 근거 지도 승격을 확인했다.

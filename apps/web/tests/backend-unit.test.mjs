@@ -3,6 +3,7 @@ import test from "node:test";
 import worker, {
   ANALYSIS_REPORT_SCHEMA,
   EVENT_CANDIDATE_SCHEMA,
+  analysisReportSchemaForEvidence,
   analysisStepPlan,
   captureImageDimensions,
   eventCandidateEvidenceDigest,
@@ -10,6 +11,8 @@ import worker, {
   eventCandidateModelInput,
   eventCandidateRequestHash,
   eventCandidateReviewRequestHash,
+  inspectPhysicsFile,
+  parseAnalysesQuery,
   parseEventCandidatesQuery,
   parseEventsQuery,
   parseSourceItemsQuery,
@@ -17,6 +20,7 @@ import worker, {
   resolveAnalysisMode,
   runAnalysisWorkflow,
   sourceStreamStatus,
+  validateAnalysisCitations,
   validateAnalysisPayload,
   validateCandidateEvidenceReviewPayload,
   validateCandidateLocationPayload,
@@ -465,6 +469,52 @@ test("capture image inspection accepts only bounded PNG and JPEG signatures", ()
   );
 });
 
+test("physics file inspection accepts signed PDFs and rejects disguised files", () => {
+  const pdf = new TextEncoder().encode("%PDF-1.7\n1 0 obj\n<<>>\nendobj\n%%EOF\n");
+  assert.deepEqual(inspectPhysicsFile(pdf, "application/pdf"), { kind: "pdf", dimensions: null });
+  assert.throws(
+    () => inspectPhysicsFile(new TextEncoder().encode("not really a PDF %%EOF"), "application/pdf"),
+    (error) => error.code === "physics_file_signature_mismatch" && error.status === 415,
+  );
+  assert.throws(
+    () => inspectPhysicsFile(pdf, "application/zip"),
+    (error) => error.code === "unsupported_physics_file_type" && error.status === 415,
+  );
+});
+
+test("analysis history query remains owner-scoped and bounded at the parser", () => {
+  assert.deepEqual(parseAnalysesQuery(new URL(
+    "https://example.test/api/v1/analyses?q=%20%EC%97%AD%ED%95%99%20&domain=physics&status=completed&limit=8",
+  )), { query: "역학", domain: "physics", status: "completed", limit: 8 });
+  assert.throws(
+    () => parseAnalysesQuery(new URL("https://example.test/api/v1/analyses?ownerId=someone-else")),
+    (error) => error.code === "unknown_query",
+  );
+  assert.throws(
+    () => parseAnalysesQuery(new URL("https://example.test/api/v1/analyses?limit=500")),
+    (error) => error.code === "invalid_limit",
+  );
+});
+
+test("analysis citations can only reference evidence from the server bundle", () => {
+  const evidence = [{ evidenceId: "physics-resource:arxiv-1" }];
+  const schema = analysisReportSchemaForEvidence(evidence);
+  assert.deepEqual(schema.properties.citations.items.properties.evidenceId.enum, ["physics-resource:arxiv-1"]);
+  assert.equal(schema.properties.citations.maxItems, 1);
+  assert.deepEqual(validateAnalysisCitations({
+    sections: [{ basis: "provided-evidence" }],
+    citations: [{ evidenceId: "physics-resource:arxiv-1" }],
+  }, evidence).map(({ evidenceId }) => evidenceId), ["physics-resource:arxiv-1"]);
+  assert.throws(
+    () => validateAnalysisCitations({ citations: [{ evidenceId: "physics-resource:invented" }], sections: [] }, evidence),
+    (error) => error.code === "analysis_evidence_mismatch",
+  );
+  assert.throws(
+    () => validateAnalysisCitations({ citations: [], sections: [{ basis: "provided-evidence" }] }, evidence),
+    (error) => error.code === "analysis_citation_required",
+  );
+});
+
 test("deep analysis plans two bounded specialists and one final synthesis", async () => {
   const calls = [];
   const report = {
@@ -477,6 +527,7 @@ test("deep analysis plans two bounded specialists and one final synthesis", asyn
     ],
     uncertainties: [],
     nextQuestions: [],
+    citations: [],
     visual: { type: "none", title: "", items: [] },
   };
   const specialist = { findings: ["핵심 검토"], risks: [], openQuestions: [] };
@@ -537,6 +588,7 @@ test("structured OpenAI requests disable storage and tools while enforcing the s
     ],
     uncertainties: [],
     nextQuestions: [],
+    citations: [],
     visual: { type: "none", title: "", items: [] },
   };
   const fetchImpl = async (url, options) => {
@@ -632,6 +684,7 @@ test("structured OpenAI requests reject JSON that violates the local output sche
     sections: [],
     uncertainties: [],
     nextQuestions: [],
+    citations: [],
     visual: { type: "none", title: "", items: [] },
   };
   await assert.rejects(

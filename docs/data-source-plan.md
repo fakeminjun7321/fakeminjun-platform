@@ -1,6 +1,6 @@
 # 데이터 및 공개 API 계획
 
-작성일: 2026-08-22
+작성일: 2026-08-23
 
 상태는 실제 연결 여부를 구분해 기록한다. 공식 RSS 4개는 로컬 Worker/D1뿐 아니라 2026-08-22 11:00 UTC production Cron에서도 모두 성공했고 원격 D1에 메타데이터 99건이 저장됐다. 선택한 자료로 실제 OpenAI 사건 후보를 생성·검토·재조회하는 경로는 아직 로컬 검증까지만 완료했다.
 
@@ -30,8 +30,8 @@
 
 | 후보 | 용도 | 도입 판단 | 인증·제한 및 주의점 | 현재 검증 |
 |---|---|---|---|---|
-| [arXiv API](https://info.arxiv.org/help/api/user-manual.html) | 물리 프리프린트 검색과 메타데이터 | 1차 후보 | 반복 요청 간격과 캐싱 권고 준수, 프리프린트임을 표시 | 공식 문서 확인, 실제 호출 미검증 |
-| [Crossref REST API](https://www.crossref.org/documentation/retrieve-metadata/rest-api/) | DOI·출판 메타데이터 보강 | 1차 후보 | 연락처를 포함한 polite 사용, 원문 제공 여부와 구분 | 공식 문서 확인, 실제 호출 미검증 |
+| [arXiv API](https://info.arxiv.org/help/api/user-manual.html) | 물리 프리프린트 검색과 메타데이터 | 채택 | 동일 검색 24시간 캐시, 최대 10건, 프리프린트 표시, redirect 거부·8초·1MiB 스트리밍 제한 | 실제 Atom 응답·파서·부분 실패 확인 |
+| [Crossref REST API](https://www.crossref.org/documentation/retrieve-metadata/rest-api/) | DOI·출판 메타데이터 보강 | 채택 | 식별 User-Agent, 선택 필드, 동일 검색 24시간 캐시, 원문과 구분, redirect 거부·8초·1MiB 스트리밍 제한 | 실제 REST 응답·파서·부분 실패 확인 |
 | [OpenAlex API](https://developers.openalex.org/api-reference/authentication) | 논문·저자·기관·인용 관계 탐색 | 후속 후보 | API 키, 사용량·비용 정책 확인 필요 | 공식 문서 확인, 실제 호출 미검증 |
 | [YouTube Data API](https://developers.google.com/youtube/v3/getting-started) | 허용된 채널의 강의 영상 탐색 | 1차 후보 | 검색 쿼터가 크므로 채널 허용 목록·캐시·갱신 주기 필요 | 공식 문서 확인, 실제 호출 미검증 |
 | MIT OpenCourseWare·공식 강의 채널 | 강의·노트의 신뢰도 높은 출발점 | 1차 콘텐츠 후보 | 임베드·링크·메타데이터 사용 조건을 자료별로 확인 | 통합 방식 미결정 |
@@ -103,9 +103,10 @@ AI는 OpenAI Responses API만 사용한다. 일반 분석은 비용 효율적인
 1. 고정 공식 RSS 4개의 메타데이터 수집·중복 제거·로컬 D1 저장·브리핑 조회 — 구현 및 로컬 검증.
 2. 공식 자료 2~8개의 불변 스냅샷을 만들고 단일 OpenAI 호출로 메타데이터 사건 후보 생성 — 구현, 로컬 Worker/D1 및 live OpenAI 검증.
 3. 후보를 소유자별로 보류·검토 완료·기각하고 메모를 재조회 — 구현 및 로컬 브라우저 검증. 사실 검증은 아님.
-4. 원문·독립 근거·위치를 확인한 뒤에만 지도 사건 승격과 마지막 검증 시각·불일치 근거 표시 — 미구현.
-5. 서버가 검증한 evidence ID만 심층 분석에 전달하고 인용 위치를 원문과 대조.
-6. 물리 자료 연결은 별도 세로 조각으로 추가.
+4. 서로 다른 출처의 원문 지지 근거 2개와 위치를 확인한 뒤에만 지도 사건으로 승격 — 구현 및 로컬 D1 통합 검증. 승격 사건도 `UNVERIFIED` 유지.
+5. 서버가 제공한 evidence ID만 분석 결과가 인용하도록 schema와 후검증을 적용하고 기록을 재조회 — 구현 및 단위·로컬 통합 검증. 인용 내용의 원문 대조는 사람 검토 대상.
+6. arXiv/Crossref 메타데이터 검색, 24시간 캐시, 소유자별 검색 한도와 만료 자료 정리 — 구현, 단위·로컬 D1 및 실제 API 호출 검증.
+7. 개인 PDF·PNG·JPEG를 비공개 R2에 저장·재조회·다운로드·삭제하고 선택 파일을 OpenAI 입력으로 전달 — 로컬 D1·R2와 실제 production D1·R2 remote binding에서 PDF 저장·다운로드·OpenAI 분석·인용/기록 재조회·삭제를 검증. 이번 배포 UI의 Chrome 조작은 별도 미검증.
 
 ## 7. 첫 연결 전에 결정할 항목
 
