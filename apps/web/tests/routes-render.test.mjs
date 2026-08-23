@@ -25,7 +25,11 @@ const vite = await createServer({
   logLevel: "silent",
 });
 const { App, CandidateReviewDesk } = await vite.ssrLoadModule("/src/App.jsx");
-const { PhysicsWorkspace, parseGoogleDriveCallbackSearch } = await vite.ssrLoadModule("/src/PhysicsWorkspace.jsx");
+const {
+  PhysicsWorkspace,
+  googleDriveConnectionErrorMessage,
+  parseGoogleDriveCallbackSearch,
+} = await vite.ssrLoadModule("/src/PhysicsWorkspace.jsx");
 const { PHYSICS_ANALYSIS_LEVEL, PHYSICS_PROFILE_SUMMARY } = await vite.ssrLoadModule("/src/physicsProfile.js");
 const { AiDrawer, analysisErrorNotice, getMandosProfile } = await vite.ssrLoadModule("/src/AiDrawer.jsx");
 const { CandidatePromotionPanel } = await vite.ssrLoadModule("/src/CandidatePromotionPanel.jsx");
@@ -109,6 +113,21 @@ test("Drive callback relay keeps only one bounded Google result", () => {
   });
   assert.equal(parseGoogleDriveCallbackSearch(`?state=${state}&code=code&error=access_denied`), null);
   assert.equal(parseGoogleDriveCallbackSearch("?state=short&code=code"), null);
+});
+
+test("Drive callback presents actionable safe OAuth diagnostics", () => {
+  assert.match(
+    googleDriveConnectionErrorMessage({ code: "google_oauth_client_invalid" }),
+    /Google 연결 비밀번호/,
+  );
+  assert.match(
+    googleDriveConnectionErrorMessage({ code: "google_oauth_grant_invalid" }),
+    /일회용 연결 코드/,
+  );
+  assert.ok(!googleDriveConnectionErrorMessage({
+    code: "unknown_error",
+    message: "provider secret details",
+  }).includes("provider secret details"));
 });
 
 test("renders candidate evidence and review controls without claiming verification", () => {

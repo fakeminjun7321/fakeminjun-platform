@@ -302,6 +302,19 @@ export function parseGoogleDriveCallbackSearch(search) {
   return null;
 }
 
+export function googleDriveConnectionErrorMessage(error) {
+  return ({
+    google_oauth_client_invalid: "서버의 Google 연결 비밀번호가 현재 설정과 맞지 않습니다. 연결 설정을 새 비밀번호로 갱신해야 합니다.",
+    google_oauth_grant_invalid: "Google의 일회용 연결 코드가 유효하지 않습니다. 새 연결을 시작해 다시 확인해 주세요.",
+    google_oauth_redirect_mismatch: "Google에 등록된 사이트 복귀 주소가 현재 주소와 맞지 않습니다.",
+    google_oauth_client_unauthorized: "현재 Google OAuth 클라이언트에서 이 연결 방식을 사용할 수 없습니다.",
+    google_oauth_request_invalid: "Google 연결 요청 형식이 올바르지 않습니다. 서버 설정을 확인해야 합니다.",
+    google_oauth_scope_mismatch: "Google이 선택 파일 전용 권한과 다른 권한을 반환해 연결을 중단했습니다.",
+    google_refresh_token_missing: "Google에서 장기 연결 정보가 반환되지 않았습니다. 새 연결 승인이 필요합니다.",
+    google_oauth_timeout: "Google 연결 응답 시간이 초과됐습니다. 잠시 후 다시 시도해 주세요.",
+  })[error?.code] ?? "Google Drive 연결을 완료하지 못했습니다. 연결 설정을 확인한 뒤 새 연결을 시작해 주세요.";
+}
+
 function takeGoogleDriveCallbackOnce() {
   if (googleDriveCapturedCallback) return googleDriveCapturedCallback;
   if (typeof window === "undefined") return null;
@@ -434,7 +447,7 @@ function GoogleDriveVault({ onNotice }) {
               configured: callback ? true : Boolean(latestStatus?.configured ?? current.configured),
               connected: false,
               message: callback
-                ? "Google Drive 연결을 완료하지 못했습니다. 연결 버튼으로 새 연결을 시작해 주세요."
+                ? googleDriveConnectionErrorMessage(error)
                 : "Google Drive 연결 상태를 불러오지 못했습니다.",
             }));
           }
