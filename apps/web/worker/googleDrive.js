@@ -12,7 +12,7 @@ const GOOGLE_DRIVE_ROOT_APP_PROPERTY = "physics-root";
 const GOOGLE_DRIVE_PDF_APP_PROPERTY = "physics-original";
 
 export const GOOGLE_DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file";
-export const GOOGLE_DRIVE_CALLBACK_PATH = "/api/v1/integrations/google-drive/callback";
+export const GOOGLE_DRIVE_CALLBACK_PATH = "/oauth/google-drive/finish";
 export const GOOGLE_DRIVE_MAX_PDF_BYTES = 512 * 1024 * 1024;
 
 export class GoogleDriveIntegrationError extends Error {

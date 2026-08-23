@@ -17,7 +17,7 @@ test("production frontend has only a fail-closed API guard and static SPA assets
     directory: "./dist/client",
     binding: "ASSETS",
     not_found_handling: "single-page-application",
-    run_worker_first: ["/api/*"],
+    run_worker_first: ["/api/*", "/oauth/google-drive/*"],
   });
   assert.deepEqual(config.routes, [{ pattern: "fakeminjun.vip", custom_domain: true }]);
   assert.equal(config.d1_databases, undefined);
@@ -43,7 +43,10 @@ test("production API is isolated to the API route without static assets", async 
   assert.equal(config.workers_dev, false);
   assert.equal(config.preview_urls, false);
   assert.equal(config.assets, undefined);
-  assert.deepEqual(config.routes, [{ pattern: "fakeminjun.vip/api/*", zone_name: "fakeminjun.vip" }]);
+  assert.deepEqual(config.routes, [
+    { pattern: "fakeminjun.vip/api/*", zone_name: "fakeminjun.vip" },
+    { pattern: "fakeminjun.vip/oauth/google-drive/*", zone_name: "fakeminjun.vip" },
+  ]);
   assert.deepEqual(config.vars, {
     APP_ENV: "production",
     APP_ORIGIN: "https://fakeminjun.vip",
@@ -110,6 +113,11 @@ test("frontend guard never serves the SPA shell for a missing API route", async 
   assert.equal(apiResponse.status, 503);
   assert.equal(apiResponse.headers.get("cache-control"), "no-store");
   assert.equal((await apiResponse.json()).error.code, "api_route_unavailable");
+  assert.equal(assetFetches, 0);
+
+  const oauthResponse = await frontend.fetch(new Request("https://fakeminjun.vip/oauth/google-drive/finish"), env);
+  assert.equal(oauthResponse.status, 503);
+  assert.equal((await oauthResponse.json()).error.code, "api_route_unavailable");
   assert.equal(assetFetches, 0);
 
   const appResponse = await frontend.fetch(new Request("https://fakeminjun.vip/physics/learn"), env);

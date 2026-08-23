@@ -886,13 +886,13 @@ try {
   assert.equal(driveAuthorizationUrl.origin, "https://accounts.google.com");
   const driveState = driveAuthorizationUrl.searchParams.get("state");
   const cancelledDriveCallback = await fetch(
-    `${apiOrigin}/api/v1/integrations/google-drive/callback?${new URLSearchParams({ state: driveState, error: "access_denied" })}`,
+    `${apiOrigin}/oauth/google-drive/finish?${new URLSearchParams({ state: driveState, error: "access_denied" })}`,
     { redirect: "manual" },
   );
   assert.equal(cancelledDriveCallback.status, 303);
   assert.equal(cancelledDriveCallback.headers.get("location"), `${frontendOrigin}/physics/library?drive=cancelled`);
   const replayedDriveCallback = await fetch(
-    `${apiOrigin}/api/v1/integrations/google-drive/callback?${new URLSearchParams({ state: driveState, error: "access_denied" })}`,
+    `${apiOrigin}/oauth/google-drive/finish?${new URLSearchParams({ state: driveState, error: "access_denied" })}`,
     { redirect: "manual" },
   );
   assert.equal(replayedDriveCallback.status, 400);
