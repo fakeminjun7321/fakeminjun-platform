@@ -3,6 +3,7 @@ export { ContainerProxy } from "@cloudflare/containers";
 import {
   ScanContractError,
   interpretClamAvResult,
+  markDeadLetterScanFailure,
   normalizeR2Etag,
   parseClamAvVersion,
   requireCommittedScanTransition,
@@ -344,7 +345,7 @@ async function processDeadLetter(event, env) {
     WHERE f.id = ? AND f.owner_id = ?
   `)
     .bind(parsed.fileId, parsed.ownerId).first();
-  if (row) await markFileScanError(env.DB, row.id, row.last_error_code || "scan_retries_exhausted");
+  if (row) await markDeadLetterScanFailure(env.DB, row.id, row.last_error_code || "scan_retries_exhausted");
 }
 
 export default {

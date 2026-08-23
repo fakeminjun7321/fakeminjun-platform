@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   ScanContractError,
   interpretClamAvResult,
+  markDeadLetterScanFailure,
   parseClamAvVersion,
   requireCommittedScanTransition,
   requireStableClamAvVersion,
@@ -111,4 +112,36 @@ test("a verdict is rejected if ClamAV signatures change during the scan", () => 
       && error.code === "clamav_database_changed_during_scan"
       && error.retryable,
   );
+});
+
+test("DLQ exhaustion clears an active lease and leaves the file and job fail-closed", async () => {
+  const statements = [];
+  const db = {
+    prepare(sql) {
+      return {
+        bind(...values) {
+          return {
+            sql,
+            values,
+            async first() {
+              return { id: fileId, last_error_code: null };
+            },
+          };
+        },
+      };
+    },
+    async batch(batch) {
+      statements.push(...batch);
+      return batch.map(() => ({ meta: { changes: 1 } }));
+    },
+  };
+
+  await markDeadLetterScanFailure(db, fileId, "scan_retries_exhausted");
+
+  assert.equal(statements.length, 2);
+  assert.match(statements[0].sql, /antivirus_status = 'error'/);
+  assert.deepEqual(statements[0].values, ["scan_retries_exhausted", fileId]);
+  assert.match(statements[1].sql, /state = 'error'/);
+  assert.match(statements[1].sql, /state NOT IN \('clean', 'blocked'\)/);
+  assert.deepEqual(statements[1].values, ["scan_retries_exhausted", fileId]);
 });
