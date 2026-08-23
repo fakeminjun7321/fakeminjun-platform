@@ -53,6 +53,19 @@ test("Crossref bibliographic metadata keeps DOI provenance and publication date"
   assert.equal(resources[0].metadata.referenceCount, 12);
 });
 
+test("provider parsers enforce accepted record counts even when upstream ignores rows", () => {
+  const arxivEntries = Array.from({ length: 25 }, (_, index) => (
+    `<entry><id>http://arxiv.org/abs/2608.${String(index).padStart(5, "0")}v1</id><title>Result ${index}</title></entry>`
+  )).join("");
+  assert.equal(parseArxivFeed(`<feed>${arxivEntries}</feed>`, 4).length, 4);
+
+  const crossrefItems = Array.from({ length: 25 }, (_, index) => ({
+    DOI: `10.1000/result.${index}`,
+    title: [`Result ${index}`],
+  }));
+  assert.equal(parseCrossrefResponse({ message: { items: crossrefItems } }, 5).length, 5);
+});
+
 test("external physics search degrades one provider without losing the other", async () => {
   const calls = [];
   const result = await searchExternalPhysicsProviders("quantum mechanics", {

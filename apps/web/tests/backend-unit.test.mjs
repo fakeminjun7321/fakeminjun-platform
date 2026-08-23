@@ -16,6 +16,7 @@ import worker, {
   parseEventCandidatesQuery,
   parseEventsQuery,
   parseSourceItemsQuery,
+  readJson,
   requestStructuredOpenAI,
   resolveAnalysisMode,
   runAnalysisWorkflow,
@@ -29,6 +30,7 @@ import worker, {
   validateEventCandidatePayload,
   validateEventCandidateReviewPayload,
   validateNotePayload,
+  validatePhysicsSearchPayload,
 } from "../worker/index.js";
 
 function jsonResponse(body, init = {}) {
@@ -400,6 +402,64 @@ test("mutations reject an untrusted origin before database access", async () => 
     APP_ORIGIN: "https://app.example.test",
     DB: {},
   }, {});
+  const body = await response.json();
+  assert.equal(response.status, 403);
+  assert.equal(body.error.code, "origin_forbidden");
+});
+
+test("JSON bodies are bounded while streaming instead of after full buffering", async () => {
+  let canceled = false;
+  const oversized = new ReadableStream({
+    pull(controller) {
+      controller.enqueue(new Uint8Array((16 * 1024) + 1).fill(0x20));
+    },
+    cancel() { canceled = true; },
+  });
+  const request = new Request("https://example.test/api/v1/analyses", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: oversized,
+    duplex: "half",
+  });
+  await assert.rejects(
+    () => readJson(request),
+    (error) => error.code === "payload_too_large" && error.status === 413,
+  );
+  assert.equal(canceled, true);
+
+  const accepted = await readJson(new Request("https://example.test/api/v1/analyses", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ prompt: "bounded" }),
+  }));
+  assert.deepEqual(accepted, { prompt: "bounded" });
+});
+
+test("physics external search is a bounded server-owned JSON mutation", () => {
+  assert.deepEqual(validatePhysicsSearchPayload({
+    query: "  전자기학  ",
+    type: "강의 영상",
+    cursor: "2",
+    limit: 20,
+  }), {
+    query: "전자기학",
+    provider: null,
+    type: "강의 영상",
+    cursor: 2,
+    limit: 20,
+  });
+  assert.throws(
+    () => validatePhysicsSearchPayload({ query: "전자기학", ownerId: 42 }),
+    (error) => error.code === "unknown_fields",
+  );
+});
+
+test("external physics search rejects a cross-origin POST before database access", async () => {
+  const response = await worker.fetch(new Request("https://example.test/api/v1/physics/resources/search", {
+    method: "POST",
+    headers: { "content-type": "application/json", origin: "https://attacker.example", "idempotency-key": "search-cross-origin" },
+    body: JSON.stringify({ query: "전자기학", limit: 20 }),
+  }), { APP_ORIGIN: "https://app.example.test", DB: {} }, {});
   const body = await response.json();
   assert.equal(response.status, 403);
   assert.equal(body.error.code, "origin_forbidden");

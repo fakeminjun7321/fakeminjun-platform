@@ -60,12 +60,18 @@ function arxivIdFromUrl(value) {
   }
 }
 
-export function parseArxivFeed(xml) {
-  return [...String(xml ?? "").matchAll(/<entry(?:\s[^>]*)?>([\s\S]*?)<\/entry>/gi)].flatMap((match) => {
+function boundedProviderLimit(value) {
+  return Math.min(Math.max(Number.isInteger(value) ? value : 10, 1), 10);
+}
+
+export function parseArxivFeed(xml, limit = 10) {
+  const resources = [];
+  const acceptedLimit = boundedProviderLimit(limit);
+  for (const match of String(xml ?? "").matchAll(/<entry(?:\s[^>]*)?>([\s\S]*?)<\/entry>/gi)) {
     const block = match[1];
     const providerItemId = arxivIdFromUrl(xmlText(block, "id"));
     const title = trimText(xmlText(block, "title"), 300);
-    if (!providerItemId || !title) return [];
+    if (!providerItemId || !title) continue;
     const authors = [...block.matchAll(/<author(?:\s[^>]*)?>([\s\S]*?)<\/author>/gi)]
       .map((author) => xmlText(author[1], "name"))
       .filter(Boolean)
@@ -74,7 +80,7 @@ export function parseArxivFeed(xml) {
       .map((category) => collapseWhitespace(decodeXml(category[1])))
       .filter(Boolean);
     const primaryCategory = xmlAttribute(block, "arxiv:primary_category", "term") || categories[0] || "physics";
-    return [{
+    resources.push({
       providerKey: "arxiv",
       providerItemId,
       title,
@@ -92,8 +98,10 @@ export function parseArxivFeed(xml) {
         updatedAt: safeIsoDate(xmlText(block, "updated")),
         doi: xmlText(block, "arxiv:doi") || null,
       },
-    }];
-  });
+    });
+    if (resources.length >= acceptedLimit) break;
+  }
+  return resources;
 }
 
 function crossrefDate(item) {
@@ -106,17 +114,19 @@ function crossrefDate(item) {
   return safeIsoDate(`${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}T00:00:00Z`);
 }
 
-export function parseCrossrefResponse(body) {
+export function parseCrossrefResponse(body, limit = 10) {
   const items = Array.isArray(body?.message?.items) ? body.message.items : [];
-  return items.flatMap((item) => {
+  const resources = [];
+  const acceptedLimit = boundedProviderLimit(limit);
+  for (const item of items) {
     const doi = collapseWhitespace(item?.DOI).toLowerCase();
     const title = trimText(item?.title?.[0], 300);
-    if (!doi || !title || doi.length > 200) return [];
+    if (!doi || !title || doi.length > 200) continue;
     const authors = (Array.isArray(item.author) ? item.author : []).map((author) => collapseWhitespace(
       [author.given, author.family].filter(Boolean).join(" "),
     )).filter(Boolean).slice(0, 20);
     const container = collapseWhitespace(item?.["container-title"]?.[0]);
-    return [{
+    resources.push({
       providerKey: "crossref",
       providerItemId: doi,
       title,
@@ -137,8 +147,10 @@ export function parseCrossrefResponse(body) {
           : Number.isFinite(item["reference-count"]) ? item["reference-count"] : null,
         citationCount: Number.isFinite(item["is-referenced-by-count"]) ? item["is-referenced-by-count"] : null,
       },
-    }];
-  });
+    });
+    if (resources.length >= acceptedLimit) break;
+  }
+  return resources;
 }
 
 async function readBoundedProviderResponse(response, signal) {
@@ -204,16 +216,17 @@ function arxivQuery(value) {
 }
 
 export async function searchArxiv(query, { fetchImpl = globalThis.fetch, limit = 6, timeoutMs = PROVIDER_TIMEOUT_MS } = {}) {
+  const acceptedLimit = boundedProviderLimit(limit);
   const url = new URL(ARXIV_ENDPOINT);
   url.searchParams.set("search_query", arxivQuery(query));
   url.searchParams.set("start", "0");
-  url.searchParams.set("max_results", String(Math.min(Math.max(limit, 1), 10)));
+  url.searchParams.set("max_results", String(acceptedLimit));
   url.searchParams.set("sortBy", "relevance");
   url.searchParams.set("sortOrder", "descending");
   const body = await fetchProviderText(fetchImpl, url, {
     headers: { accept: "application/atom+xml", "user-agent": "STUDIO-7321/1.0 (+https://fakeminjun.vip)" },
   }, timeoutMs);
-  return parseArxivFeed(body);
+  return parseArxivFeed(body, acceptedLimit);
 }
 
 export async function searchCrossref(query, {
@@ -222,18 +235,20 @@ export async function searchCrossref(query, {
   mailto = "",
   timeoutMs = PROVIDER_TIMEOUT_MS,
 } = {}) {
+  const acceptedLimit = boundedProviderLimit(limit);
   const url = new URL(CROSSREF_ENDPOINT);
   url.searchParams.set("query.bibliographic", collapseWhitespace(query));
-  url.searchParams.set("rows", String(Math.min(Math.max(limit, 1), 10)));
+  url.searchParams.set("rows", String(acceptedLimit));
   url.searchParams.set("select", "DOI,title,author,published,published-print,published-online,container-title,publisher,type,abstract,references-count,is-referenced-by-count");
   if (mailto) url.searchParams.set("mailto", mailto);
   const body = await fetchProviderText(fetchImpl, url, {
     headers: { accept: "application/json", "user-agent": "STUDIO-7321/1.0 (+https://fakeminjun.vip)" },
   }, timeoutMs);
-  return parseCrossrefResponse(JSON.parse(body));
+  return parseCrossrefResponse(JSON.parse(body), acceptedLimit);
 }
 
 export async function searchExternalPhysicsProviders(query, options = {}) {
+  const acceptedLimit = boundedProviderLimit(options.limit ?? 6);
   const providers = [
     ["arxiv", () => searchArxiv(query, options)],
     ["crossref", () => searchCrossref(query, options)],
@@ -244,12 +259,12 @@ export async function searchExternalPhysicsProviders(query, options = {}) {
   settled.forEach((result, index) => {
     const provider = providers[index][0];
     if (result.status === "fulfilled") {
-      resources.push(...result.value);
+      resources.push(...result.value.slice(0, acceptedLimit));
       status[provider] = { status: "ok", count: result.value.length };
     } else {
       const reason = result.reason?.name === "AbortError" ? "timeout" : String(result.reason?.message ?? "provider_error");
       status[provider] = { status: "error", errorCode: reason.slice(0, 120) };
     }
   });
-  return { resources, status };
+  return { resources: resources.slice(0, acceptedLimit * providers.length), status };
 }

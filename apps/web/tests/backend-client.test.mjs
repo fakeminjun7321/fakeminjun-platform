@@ -431,20 +431,40 @@ test("backend client searches, saves, removes, and exports private physics resou
     },
   });
   const controller = new AbortController();
-  const search = await client.searchPhysicsResources({ query: "전자기학", type: "강의 영상", cursor: "page-2", limit: 20, signal: controller.signal });
+  const search = await client.searchPhysicsResources({
+    query: "전자기학",
+    type: "강의 영상",
+    cursor: "2",
+    limit: 20,
+    signal: controller.signal,
+    idempotencyKey: "physics-search-1",
+  });
   await client.listPhysicsLibrary({ signal: controller.signal });
   await client.savePhysicsResource({ resourceId: "mit-802" }, { idempotencyKey: "physics-save-1" });
   await client.removePhysicsResource("mit/802");
   const exported = await client.exportPhysicsLibraryToObsidian();
+  await client.searchPhysicsResources({
+    query: "역학",
+    type: "전체",
+    limit: 20,
+    idempotencyKey: "physics-search-all",
+  });
 
-  const searchUrl = new URL(`https://example.test${calls[0].url}`);
-  assert.equal(searchUrl.searchParams.get("q"), "전자기학");
-  assert.equal(searchUrl.searchParams.get("type"), "강의 영상");
+  assert.equal(calls[0].url, "/api/v1/physics/resources/search");
+  assert.equal(calls[0].options.method, "POST");
+  assert.equal(calls[0].options.headers["idempotency-key"], "physics-search-1");
+  assert.deepEqual(JSON.parse(calls[0].options.body), {
+    query: "전자기학",
+    type: "강의 영상",
+    cursor: "2",
+    limit: 20,
+  });
   assert.equal(search.meta.nextCursor, "next");
   assert.equal(calls[2].options.headers["idempotency-key"], "physics-save-1");
   assert.deepEqual(JSON.parse(calls[2].options.body), { resourceId: "mit-802" });
   assert.equal(calls[3].url, "/api/v1/physics/library/mit%2F802");
   assert.equal(await exported.text(), "# Physics");
+  assert.deepEqual(JSON.parse(calls[5].options.body), { query: "역학", limit: 20 });
 });
 
 test("visual analysis uses browser multipart boundaries instead of forcing JSON content type", async () => {

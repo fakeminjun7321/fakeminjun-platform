@@ -212,10 +212,10 @@ function formatFileSize(bytes) {
 
 function antivirusLabel(status) {
   return ({
-    clean: "백신 확인",
+    clean: "ClamAV CLEAN",
     blocked: "보안 검사 차단",
     error: "백신 검사 오류",
-    "not-scanned": "백신 미검사",
+    "not-scanned": "격리 검사 대기",
   })[status] ?? "검사 상태 미상";
 }
 
@@ -225,6 +225,7 @@ function PhysicsFileVault({ level, onOpenAi, onNotice }) {
     items: [],
     quota: null,
     storage: "unknown",
+    scanner: "unknown",
     message: "개인 파일 목록을 불러오는 중입니다.",
   });
   const [pendingId, setPendingId] = useState(null);
@@ -242,6 +243,7 @@ function PhysicsFileVault({ level, onOpenAi, onNotice }) {
         items: response.data ?? [],
         quota: response.meta?.quota ?? null,
         storage: response.meta?.storage ?? "unavailable",
+        scanner: response.meta?.scanner ?? "unavailable",
         message: "",
       });
       return true;
@@ -257,6 +259,16 @@ function PhysicsFileVault({ level, onOpenAi, onNotice }) {
     void loadFiles();
     return () => requestRef.current?.abort();
   }, []);
+
+  const pendingScanKey = state.items
+    .filter((file) => file.antivirusStatus === "not-scanned")
+    .map((file) => file.id)
+    .join(",");
+  useEffect(() => {
+    if (!pendingScanKey) return undefined;
+    const timer = setTimeout(() => void loadFiles(), 3_000);
+    return () => clearTimeout(timer);
+  }, [pendingScanKey]);
 
   async function upload(event) {
     const file = event.target.files?.[0];
@@ -275,8 +287,8 @@ function PhysicsFileVault({ level, onOpenAi, onNotice }) {
       if (refreshed) {
         setState((current) => ({ ...current, message: existed
           ? "이미 보관 중인 동일 파일을 다시 사용합니다. 저장 용량은 늘어나지 않았습니다."
-          : "파일 시그니처를 확인해 저장했습니다. 백신 검사는 아직 수행되지 않았습니다." }));
-        onNotice("개인 물리 파일을 저장했습니다. 현재 상태는 백신 미검사입니다.");
+          : "격리 저장이 끝났습니다. ClamAV 검사가 끝나면 다운로드와 AI 분석이 열립니다." }));
+        onNotice("개인 물리 파일을 격리 저장하고 백신 검사를 요청했습니다.");
       } else {
         onNotice("파일은 저장됐지만 최신 목록을 다시 불러오지 못했습니다.");
       }
@@ -311,17 +323,18 @@ function PhysicsFileVault({ level, onOpenAi, onNotice }) {
         <div><h3 id="physics-file-vault-title">개인 파일</h3><p>PDF·PNG·JPEG · 최대 10MiB · {state.storage === "private-r2" ? "비공개 R2" : "저장소 연결 확인 필요"}</p></div>
         <div><span>{state.quota
           ? `${state.quota.usedFiles}/${state.quota.maxFiles} FILES · ${formatFileSize(state.quota.usedBytes)} / ${formatFileSize(state.quota.maxBytes)}`
-          : `${state.items.length} FILES`}</span><button type="button" onClick={() => inputRef.current?.click()} disabled={pendingId === "upload" || state.storage !== "private-r2"}><FileArrowUp size={17} />{pendingId === "upload" ? "업로드 중" : "파일 추가"}</button></div>
+          : `${state.items.length} FILES`}</span><button type="button" onClick={() => inputRef.current?.click()} disabled={pendingId === "upload" || state.storage !== "private-r2" || state.scanner !== "async-clamav"}><FileArrowUp size={17} />{pendingId === "upload" ? "업로드 중" : "파일 추가"}</button></div>
         <input ref={inputRef} className="sr-only" type="file" accept="application/pdf,image/png,image/jpeg" onChange={upload} />
       </header>
-      <div className="physics-file-security"><ShieldWarning size={17} /><p><strong>{state.storage === "unavailable" ? "비공개 저장소 미연결" : "백신 검사 미연결"}</strong> {state.storage === "unavailable"
+      <div className="physics-file-security"><ShieldWarning size={17} /><p><strong>{state.storage === "unavailable" ? "비공개 저장소 미연결" : state.scanner === "async-clamav" ? "격리형 ClamAV 검사" : "백신 검사 미연결"}</strong> {state.storage === "unavailable"
         ? "현재 환경에서는 업로드·다운로드·파일 분석을 사용할 수 없습니다."
-        : "확장자와 내부 시그니처를 확인하고 강제 다운로드하지만, 악성코드 무해 판정은 아닙니다."}</p></div>
+        : state.scanner === "async-clamav"
+          ? "새 파일은 비공개 격리 구역에서 검사되며 clean 판정과 객체 무결성이 확인되기 전까지 사용할 수 없습니다."
+          : "백신 파이프라인이 연결될 때까지 새 파일 업로드와 사용이 차단됩니다."}</p></div>
       {state.message ? <p className={`resource-query-status is-${state.status}`} role="status">{state.message}</p> : null}
       <div className="physics-file-list">
         {state.items.map((file) => {
-          const blocked = file.antivirusStatus === "blocked";
-          const actionsAvailable = state.storage === "private-r2" && !blocked;
+          const actionsAvailable = state.storage === "private-r2" && file.antivirusStatus === "clean";
           return <article key={file.id}>
             <FileText size={20} />
             <div><strong>{file.filename}</strong><span>{formatFileSize(file.byteSize)} · {file.mimeType}</span><small>SHA-256 {file.sha256.slice(0, 12)}… · {antivirusLabel(file.antivirusStatus)}</small></div>
@@ -363,7 +376,13 @@ function FinderPage({ level, onLevelChange, onOpenAi, onNotice }) {
     requestRef.current = controller;
     setState((current) => ({ ...current, status: "loading", message: "공개 자료 출처를 검색하고 있습니다." }));
     try {
-      const result = await backendClient.searchPhysicsResources({ query: normalized, type, cursor: append ? state.cursor : null, limit: 20, signal: controller.signal });
+      const result = await backendClient.searchPhysicsResources({
+        query: normalized,
+        ...(type === "전체" ? {} : { type }),
+        cursor: append ? state.cursor : null,
+        limit: 20,
+        signal: controller.signal,
+      });
       const items = (result.data ?? []).map(normalizePhysicsResource);
       setState((current) => ({
         status: "ready",

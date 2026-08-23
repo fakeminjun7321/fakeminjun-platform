@@ -21,6 +21,7 @@
   "vars": {
     "APP_ENV": "local",
     "APP_ORIGIN": "http://127.0.0.1:5173",
+    "PHYSICS_SCANNER_ENABLED": "true",
     "INGESTION_ADMIN_SUBJECT": "local-development-user",
     "EVENT_EDITOR_SUBJECT": "local-development-user"
   },

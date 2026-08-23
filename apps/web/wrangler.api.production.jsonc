@@ -27,7 +27,8 @@
   ],
   "vars": {
     "APP_ENV": "production",
-    "APP_ORIGIN": "https://fakeminjun.vip"
+    "APP_ORIGIN": "https://fakeminjun.vip",
+    "PHYSICS_SCANNER_ENABLED": "true"
   },
   "triggers": {
     "crons": [
