@@ -75,8 +75,23 @@ test("production scanner has no public route and consumes only the bounded AV qu
     class_name: "ClamAvContainer",
     image: "./scanner/Dockerfile",
     max_instances: 1,
-    instance_type: "standard-1",
+    instance_type: "standard-2",
   }]);
+
+  const dockerfile = await readFile(new URL("../scanner/Dockerfile", import.meta.url), "utf8");
+  const customSignatures = await readFile(new URL("../scanner/studio-7321.ndb", import.meta.url), "utf8");
+  const scannerSource = await readFile(new URL("../worker/scanner.js", import.meta.url), "utf8");
+  assert.match(dockerfile, /^FROM docker\.io\/clamav\/clamav:1\.5\.4@sha256:[0-9a-f]{64}$/m);
+  assert.match(dockerfile, /COPY --chown=clamav:clamav studio-7321\.ndb \/var\/lib\/clamav\/studio-7321\.ndb/);
+  assert.match(dockerfile, /^USER clamav$/m);
+  assert.match(dockerfile, /ENTRYPOINT \["sleep", "infinity"\]/);
+  assert.match(customSignatures, /^Studio7321\.EICAR_Embedded_Test:0:\*:[0-9a-f]+\n$/);
+  assert.match(scannerSource, /exec\(\["freshclam", "--stdout"\]\)/);
+  assert.match(scannerSource, /clamscan --stdout --infected --no-summary/);
+  assert.doesNotMatch(scannerSource, /clamdscan/);
+  assert.match(scannerSource, /const SCAN_TIMEOUT_MS = 120_000;/);
+  assert.match(scannerSource, /enableInternet = true;\s+allowedHosts = \["database\.clamav\.net"\];/);
+  assert.doesNotMatch(scannerSource, /allowedHosts\s*=\s*\[[^\]]*\*/);
 });
 
 test("frontend guard never serves the SPA shell for a missing API route", async () => {

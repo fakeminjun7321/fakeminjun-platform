@@ -4,6 +4,8 @@ import { readFile } from "node:fs/promises";
 const frontend = JSON.parse(await readFile(new URL("../wrangler.frontend.production.jsonc", import.meta.url), "utf8"));
 const api = JSON.parse(await readFile(new URL("../wrangler.api.production.jsonc", import.meta.url), "utf8"));
 const scanner = JSON.parse(await readFile(new URL("../wrangler.scan.production.jsonc", import.meta.url), "utf8"));
+const scannerDockerfile = await readFile(new URL("../scanner/Dockerfile", import.meta.url), "utf8");
+const scannerSource = await readFile(new URL("../worker/scanner.js", import.meta.url), "utf8");
 
 assert.equal(frontend.name, "fakeminjun-platform-web", "Unexpected frontend Worker name");
 assert.equal(frontend.main, "worker/frontend.js", "Unexpected frontend guard entrypoint");
@@ -49,9 +51,14 @@ assert.deepEqual(scanner.containers, [{
   class_name: "ClamAvContainer",
   image: "./scanner/Dockerfile",
   max_instances: 1,
-  instance_type: "standard-1",
+  instance_type: "standard-2",
 }]);
 assert.equal(scanner.vars?.CLOUDFLARE_ACCOUNT_ID, "cf03cf471c6eb89a4ababd4f1f023469");
 assert.equal(scanner.vars?.PHYSICS_SCAN_BUCKET, "fakeminjun-physics-vault");
+assert.match(scannerDockerfile, /COPY --chown=clamav:clamav studio-7321\.ndb \/var\/lib\/clamav\/studio-7321\.ndb/);
+assert.match(scannerDockerfile, /^USER clamav$/m, "Scanner image must run uploaded-file parsers as the non-root clamav user");
+assert.match(scannerSource, /const SCAN_TIMEOUT_MS = 120_000;/, "Scanner parse timeout must retain the 120-second policy cap");
+assert.match(scannerSource, /enableInternet = true;\s+allowedHosts = \["database\.clamav\.net"\];/, "Scanner egress must remain pinned to the exact FreshClam mirror");
+assert.doesNotMatch(scannerSource, /allowedHosts\s*=\s*\[[^\]]*\*/);
 
 console.log("Production deployment config is safe to use.");
