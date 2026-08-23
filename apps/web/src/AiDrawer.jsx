@@ -17,6 +17,11 @@ import {
 } from "./backendClient.js";
 
 const CONFIDENCE_LABELS = { high: "높음", medium: "중간", low: "낮음" };
+const SUPPORT_LABELS = {
+  direct: "직접 뒷받침",
+  context: "맥락 참고",
+  insufficient: "근거 불충분",
+};
 const BASIS_LABELS = {
   "provided-evidence": "분석 근거 · 제공 맥락",
   "established-knowledge": "분석 근거 · 확립 지식",
@@ -25,9 +30,9 @@ const BASIS_LABELS = {
 };
 
 const MANDOS_PROFILES = [
-  { mode: "standard", title: "Mandos 3 Swift", task: "요약·정리", trait: "빠른 응답" },
-  { mode: "auto", title: "Mandos 3 Core", task: "상황·맥락", trait: "균형 추론" },
-  { mode: "deep", title: "Mandos 3 Deep", task: "복합 쟁점", trait: "깊은 교차검토" },
+  { mode: "standard", title: "Mandos 3 Swift", task: "빠른 답변", trait: "요약·개념 확인" },
+  { mode: "auto", title: "Mandos 3 Core", task: "기본 분석", trait: "맥락·인과관계" },
+  { mode: "deep", title: "Mandos 3 Deep", task: "정밀 검토", trait: "교차검토·독립 검산" },
 ];
 
 const DOMAIN_LABELS = { international: "국제정세", physics: "물리" };
@@ -59,7 +64,7 @@ function AnalysisResult({ analysis, requestedMode }) {
       <div className="analysis-sections">
         {result.sections?.map((section, index) => (
           <section key={`${section.title}-${index}`}>
-            <div><h4>{section.title}</h4><span>{BASIS_LABELS[section.basis] ?? section.basis} · 확신 추정 {CONFIDENCE_LABELS[section.confidence] ?? section.confidence}</span></div>
+            <div><h4>{section.title}</h4><span>{BASIS_LABELS[section.basis] ?? "분석 근거 · 구분 안 됨"} · 판단 확신도 {CONFIDENCE_LABELS[section.confidence] ?? "미표시"}</span></div>
             <p>{section.content}</p>
           </section>
         ))}
@@ -73,7 +78,8 @@ function AnalysisResult({ analysis, requestedMode }) {
           <ol>{result.citations.map((citation, index) => {
             const evidence = evidenceById.get(citation.evidenceId);
             const locator = evidence?.snapshot?.locator;
-            const content = <><b>{citation.claim}</b><span>{citation.locator} · {citation.support}</span><small>{citation.evidenceId}</small></>;
+            const support = SUPPORT_LABELS[citation.support] ?? "근거 수준 미확인";
+            const content = <><b>{citation.claim}</b><span>{citation.locator} · {support}</span><small>{citation.evidenceId}</small></>;
             return <li key={`${citation.evidenceId}-${index}`}>{typeof locator === "string" && locator.startsWith("https://")
               ? <a href={locator} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">{content}</a>
               : <div>{content}</div>}</li>;
@@ -112,15 +118,45 @@ function waitForPoll(delayMs, signal) {
   });
 }
 
-async function resolvePendingAnalysis(initial, signal, onProgress) {
+async function resolvePendingAnalysis(initial, signal, onProgress, requestedMode) {
   let current = initial;
   onProgress?.(current);
-  for (let attempt = 0; current?.status === "pending" && attempt < 45; attempt += 1) {
+  const profileMode = current?.requestedMode ?? requestedMode;
+  // Deep can run two parallel specialist passes followed by a separate synthesis.
+  // Give the browser slightly more time than the Worker's two 150s stage limits.
+  const maxAttempts = profileMode === "deep" ? 165 : 45;
+  for (let attempt = 0; current?.status === "pending" && attempt < maxAttempts; attempt += 1) {
     await waitForPoll(2000, signal);
     current = await backendClient.getAnalysis(current.id, { signal });
     onProgress?.(current);
   }
   return current;
+}
+
+export function analysisErrorNotice(error) {
+  const notices = {
+    ai_incomplete: "답변을 끝까지 만들지 못했습니다. 다시 요청해 주세요.",
+    ai_timeout: "분석 시간이 초과됐습니다. 다시 요청해 주세요.",
+    analysis_poll_timeout: "분석이 계속 진행 중입니다. 잠시 후 기록에서 확인해 주세요.",
+    ai_rate_limited: "현재 분석 요청이 많습니다. 잠시 후 다시 시도해 주세요.",
+    analysis_rate_limited: "분석 사용 한도에 도달했습니다. 잠시 후 다시 확인해 주세요.",
+    ai_refused: "이 요청은 분석할 수 없습니다. 질문을 바꿔 주세요.",
+    ai_unavailable: "분석 서비스를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+    ai_provider_unavailable: "분석 서비스에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+    ai_provider_error: "분석 서비스가 응답하지 않았습니다. 다시 시도해 주세요.",
+    ai_output_missing: "완성된 답변을 받지 못했습니다. 다시 요청해 주세요.",
+    ai_schema_mismatch: "답변 형식을 확인하지 못했습니다. 다시 요청해 주세요.",
+    analysis_evidence_mismatch: "근거 확인을 통과하지 못했습니다. 다시 요청해 주세요.",
+    analysis_citation_required: "근거가 빠진 답변은 표시하지 않았습니다. 다시 요청해 주세요.",
+    analysis_failed: "분석을 완료하지 못했습니다. 새로 요청해 주세요.",
+    analysis_stale: "이전 분석이 만료됐습니다. 새로 요청해 주세요.",
+    analysis_request_consumed: "이전 요청은 종료됐습니다. 새로 요청해 주세요.",
+    physics_file_scan_pending: "파일 안전 검사가 끝난 뒤 다시 요청해 주세요.",
+  };
+  if (notices[error?.code]) return notices[error.code];
+  if (error?.status === 429) return "현재 요청이 많습니다. 잠시 후 다시 시도해 주세요.";
+  if (error?.status >= 500) return "분석 서비스를 잠시 사용할 수 없습니다. 다시 시도해 주세요.";
+  return "분석 요청을 처리하지 못했습니다. 다시 확인해 주세요.";
 }
 
 export function AiDrawer({ analysisContext, onClose, pinned = false }) {
@@ -166,7 +202,7 @@ export function AiDrawer({ analysisContext, onClose, pinned = false }) {
     try {
       const loaded = await backendClient.getAnalysis(item.id, { signal: controller.signal });
       setAnalysis(loaded);
-      setMode(loaded.mode ?? "auto");
+      setMode(loaded.requestedMode ?? loaded.mode ?? "auto");
       setHistoryOpen(false);
       setRequestState(loaded.status === "completed" ? "success" : loaded.status === "failed" ? "error" : "submitting");
       setNotice("저장된 분석 기록을 열었습니다.");
@@ -259,10 +295,11 @@ export function AiDrawer({ analysisContext, onClose, pinned = false }) {
       }
       createdAnalysisId = created?.id ?? null;
       setAnalysis(created);
-      const completed = await resolvePendingAnalysis(created, controller.signal, setAnalysis);
-      if (completed?.status === "pending") throw new Error("분석이 아직 진행 중입니다. 잠시 후 같은 질문으로 다시 확인하세요.");
+      const completed = await resolvePendingAnalysis(created, controller.signal, setAnalysis, mode);
+      if (completed?.status === "pending") {
+        throw new BackendApiError(408, "analysis_poll_timeout", "분석이 아직 진행 중입니다.");
+      }
       if (completed?.status === "failed") {
-        if (attempt && clearAttempt) clearAttempt(attempt.fingerprint);
         throw new BackendApiError(502, completed.errorCode ?? "analysis_failed", "이전 분석 요청이 완료되지 않았습니다. 다시 시도하세요.");
       }
       if (attempt && clearAttempt) clearAttempt(attempt.fingerprint);
@@ -276,7 +313,7 @@ export function AiDrawer({ analysisContext, onClose, pinned = false }) {
         clearAttempt?.(attempt.fingerprint);
       }
       setRequestState("error");
-      setNotice("분석 요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+      setNotice(analysisErrorNotice(error));
     } finally {
       if (requestRef.current === controller) requestRef.current = null;
     }

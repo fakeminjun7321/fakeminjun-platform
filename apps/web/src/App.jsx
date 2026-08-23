@@ -811,6 +811,7 @@ export function App() {
     return {
       domain: "international",
       level: "I2",
+      taskType: route === "briefing" ? "evidence-crosscheck" : "causal-synthesis",
       eventId: selectedEvent.id,
       contextKind: "event",
       contextId: String(selectedEvent.id),
@@ -818,7 +819,7 @@ export function App() {
         meta: `${selectedEvent.region} · ${selectedEvent.time} KST · ${selectedEvent.live ? "지도에 반영된 실제 사건" : "명시된 데모 자료"}`,
       placeholder: "확인된 사실과 추론을 구분해서, 한국에 미칠 영향을 분석해줘.",
     };
-  }, [domain, selectedEvent]);
+  }, [domain, route, selectedEvent]);
 
   useEffect(() => { setAnalysisContext(null); }, [route]);
 
@@ -1081,6 +1082,8 @@ export function App() {
     activeAnalysisContext.domain,
     activeAnalysisContext.contextKind ?? "context",
     activeAnalysisContext.contextId ?? activeAnalysisContext.eventId ?? route,
+    activeAnalysisContext.taskType ?? "general",
+    route,
   ].join(":");
 
   return (

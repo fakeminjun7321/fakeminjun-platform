@@ -3,6 +3,7 @@ import test from "node:test";
 import worker, {
   ANALYSIS_REPORT_SCHEMA,
   EVENT_CANDIDATE_SCHEMA,
+  analysisReportSchemaForProfile,
   analysisReportSchemaForEvidence,
   analysisStepPlan,
   captureImageDimensions,
@@ -12,12 +13,15 @@ import worker, {
   eventCandidateRequestHash,
   eventCandidateReviewRequestHash,
   inspectPhysicsFile,
+  mandosAnalysisInstructions,
+  mandosRequestContract,
   mandosRuntimePolicy,
   parseAnalysesQuery,
   parseEventCandidatesQuery,
   parseEventsQuery,
   parseSourceItemsQuery,
   readJson,
+  requestMandosOpenAI,
   requestStructuredOpenAI,
   resolveAnalysisMode,
   runAnalysisWorkflow,
@@ -60,6 +64,28 @@ function candidateResult(evidenceIds = [1, 2]) {
     uncertainties: ["원문 본문은 확인하지 않았습니다."],
     nextChecks: ["각 원문을 열어 발표 대상을 대조합니다."],
   };
+}
+
+function mandosReport(overrides = {}) {
+  return {
+    headline: "검토 결과",
+    summary: "요약",
+    sourceBoundary: "별도 근거 없음",
+    sections: [
+      { title: "핵심", content: "요청한 작업을 검토했다.", confidence: "medium", basis: "inference" },
+      { title: "경계", content: "제공되지 않은 사실은 단정하지 않았다.", confidence: "high", basis: "uncertain" },
+      { title: "검산", content: "가정과 결론의 연결을 다시 확인했다.", confidence: "medium", basis: "established-knowledge" },
+    ],
+    citations: [],
+    uncertainties: [],
+    nextQuestions: [],
+    visual: { type: "none", title: "", items: [] },
+    ...overrides,
+  };
+}
+
+function specialistReport() {
+  return { findings: ["핵심 검토"], risks: [], openQuestions: [] };
 }
 
 test("event query parsing enforces the map API bounds", () => {
@@ -591,17 +617,132 @@ test("Mandos runtime policies use distinct models, reasoning, and bounded output
   };
   assert.deepEqual(mandosRuntimePolicy("standard", env, "text"), {
     profile: "swift", resolvedMode: "standard", model: "swift-model",
-    reasoningEffort: "low", maxOutputTokens: 1600, timeoutMs: 90_000,
+    reasoningEffort: "low", verbosity: "low", recoveryEffort: null,
+    maxOutputTokens: 1600, timeoutMs: 90_000,
   });
   assert.deepEqual(mandosRuntimePolicy("auto", env, "visual"), {
     profile: "core", resolvedMode: "standard", model: "core-model",
-    reasoningEffort: "medium", maxOutputTokens: 3400, timeoutMs: 90_000,
+    reasoningEffort: "medium", verbosity: "medium", recoveryEffort: "low",
+    maxOutputTokens: 3400, timeoutMs: 90_000,
   });
   assert.deepEqual(mandosRuntimePolicy("deep", env, "file"), {
     profile: "deep", resolvedMode: "deep", model: "deep-model",
-    reasoningEffort: "high", maxOutputTokens: 4800, timeoutMs: 150_000,
+    reasoningEffort: "high", verbosity: "medium", recoveryEffort: "medium",
+    maxOutputTokens: 4800, timeoutMs: 150_000,
   });
   assert.equal(mandosRuntimePolicy("deep", env, "text").maxOutputTokens, 6400);
+});
+
+test("Mandos request contracts preserve profile, task, domain, and input kind", () => {
+  const cases = [
+    {
+      mode: "standard",
+      domain: "international",
+      taskType: "general",
+      inputKind: "text",
+      profile: "swift",
+      promptPattern: /핵심|간결/,
+    },
+    {
+      mode: "auto",
+      domain: "international",
+      taskType: "evidence-crosscheck",
+      inputKind: "text",
+      profile: "core",
+      promptPattern: /근거|교차/,
+    },
+    {
+      mode: "deep",
+      domain: "international",
+      taskType: "causal-synthesis",
+      inputKind: "text",
+      profile: "deep",
+      promptPattern: /인과|교차 검토/,
+    },
+    {
+      mode: "auto",
+      domain: "physics",
+      taskType: "full-derivation",
+      inputKind: "file",
+      profile: "core",
+      promptPattern: /유도|가정/,
+    },
+    {
+      mode: "deep",
+      domain: "physics",
+      taskType: "solution-audit",
+      inputKind: "file",
+      profile: "deep",
+      promptPattern: /검산|오류/,
+    },
+  ];
+
+  for (const entry of cases) {
+    const analysis = {
+      domain: entry.domain,
+      mode: entry.mode === "deep" ? "deep" : "standard",
+      requestedMode: entry.mode,
+      taskType: entry.taskType,
+      prompt: "고정 평가 질문",
+    };
+    const policy = mandosRuntimePolicy(entry.mode, {}, entry.inputKind);
+    const context = { domain: entry.domain, evidenceBundle: [], evidenceNotice: "별도 출처 없음" };
+    const contract = mandosRequestContract(analysis, context, policy, entry.inputKind);
+    assert.equal(contract.profile, entry.profile);
+    assert.equal(contract.domain, entry.domain);
+    assert.equal(contract.taskType, entry.taskType);
+    assert.equal(contract.inputKind, entry.inputKind);
+    const instructions = mandosAnalysisInstructions(analysis, contract);
+    assert.match(instructions, entry.promptPattern);
+    assert.match(instructions, new RegExp(entry.taskType));
+  }
+
+  const generalByProfile = ["standard", "auto", "deep"].map((mode) => {
+    const analysis = {
+      domain: "physics",
+      mode: mode === "deep" ? "deep" : "standard",
+      requestedMode: mode,
+      taskType: "general",
+      prompt: "같은 질문",
+    };
+    const policy = mandosRuntimePolicy(mode, {}, "text");
+    const contract = mandosRequestContract(
+      analysis,
+      { domain: "physics", evidenceBundle: [], evidenceNotice: "별도 출처 없음" },
+      policy,
+      "text",
+    );
+    return mandosAnalysisInstructions(analysis, contract);
+  });
+  assert.equal(new Set(generalByProfile).size, 3, "Swift, Core, Deep prompts must not collapse to one prompt");
+});
+
+test("profile schemas make the response envelope bounded without weakening evidence IDs", () => {
+  const evidence = [{ evidenceId: "physics-file:file-1" }];
+  const swift = analysisReportSchemaForProfile(evidence, "swift");
+  const core = analysisReportSchemaForProfile(evidence, "core");
+  const deep = analysisReportSchemaForProfile(evidence, "deep");
+
+  for (const schema of [swift, core, deep]) {
+    assert.equal(schema.additionalProperties, false);
+    assert.deepEqual(schema.properties.citations.items.properties.evidenceId.enum, ["physics-file:file-1"]);
+    assert.ok(Number.isInteger(schema.properties.headline.maxLength));
+    assert.ok(Number.isInteger(schema.properties.summary.maxLength));
+    assert.ok(Number.isInteger(schema.properties.sourceBoundary.maxLength));
+    assert.ok(Number.isInteger(schema.properties.sections.items.properties.content.maxLength));
+  }
+  assert.deepEqual(
+    [swift, core, deep].map((schema) => schema.properties.sections.minItems),
+    [1, 2, 3],
+  );
+  assert.deepEqual(
+    [swift, core, deep].map((schema) => schema.properties.sections.maxItems),
+    [3, 4, 5],
+  );
+  assert.ok(swift.properties.sections.maxItems <= core.properties.sections.maxItems);
+  assert.ok(core.properties.sections.maxItems <= deep.properties.sections.maxItems);
+  assert.ok(swift.properties.sections.items.properties.content.maxLength
+    < deep.properties.sections.items.properties.content.maxLength);
 });
 
 test("capture image inspection accepts only bounded PNG and JPEG signatures", () => {
@@ -730,6 +871,7 @@ test("deep analysis plans two bounded specialists and one final synthesis", asyn
     sections: [
       { title: "구조", content: "가정을 분리했다.", confidence: "medium", basis: "inference" },
       { title: "검산", content: "단위를 확인했다.", confidence: "high", basis: "established-knowledge" },
+      { title: "경계", content: "제공되지 않은 근거는 단정하지 않았다.", confidence: "high", basis: "uncertain" },
     ],
     uncertainties: [],
     nextQuestions: [],
@@ -785,6 +927,77 @@ test("deep analysis plans two bounded specialists and one final synthesis", asyn
   assert.equal(calls.every(({ store, tools }) => store === false && Array.isArray(tools) && tools.length === 0), true);
 });
 
+test("Swift, Core, and Deep deliver the task contract to every provider stage", async () => {
+  const calls = [];
+  const env = {
+    OPENAI_API_KEY: "test-key-that-is-long-enough",
+    OPENAI_STANDARD_MODEL: "swift-model",
+    OPENAI_CORE_MODEL: "core-model",
+    OPENAI_SPECIALIST_MODEL: "specialist-model",
+    OPENAI_DEEP_MODEL: "deep-model",
+    OPENAI_FETCH: async (_url, options) => {
+      const body = JSON.parse(options.body);
+      calls.push(body);
+      const output = body.text.format.name.startsWith("specialist_review_")
+        ? specialistReport()
+        : mandosReport();
+      return jsonResponse({
+        id: `resp-contract-${calls.length}`,
+        status: "completed",
+        model: body.model,
+        output_text: JSON.stringify(output),
+        usage: { input_tokens: 12, output_tokens: 8, total_tokens: 20 },
+      });
+    },
+  };
+  const context = { domain: "physics", evidenceBundle: [], evidenceNotice: "별도 출처 없음" };
+
+  await runAnalysisWorkflow({
+    domain: "physics", mode: "standard", requestedMode: "standard",
+    taskType: "general", prompt: "핵심만 정리해줘.",
+  }, context, env, { analysisId: "contract-swift", safetyId: "safe-swift" });
+  await runAnalysisWorkflow({
+    domain: "physics", mode: "standard", requestedMode: "auto",
+    taskType: "full-derivation", prompt: "가정부터 유도해줘.",
+  }, context, env, { analysisId: "contract-core", safetyId: "safe-core" });
+  await runAnalysisWorkflow({
+    domain: "physics", mode: "deep", requestedMode: "deep",
+    taskType: "solution-audit", prompt: "부호와 차원을 검산해줘.",
+  }, context, env, { analysisId: "contract-deep", safetyId: "safe-deep" });
+
+  assert.equal(calls.length, 5);
+  assert.deepEqual(calls.map(({ model, reasoning, text }) => ({
+    model,
+    effort: reasoning.effort,
+    verbosity: text.verbosity,
+  })), [
+    { model: "swift-model", effort: "low", verbosity: "low" },
+    { model: "core-model", effort: "medium", verbosity: "medium" },
+    { model: "specialist-model", effort: "medium", verbosity: "low" },
+    { model: "specialist-model", effort: "medium", verbosity: "low" },
+    { model: "deep-model", effort: "high", verbosity: "medium" },
+  ]);
+
+  const expected = [
+    { profile: "swift", taskType: "general" },
+    { profile: "core", taskType: "full-derivation" },
+    { profile: "deep", taskType: "solution-audit" },
+    { profile: "deep", taskType: "solution-audit" },
+    { profile: "deep", taskType: "solution-audit" },
+  ];
+  calls.forEach((call, index) => {
+    const input = JSON.parse(call.input);
+    assert.equal(input.requestContract.profile, expected[index].profile);
+    assert.equal(input.requestContract.taskType, expected[index].taskType);
+    assert.equal(input.requestContract.domain, "physics");
+    assert.equal(call.metadata.mandos_profile, expected[index].profile);
+    assert.equal(call.metadata.task_type, expected[index].taskType);
+  });
+  assert.notEqual(calls[0].instructions, calls[1].instructions);
+  assert.match(calls[2].instructions, /검산 담당자|이론 물리 튜터/);
+  assert.match(calls[4].instructions, /통합|종합/);
+});
+
 test("structured OpenAI requests disable storage and tools while enforcing the schema", async () => {
   const calls = [];
   const report = {
@@ -833,9 +1046,200 @@ test("structured OpenAI requests disable storage and tools while enforcing the s
   assert.deepEqual(calls[0].body.tools, []);
   assert.equal(calls[0].body.text.format.type, "json_schema");
   assert.equal(calls[0].body.text.format.strict, true);
+  assert.equal(calls[0].body.text.verbosity, "medium");
   assert.equal(calls[0].body.max_output_tokens, 500);
   assert.equal(calls[0].body.safety_identifier, "safe-user-hash");
   assert.equal(calls[0].options.headers["idempotency-key"], "analysis-1-standard");
+});
+
+test("incomplete provider responses preserve the exact reason, response, model, and usage", async () => {
+  await assert.rejects(
+    () => requestStructuredOpenAI({
+      apiKey: "test-key-not-a-live-secret",
+      model: "core-model",
+      instructions: "고정 지침",
+      input: "동적 입력",
+      schema: ANALYSIS_REPORT_SCHEMA,
+      schemaName: "test_report",
+      reasoningEffort: "medium",
+      maxOutputTokens: 500,
+      fetchImpl: async () => jsonResponse({
+        id: "resp-incomplete-1",
+        status: "incomplete",
+        model: "core-model-2026-08-23",
+        incomplete_details: { reason: "max_output_tokens" },
+        usage: {
+          input_tokens: 11,
+          input_tokens_details: { cached_tokens: 3 },
+          output_tokens: 19,
+          output_tokens_details: { reasoning_tokens: 7 },
+          total_tokens: 30,
+        },
+      }),
+    }),
+    (error) => {
+      assert.equal(error.code, "ai_incomplete");
+      assert.equal(error.details.status, "incomplete");
+      assert.equal(error.details.reason, "max_output_tokens");
+      assert.equal(error.details.responseId, "resp-incomplete-1");
+      assert.equal(error.details.model, "core-model-2026-08-23");
+      assert.deepEqual(error.details.usage, {
+        inputTokens: 11,
+        cachedInputTokens: 3,
+        outputTokens: 19,
+        reasoningTokens: 7,
+        totalTokens: 30,
+      });
+      return true;
+    },
+  );
+});
+
+test("Mandos retries max-output incomplete once on the same model with bounded recovery", async () => {
+  const calls = [];
+  const result = await requestMandosOpenAI({
+    apiKey: "test-key-not-a-live-secret",
+    model: "core-model",
+    instructions: "Core 지침",
+    input: JSON.stringify({ userRequest: "검산", requestContract: { profile: "core" } }),
+    schema: ANALYSIS_REPORT_SCHEMA,
+    schemaName: "workspace_analysis_report",
+    reasoningEffort: "medium",
+    verbosity: "medium",
+    recoveryEffort: "low",
+    maxOutputTokens: 500,
+    idempotencyKey: "analysis-core",
+    fetchImpl: async (_url, options) => {
+      const body = JSON.parse(options.body);
+      calls.push({ body, key: options.headers["idempotency-key"] });
+      if (calls.length === 1) {
+        return jsonResponse({
+          id: "resp-incomplete",
+          status: "incomplete",
+          model: body.model,
+          incomplete_details: { reason: "max_output_tokens" },
+          usage: { input_tokens: 5, output_tokens: 10, total_tokens: 15 },
+        });
+      }
+      return jsonResponse({
+        id: "resp-recovered",
+        status: "completed",
+        model: body.model,
+        output_text: JSON.stringify(mandosReport()),
+        usage: { input_tokens: 10, output_tokens: 20, total_tokens: 30 },
+      });
+    },
+  });
+
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls.map(({ body }) => body.model), ["core-model", "core-model"]);
+  assert.deepEqual(calls.map(({ body }) => body.reasoning.effort), ["medium", "low"]);
+  assert.deepEqual(calls.map(({ body }) => body.text.verbosity), ["medium", "low"]);
+  assert.equal(new Set(calls.map(({ key }) => key)).size, 2);
+  assert.match(calls[1].key, /recovery/);
+  assert.equal(result.data.headline, "검토 결과");
+  assert.equal(result.usage.totalTokens, 45);
+  assert.equal(result.recoveredFrom, "max_output_tokens");
+});
+
+test("Mandos stops after one failed max-output recovery and preserves both attempts' usage", async () => {
+  const calls = [];
+  await assert.rejects(
+    () => requestMandosOpenAI({
+      apiKey: "test-key-not-a-live-secret",
+      model: "deep-model",
+      instructions: "Deep 지침",
+      input: "동적 입력",
+      schema: ANALYSIS_REPORT_SCHEMA,
+      schemaName: "deep_workspace_analysis_report",
+      reasoningEffort: "high",
+      verbosity: "medium",
+      recoveryEffort: "medium",
+      maxOutputTokens: 500,
+      idempotencyKey: "analysis-deep-incomplete",
+      fetchImpl: async (_url, options) => {
+        const body = JSON.parse(options.body);
+        calls.push(body);
+        return jsonResponse({
+          id: `resp-incomplete-${calls.length}`,
+          status: "incomplete",
+          model: body.model,
+          incomplete_details: { reason: "max_output_tokens" },
+          usage: { input_tokens: 5, output_tokens: 10, total_tokens: 15 },
+        });
+      },
+    }),
+    (error) => {
+      assert.equal(error.code, "ai_incomplete");
+      assert.equal(error.details.reason, "max_output_tokens");
+      assert.equal(error.details.recoveryAttempted, true);
+      assert.equal(error.details.usage.totalTokens, 30);
+      return true;
+    },
+  );
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls.map(({ model }) => model), ["deep-model", "deep-model"]);
+  assert.deepEqual(calls.map(({ reasoning }) => reasoning.effort), ["high", "medium"]);
+});
+
+test("Mandos never retries refusal, timeout, malformed output, or non-token incomplete results", async () => {
+  const scenarios = [
+    {
+      name: "refusal",
+      expectedCode: "ai_refused",
+      response: () => jsonResponse({
+        id: "resp-refusal",
+        status: "completed",
+        output: [{ type: "message", content: [{ type: "refusal", refusal: "거절" }] }],
+      }),
+    },
+    {
+      name: "timeout",
+      expectedCode: "ai_timeout",
+      response: async () => { throw new DOMException("Aborted", "AbortError"); },
+    },
+    {
+      name: "malformed",
+      expectedCode: "ai_schema_mismatch",
+      response: () => jsonResponse({ id: "resp-malformed", status: "completed", output_text: "{not-json" }),
+    },
+    {
+      name: "content-filter",
+      expectedCode: "ai_incomplete",
+      response: () => jsonResponse({
+        id: "resp-filtered",
+        status: "incomplete",
+        incomplete_details: { reason: "content_filter" },
+        usage: { input_tokens: 4, output_tokens: 0, total_tokens: 4 },
+      }),
+    },
+  ];
+
+  for (const scenario of scenarios) {
+    let calls = 0;
+    await assert.rejects(
+      () => requestMandosOpenAI({
+        apiKey: "test-key-not-a-live-secret",
+        model: "deep-model",
+        instructions: "Deep 지침",
+        input: "동적 입력",
+        schema: ANALYSIS_REPORT_SCHEMA,
+        schemaName: "deep_workspace_analysis_report",
+        reasoningEffort: "high",
+        verbosity: "medium",
+        recoveryEffort: "medium",
+        maxOutputTokens: 500,
+        idempotencyKey: `analysis-deep-${scenario.name}`,
+        fetchImpl: async (...args) => {
+          calls += 1;
+          return scenario.response(...args);
+        },
+      }),
+      (error) => error.code === scenario.expectedCode,
+      scenario.name,
+    );
+    assert.equal(calls, 1, `${scenario.name} must not be retried`);
+  }
 });
 
 test("candidate structured output enforces integer evidence IDs and the exact safe field set", async () => {
