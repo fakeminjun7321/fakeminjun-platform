@@ -10,10 +10,10 @@ import {
   MagnifyingGlass,
   ShieldWarning,
   Trash,
-  Trophy,
 } from "@phosphor-icons/react";
 import { backendClient } from "./backendClient.js";
-import { IPHO_TOPICS, PHYSICS_RESOURCES, PHYSICS_TOOLS, filterPhysicsResources } from "./physicsData.js";
+import { filterPhysicsResources } from "./physicsData.js";
+import { PHYSICS_AI_ENGINES } from "./physicsEngines.js";
 import { PHYSICS_ANALYSIS_LEVEL, PHYSICS_PROFILE_SUMMARY } from "./physicsProfile.js";
 import { startPhysicsScanPolling } from "./physicsScanPolling.js";
 import {
@@ -26,15 +26,6 @@ const RESOURCE_TYPES = ["전체", "강의·문제", "강의 영상", "동료평�
 const DRIVE_COMPLETION_STORAGE_KEY = "studio7321.drive-upload-completion.v1";
 let googleDriveCapturedCallback = null;
 let googleDriveCallbackRelay = null;
-const PHYSICS_TASK_TYPES = {
-  concept: "general",
-  derivation: "full-derivation",
-  "visual-analysis": "solution-audit",
-  research: "evidence-crosscheck",
-  network: "general",
-  "thought-experiment": "general",
-  "research-log": "general",
-};
 
 function readSessionValue(key) {
   try {
@@ -105,44 +96,6 @@ function PhysicsHeading({ title, description, countLabel }) {
   );
 }
 
-function LearningHub({ onOpenAi }) {
-  const [selectedId, setSelectedId] = useState(PHYSICS_TOOLS[0].id);
-  const selected = PHYSICS_TOOLS.find(({ id }) => id === selectedId) ?? PHYSICS_TOOLS[0];
-  return (
-    <main className="focused-workspace domain-workspace physics-workspace">
-      <PhysicsHeading title="물리 학습 허브" description="공식 암기보다 개념, 수학 구조, 유도와 검산을 중심으로 작업합니다." countLabel="학습 모드 7개" />
-      <div className="physics-hub-layout">
-        <aside className="physics-tool-index" aria-label="물리 학습 도구">{PHYSICS_TOOLS.map((tool) => (
-          <button type="button" key={tool.id} className={tool.id === selected.id ? "is-selected" : ""} onClick={() => setSelectedId(tool.id)} aria-pressed={tool.id === selected.id}>
-            <span>{tool.code}</span><strong>{tool.title}</strong><ArrowRight size={14} />
-          </button>
-        ))}</aside>
-        <article className="physics-tool-reader">
-          <header><span className="physics-tool-code">학습 모드 {selected.code}</span><h3>{selected.title}</h3><p>{selected.summary}</p></header>
-          <dl><div><dt>입력</dt><dd>{selected.input}</dd></div><div><dt>결과 구조</dt><dd>{selected.output}</dd></div><div><dt>학습 예시</dt><dd>{selected.example}</dd></div></dl>
-          <section className="physics-working-area">
-            <div><p className="system-kicker">풀이 노트</p><h4>분석할 내용을 이 화면에 모읍니다</h4></div>
-            <p>그림·그래프 자료는 자료 보관소에 추가해 Mandos와 분석할 수 있습니다. 분석 기록은 소유자별로 보관됩니다.</p>
-            <button type="button" onClick={() => onOpenAi({
-              level: PHYSICS_ANALYSIS_LEVEL, contextKind: "physics-mode", contextId: selected.id, title: selected.title,
-              taskType: PHYSICS_TASK_TYPES[selected.id] ?? "general",
-              meta: `물리 학습 모드 ${selected.code} · ${PHYSICS_PROFILE_SUMMARY}`, placeholder: selected.example,
-            })}><Brain size={18} /> Mandos로 분석하기</button>
-          </section>
-        </article>
-        <aside className="physics-quick-resources">
-          <p className="system-kicker">추천 공개 자료</p><h3>바로 볼 자료</h3>
-          {PHYSICS_RESOURCES.slice(0, 3).map((resource) => (
-            <a key={resource.id} href={resource.href} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">
-              <span>{resource.topic}</span><strong>{resource.title}</strong><small>{resource.provider} · {resource.level}</small><ArrowSquareOut size={14} aria-hidden="true" />
-            </a>
-          ))}
-        </aside>
-      </div>
-    </main>
-  );
-}
-
 function ResourceTable({ resources, onOpenAi, emptyLabel, onSave, onRemove, pendingIds = new Set() }) {
   return (
     <div className="physics-resource-table">
@@ -174,7 +127,7 @@ function ResourceTable({ resources, onOpenAi, emptyLabel, onSave, onRemove, pend
   );
 }
 
-function LibraryPage({ onOpenAi, onNotice }) {
+function SavedLibrary({ onOpenAi, onNotice }) {
   const [query, setQuery] = useState("");
   const [state, setState] = useState({ status: "loading", items: [], message: "개인 보관소를 불러오는 중입니다." });
   const [pendingIds, setPendingIds] = useState(() => new Set());
@@ -232,11 +185,11 @@ function LibraryPage({ onOpenAi, onNotice }) {
   }
 
   return (
-    <main className="focused-workspace domain-workspace physics-workspace">
-      <PhysicsHeading title="물리 자료 보관소" description="공개 자료 링크와 직접 올린 PDF·이미지를 분리해 개인 보관소에서 관리합니다." countLabel={`보관 링크 ${state.items.length}개`} />
-      <GoogleDriveVault onNotice={onNotice} />
-      <PhysicsFileVault onOpenAi={onOpenAi} onNotice={onNotice} />
-      <section className="resource-workspace">
+      <section className="resource-workspace saved-resource-workspace" aria-labelledby="saved-resource-title">
+        <header className="drive-section-heading">
+          <div><span>LINK INDEX</span><h3 id="saved-resource-title">보관 링크</h3><p>공개 출처에서 저장한 자료를 Drive 작업 화면에서 함께 관리합니다.</p></div>
+          <strong>{state.items.length}개</strong>
+        </header>
         <div className="resource-toolbar">
           <label className="workspace-search"><MagnifyingGlass size={17} /><span className="sr-only">보관 자료 검색</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="제목·분야·출처 검색" /></label>
           <button type="button" className="primary-workspace-action obsidian-export" onClick={exportObsidian} disabled={state.status !== "ready" || !state.items.length}><DownloadSimple size={17} /> Markdown 내보내기</button>
@@ -244,7 +197,6 @@ function LibraryPage({ onOpenAi, onNotice }) {
         {state.message ? <p className={`resource-query-status is-${state.status}`} role="status">{state.message}</p> : null}
         <ResourceTable resources={resources} onOpenAi={onOpenAi} onRemove={removeResource} pendingIds={pendingIds} emptyLabel={state.status === "loading" ? "개인 보관소를 불러오는 중입니다." : "저장된 자료가 없거나 검색 결과가 없습니다."} />
       </section>
-    </main>
   );
 }
 
@@ -321,7 +273,7 @@ function takeGoogleDriveCallbackOnce() {
   const callback = parseGoogleDriveCallbackSearch(window.location.search);
   if (!callback) return null;
   googleDriveCapturedCallback = callback;
-  window.history.replaceState({}, "", "/physics/library?drive=connecting");
+  window.history.replaceState({}, "", "/physics/drive?drive=connecting");
   return callback;
 }
 
@@ -393,7 +345,7 @@ function GoogleDriveVault({ onNotice }) {
           if (!active) return;
           const nextOutcome = result.outcome === "cancelled" ? "cancelled" : "connected";
           clearGoogleDriveCallback(callback);
-          window.history.replaceState({}, "", `/physics/library?drive=${nextOutcome}`);
+          window.history.replaceState({}, "", `/physics/drive?drive=${nextOutcome}`);
           try {
             await load(controller.signal, nextOutcome);
           } catch (error) {
@@ -427,7 +379,7 @@ function GoogleDriveVault({ onNotice }) {
           if (!active) return;
           if (latestStatus?.connected) {
             clearGoogleDriveCallback(callback);
-            window.history.replaceState({}, "", "/physics/library?drive=connected");
+            window.history.replaceState({}, "", "/physics/drive?drive=connected");
             setState((current) => ({
               ...current,
               status: "ready",
@@ -439,7 +391,7 @@ function GoogleDriveVault({ onNotice }) {
           } else {
             if (callback) {
               clearGoogleDriveCallback(callback);
-              window.history.replaceState({}, "", "/physics/library?drive=error");
+              window.history.replaceState({}, "", "/physics/drive?drive=error");
             }
             setState((current) => ({
               ...current,
@@ -840,7 +792,7 @@ function PhysicsFileVault({ onOpenAi, onNotice }) {
   );
 }
 
-function FinderPage({ onOpenAi, onNotice }) {
+function ResourceFinder({ onOpenAi, onNotice }) {
   const [query, setQuery] = useState("");
   const [type, setType] = useState("전체");
   const [state, setState] = useState({ status: "idle", items: [], cursor: null, message: "검색어를 입력하면 등록된 공개 물리 자료 출처를 조회합니다." });
@@ -908,47 +860,133 @@ function FinderPage({ onOpenAi, onNotice }) {
   }
 
   return (
-    <main className="focused-workspace domain-workspace physics-workspace">
-      <PhysicsHeading title="물리 자료 찾기" description="등록된 공개 출처를 검색하고, 필요한 결과만 개인 보관소에 저장할 수 있습니다." countLabel={state.status === "ready" ? `검색 결과 ${state.items.length}개` : "공개 자료 검색"} />
-      <section className="resource-workspace finder-workspace">
-        <form className="finder-query" onSubmit={search}><MagnifyingGlass size={20} aria-hidden="true" /><label><span className="sr-only">물리 자료 검색</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="예: 전자기학 심화 강의, IPhO 기출문제" /></label><button type="submit" disabled={!query.trim() || state.status === "loading"}>{state.status === "loading" ? "검색 중" : "자료 검색"}</button></form>
+      <section className="resource-workspace finder-workspace" aria-labelledby="resource-finder-title">
+        <header className="drive-section-heading">
+          <div><span>DISCOVERY</span><h3 id="resource-finder-title">통합 자료 검색</h3><p>승인된 공개 물리 출처를 검색하고 필요한 결과만 보관합니다.</p></div>
+          <strong>{state.status === "ready" ? `${state.items.length}건` : "공개 출처"}</strong>
+        </header>
+        <form className="finder-query" onSubmit={search}><MagnifyingGlass size={20} aria-hidden="true" /><label><span className="sr-only">물리 자료 검색</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="예: 전자기학 심화 강의, 경계조건과 그린함수" /></label><button type="submit" disabled={!query.trim() || state.status === "loading"}>{state.status === "loading" ? "검색 중" : "자료 검색"}</button></form>
         <div className="resource-type-filter" aria-label="자료 유형">{RESOURCE_TYPES.map((item) => <button type="button" key={item} className={type === item ? "is-selected" : ""} onClick={() => setType(item)} aria-pressed={type === item}>{item}</button>)}</div>
         <p className={`resource-query-status is-${state.status}`} role="status">{state.message}</p>
         <ResourceTable resources={state.items} onOpenAi={onOpenAi} onSave={saveResource} onRemove={removeResource} pendingIds={pendingIds} emptyLabel={state.status === "ready" ? "검색어 또는 자료 유형을 바꿔보세요." : "검색을 실행하면 실제 결과가 이곳에 표시됩니다."} />
         {state.cursor ? <button type="button" className="resource-load-more" onClick={(event) => search(event, { append: true })} disabled={state.status === "loading"}>다음 결과 불러오기</button> : null}
       </section>
+  );
+}
+
+function DrivePage({ onOpenAi, onNotice }) {
+  return (
+    <main className="focused-workspace domain-workspace physics-workspace drive-workspace">
+      <PhysicsHeading title="Drive" description="Google Drive 원본, 공개 자료 검색, 보관 링크와 검사 파일을 한 작업 화면에서 관리합니다." countLabel="통합 자료 워크스페이스" />
+      <GoogleDriveVault onNotice={onNotice} />
+      <ResourceFinder onOpenAi={onOpenAi} onNotice={onNotice} />
+      <SavedLibrary onOpenAi={onOpenAi} onNotice={onNotice} />
+      <PhysicsFileVault onOpenAi={onOpenAi} onNotice={onNotice} />
     </main>
   );
 }
 
-function IphoPage({ onOpenAi }) {
+function EngineDiagram({ engine }) {
+  const isProblemSolver = engine.id === "ps";
   return (
-    <main className="focused-workspace domain-workspace physics-workspace ipho-workspace">
-      <PhysicsHeading title="KPhO · IPhO 준비" description="KPhO를 먼저 준비하는 단계와 장기적인 IPhO 준비 영역을 한 공간에서 분리해 봅니다." countLabel="KPhO에서 IPhO까지" />
-      <div className="ipho-layout">
-        <section className="olympiad-path" aria-labelledby="olympiad-path-title"><header><p className="system-kicker">학습 경로</p><h3 id="olympiad-path-title">준비 단계</h3></header><ol>
-          <li className="is-current"><span>01</span><div><strong>일반물리 기반</strong><p>P3 내용을 완전히 자동화하고 P4 유도를 빈 종이에서 재구성합니다.</p></div></li>
-          <li><span>02</span><div><strong>KPhO 준비</strong><p>공식 일정·교육과정을 확인하고 국내 선발 수준 문제에 적응합니다.</p></div></li>
-          <li><span>03</span><div><strong>IPhO 이론·실험</strong><p>공식 syllabus 전체와 역대 문제를 이론·실험으로 나누어 훈련합니다.</p></div></li>
-          <li><span>04</span><div><strong>국제대회 성과</strong><p>시간 제한, 풀이 서술, 실험 오차 분석까지 실전 수준으로 통합합니다.</p></div></li>
-        </ol></section>
-        <section className="ipho-topic-matrix" aria-labelledby="ipho-topic-title"><header><p className="system-kicker">공식 범위</p><h3 id="ipho-topic-title">준비 영역</h3></header><div>{IPHO_TOPICS.map((topic, index) => <article key={topic.id}><span>{String(index + 1).padStart(2, "0")}</span><strong>{topic.label}</strong><p>{topic.detail}</p></article>)}</div></section>
-        <aside className="official-olympiad-links"><p className="system-kicker">공식 출처</p><h3>공식 자료</h3>
-          {PHYSICS_RESOURCES.filter(({ id }) => ["kpho-official", "ipho-syllabus", "ipho-problems"].includes(id)).map((resource) => (
-            <a key={resource.id} href={resource.href} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer"><FileText size={17} /><span><strong>{resource.title}</strong><small>{resource.provider}</small></span><ArrowSquareOut size={14} /></a>
-          ))}
-          <button type="button" onClick={() => onOpenAi({ level: PHYSICS_ANALYSIS_LEVEL, contextKind: "olympiad-track", contextId: "kpho-ipho", title: "KPhO에서 IPhO까지의 준비 계획", meta: `KPhO → IPhO 준비 트랙 · ${PHYSICS_PROFILE_SUMMARY}`, placeholder: "KPhO를 아직 시작하지 않은 상태에서 역학과 전자기학 중심의 첫 학습 순서를 짜줘." })}><Trophy size={17} /> 준비 계획을 Mandos와 보기</button>
-        </aside>
+    <svg className="physics-engine-diagram" viewBox="0 0 720 260" role="img" aria-label={`${engine.engineName} 코드 기반 SVG 출력 예시`}>
+      <defs>
+        <marker id={`${engine.id}-arrow`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" />
+        </marker>
+      </defs>
+      <g className="diagram-grid">
+        {Array.from({ length: 12 }, (_, index) => <path key={`v-${index}`} d={`M ${index * 65} 0 V 260`} />)}
+        {Array.from({ length: 6 }, (_, index) => <path key={`h-${index}`} d={`M 0 ${index * 52} H 720`} />)}
+      </g>
+      {isProblemSolver ? <>
+        <path className="diagram-plane" d="M 125 195 L 540 195 L 360 82 Z" />
+        <rect className="diagram-object" x="326" y="111" width="74" height="52" transform="rotate(28 363 137)" />
+        <path className="diagram-vector" d="M 363 137 L 363 48" markerEnd={`url(#${engine.id}-arrow)`} />
+        <path className="diagram-vector" d="M 363 137 L 363 225" markerEnd={`url(#${engine.id}-arrow)`} />
+        <path className="diagram-vector is-accent" d="M 363 137 L 500 201" markerEnd={`url(#${engine.id}-arrow)`} />
+        <text x="374" y="62">N</text><text x="373" y="222">mg</text><text x="488" y="188">ma</text>
+        <text className="diagram-caption" x="36" y="36">FREE-BODY / EQUATION MAP</text>
+      </> : <>
+        {engine.steps.map((step, index) => {
+          const x = 34 + index * 136;
+          return <g key={step}>
+            {index ? <path className="diagram-link" d={`M ${x - 34} 130 H ${x - 8}`} markerEnd={`url(#${engine.id}-arrow)`} /> : null}
+            <rect className={index === 2 ? "diagram-node is-accent" : "diagram-node"} x={x} y="94" width="102" height="72" />
+            <text className="diagram-node-index" x={x + 10} y="112">{String(index + 1).padStart(2, "0")}</text>
+            <text className="diagram-node-label" x={x + 51} y="137" textAnchor="middle">{step}</text>
+          </g>;
+        })}
+        <text className="diagram-caption" x="34" y="36">CONCEPT / EQUATION MAP</text>
+      </>}
+    </svg>
+  );
+}
+
+function PhysicsEngineWorkspace({ engine, onOpenAi }) {
+  const [prompt, setPrompt] = useState("");
+  const [mode, setMode] = useState("auto");
+  const selectedProfile = engine.profiles[mode];
+
+  function submit(event) {
+    event.preventDefault();
+    const question = prompt.trim();
+    if (!question) return;
+    onOpenAi({
+      level: PHYSICS_ANALYSIS_LEVEL,
+      taskType: engine.taskType,
+      contextKind: engine.contextKind,
+      contextId: `${engine.id}-${crypto.randomUUID()}`,
+      title: engine.title,
+      meta: `${engine.engineName} · ${selectedProfile.task} · ${PHYSICS_PROFILE_SUMMARY}`,
+      placeholder: engine.placeholder,
+      initialPrompt: question,
+      defaultMode: mode,
+      autoSubmit: true,
+    });
+  }
+
+  return (
+    <main className={`focused-workspace domain-workspace physics-workspace physics-engine-workspace is-${engine.id}`}>
+      <PhysicsHeading title={engine.title} description={engine.description} countLabel={engine.engineName} />
+      <div className="physics-engine-layout">
+        <form className="physics-engine-composer" onSubmit={submit}>
+          <header><div><span>PHYSICS ENGINE</span><h3>{engine.engineName}</h3></div><strong>{selectedProfile.task}</strong></header>
+          <label htmlFor={`${engine.id}-prompt`}>{engine.id === "ps" ? "문제 입력" : "이론 또는 개념"}</label>
+          <textarea
+            id={`${engine.id}-prompt`}
+            value={prompt}
+            onChange={(event) => setPrompt(event.target.value)}
+            maxLength={4000}
+            rows={12}
+            placeholder={engine.placeholder}
+          />
+          <div className="engine-prompt-meta"><span>{prompt.length.toLocaleString("ko-KR")} / 4,000</span><button type="button" onClick={() => setPrompt(engine.example)}>예시 불러오기</button></div>
+          <fieldset>
+            <legend>실행 방식</legend>
+            {Object.values(engine.profiles).map((profile) => (
+              <button type="button" key={profile.mode} className={mode === profile.mode ? "is-selected" : ""} aria-pressed={mode === profile.mode} onClick={() => setMode(profile.mode)}>
+                <strong>{profile.task}</strong><span>{profile.trait}</span>
+              </button>
+            ))}
+          </fieldset>
+          <button className="engine-run" type="submit" disabled={!prompt.trim()}><Brain size={18} /> {engine.id === "ps" ? "풀이 실행" : "설명 생성"}<ArrowRight size={16} /></button>
+          <p>실행하면 오른쪽 전용 패널에서 결과가 생성됩니다. 수식 지도와 물리 도식은 안전한 구조 데이터로 받아 코드 기반 SVG로 렌더링합니다.</p>
+        </form>
+        <section className="physics-engine-blueprint" aria-labelledby={`${engine.id}-output-title`}>
+          <header><div><span>OUTPUT CONTRACT</span><h3 id={`${engine.id}-output-title`}>{engine.id === "ps" ? "풀이 출력 구조" : "설명 출력 구조"}</h3></div><strong>SVG NATIVE</strong></header>
+          <ol>{engine.steps.map((step, index) => <li key={step}><span>{String(index + 1).padStart(2, "0")}</span><strong>{step}</strong></li>)}</ol>
+          <div className="engine-diagram-frame"><span>CODE-NATIVE VISUAL</span><EngineDiagram engine={engine} /></div>
+        </section>
       </div>
     </main>
   );
 }
 
 export function PhysicsWorkspace({ view, onOpenAi, onNotice }) {
-  if (view === "library") return <LibraryPage onOpenAi={onOpenAi} onNotice={onNotice} />;
-  if (view === "finder") return <FinderPage onOpenAi={onOpenAi} onNotice={onNotice} />;
-  if (view === "ipho") return <IphoPage onOpenAi={onOpenAi} />;
-  return <LearningHub onOpenAi={onOpenAi} />;
+  if (view === "ps") return <PhysicsEngineWorkspace engine={PHYSICS_AI_ENGINES.ps} onOpenAi={onOpenAi} />;
+  if (view === "te") return <PhysicsEngineWorkspace engine={PHYSICS_AI_ENGINES.te} onOpenAi={onOpenAi} />;
+  return <DrivePage onOpenAi={onOpenAi} onNotice={onNotice} />;
 }
 
 export default PhysicsWorkspace;

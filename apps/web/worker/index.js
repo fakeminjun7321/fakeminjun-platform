@@ -29,7 +29,16 @@ const MAX_JSON_BYTES = 16 * 1024;
 const ANALYSIS_DOMAINS = new Set(["international", "physics"]);
 const ANALYSIS_MODES = new Set(["standard", "deep"]);
 const ANALYSIS_REQUEST_MODES = new Set(["auto", ...ANALYSIS_MODES]);
-const ANALYSIS_TASK_TYPES = new Set(["general", "evidence-crosscheck", "causal-synthesis", "full-derivation", "solution-audit"]);
+const ANALYSIS_TASK_TYPES = new Set([
+  "general",
+  "evidence-crosscheck",
+  "causal-synthesis",
+  "full-derivation",
+  "solution-audit",
+  "physics-problem-solving",
+  "physics-theory-explanation",
+]);
+const PHYSICS_ONLY_ANALYSIS_TASK_TYPES = new Set(["physics-problem-solving", "physics-theory-explanation"]);
 const CANDIDATE_STATUSES = new Set(["pending", "ready", "failed"]);
 const CANDIDATE_REVIEW_DECISIONS = new Set(["unreviewed", "hold", "reviewed", "rejected"]);
 const CANDIDATE_REVIEW_ACTIONS = new Set(["hold", "reviewed", "rejected"]);
@@ -130,7 +139,7 @@ export const ANALYSIS_REPORT_SCHEMA = {
       additionalProperties: false,
       required: ["type", "title", "items"],
       properties: {
-        type: { type: "string", enum: ["none", "causal-chain", "comparison", "timeline", "equation-map"] },
+        type: { type: "string", enum: ["none", "causal-chain", "comparison", "timeline", "equation-map", "concept-map", "free-body-diagram"] },
         title: { type: "string" },
         items: {
           type: "array",
@@ -1659,6 +1668,9 @@ export function validateAnalysisPayload(payload) {
   const taskType = payload.taskType ?? "general";
   if (!ANALYSIS_TASK_TYPES.has(taskType)) {
     throw new ApiError(400, "invalid_analysis_task_type", "지원하지 않는 분석 작업 유형입니다.");
+  }
+  if (PHYSICS_ONLY_ANALYSIS_TASK_TYPES.has(taskType) && payload.domain !== "physics") {
+    throw new ApiError(400, "invalid_analysis_task_type", "물리 전용 분석 작업은 physics 분야에서만 사용할 수 있습니다.");
   }
   if (typeof payload.prompt !== "string" || !payload.prompt.trim() || payload.prompt.length > 4000) {
     throw new ApiError(400, "invalid_analysis_prompt", "분석 요청은 1자 이상 4,000자 이하여야 합니다.");
@@ -3470,6 +3482,8 @@ const MANDOS_TASK_DIRECTIVES = {
   "causal-synthesis": "원인 → 작동 경로 → 중간 조건 → 결과 순서로 구성하고, 시간적 선후만으로 인과를 단정하지 않는다. 대안 원인과 끊어진 경로를 확인하면 종료한다.",
   "full-derivation": "변수, 좌표계, 부호 규약 → 가정 → 사용한 정리 → 생략 없는 전개 → 차원과 극한 검산 순서로 구성한다. 검산까지 끝나면 종료한다.",
   "solution-audit": "최초 오류 → 오류 유형 → 이후 단계에 미친 영향 → 최소 수정 → 독립 검산 순서로 점검한다. 오류가 없으면 독립 검산 근거를 제시하고 종료한다.",
+  "physics-problem-solving": "AXIOM S1 문제풀이 계약을 따른다. 주어진 것과 구할 것을 먼저 분리하고 좌표계, 부호 규약, 모델 가정, 적용 법칙을 명시한다. 가능한 한 생략 없이 전개한 뒤 단위가 포함된 최종 답을 분리하고 차원, 극한, 대안 풀이 중 가능한 방법으로 독립 검산한다. 시각화가 풀이에 도움이 되면 raw SVG나 이미지 코드를 만들지 말고 visual.type을 free-body-diagram 또는 equation-map으로 선택해 items에 힘, 변수, 풀이 단계를 구조화한다.",
+  "physics-theory-explanation": "THEORIA T1 이론설명 계약을 따른다. 핵심 직관 → 정확한 정의 → 수학적 구조 → 유도 연결 → 적용 범위와 한계 또는 반례 순서로 설명한다. P4 수준에서 미적분, 벡터, 선형대수 표현을 사용할 수 있으며 지나친 단순화를 피한다. 개념 연결이 도움이 되면 raw SVG나 이미지 코드를 만들지 말고 visual.type을 concept-map 또는 equation-map으로 선택해 items에 개념과 수식의 관계를 구조화한다.",
 };
 
 const PHYSICS_MODE_DIRECTIVES = {

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import {
   ArrowRight,
   CaretDown,
@@ -15,6 +15,7 @@ import {
   getAnalysisAttempt,
   shouldClearAnalysisAttempt,
 } from "./backendClient.js";
+import { physicsEngineForTask, physicsEngineProfile } from "./physicsEngines.js";
 
 const CONFIDENCE_LABELS = { high: "높음", medium: "중간", low: "낮음" };
 const SUPPORT_LABELS = {
@@ -41,10 +42,56 @@ export function getMandosProfile(mode) {
   return MANDOS_PROFILES.find((profile) => profile.mode === mode) ?? MANDOS_PROFILES[1];
 }
 
-function AnalysisResult({ analysis, requestedMode }) {
+export function getAnalysisProfile(mode, taskType = null) {
+  return physicsEngineProfile(taskType, mode) ?? getMandosProfile(mode);
+}
+
+function AnalysisVisual({ visual }) {
+  const markerId = `analysis-arrow-${useId().replaceAll(":", "")}`;
+  const items = visual.items ?? [];
+  const diagramType = ["causal-chain", "timeline", "equation-map", "concept-map", "free-body-diagram"].includes(visual.type);
+  return (
+    <section className={`analysis-visual is-${visual.type}`} aria-label={visual.title}>
+      <strong>{visual.title}</strong>
+      {diagramType ? <svg className="analysis-visual-svg" viewBox="0 0 720 220" role="img" aria-label={`${visual.title} SVG 다이어그램`}>
+        <defs><marker id={markerId} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker></defs>
+        <g className="analysis-svg-grid">{Array.from({ length: 12 }, (_, index) => <path key={`v-${index}`} d={`M ${index * 65} 0 V 220`} />)}{Array.from({ length: 5 }, (_, index) => <path key={`h-${index}`} d={`M 0 ${index * 55} H 720`} />)}</g>
+        {visual.type === "free-body-diagram" ? <>
+          <rect className="analysis-svg-object" x="315" y="82" width="90" height="58" />
+          {items.slice(0, 4).map((item, index) => {
+            const vectors = [
+              { x2: 360, y2: 24, tx: 370, ty: 35 },
+              { x2: 360, y2: 198, tx: 370, ty: 195 },
+              { x2: 515, y2: 111, tx: 480, ty: 96 },
+              { x2: 205, y2: 111, tx: 215, ty: 96 },
+            ];
+            const vector = vectors[index];
+            return <g key={`${item.label}-${index}`}><path className="analysis-svg-vector" d={`M 360 111 L ${vector.x2} ${vector.y2}`} markerEnd={`url(#${markerId})`} /><text x={vector.tx} y={vector.ty}>{item.label.slice(0, 18)}</text></g>;
+          })}
+          <text className="analysis-svg-caption" x="24" y="30">CODE-NATIVE FREE-BODY DIAGRAM</text>
+        </> : items.slice(0, 5).map((item, index) => {
+          const gap = 132;
+          const x = 22 + index * gap;
+          return <g key={`${item.label}-${index}`}>
+            {index ? <path className="analysis-svg-link" d={`M ${x - 30} 110 H ${x - 8}`} markerEnd={`url(#${markerId})`} /> : null}
+            <rect className={index === items.slice(0, 5).length - 1 ? "analysis-svg-node is-accent" : "analysis-svg-node"} x={x} y="68" width="102" height="84" />
+            <text className="analysis-svg-index" x={x + 10} y="87">{String(index + 1).padStart(2, "0")}</text>
+            <text className="analysis-svg-label" x={x + 51} y="113" textAnchor="middle">{item.label.slice(0, 14)}</text>
+          </g>;
+        })}
+      </svg> : null}
+      <ol>{items.map((item, index) => (
+        <li key={`${item.label}-${index}`}><span>{String(index + 1).padStart(2, "0")}</span><div><b>{item.label}</b><small>{item.detail}</small></div></li>
+      ))}</ol>
+    </section>
+  );
+}
+
+function AnalysisResult({ analysis, requestedMode, taskType }) {
   const result = analysis.result;
   if (!result) return null;
-  const profile = getMandosProfile(analysis.requestedMode ?? analysis.mode ?? requestedMode);
+  const resolvedTaskType = analysis.plan?.taskType ?? taskType;
+  const profile = getAnalysisProfile(analysis.requestedMode ?? analysis.mode ?? requestedMode, resolvedTaskType);
   const evidenceById = new Map((analysis.evidence ?? []).map((item) => [item.evidenceId, item]));
   return (
     <article className="analysis-result" aria-labelledby="analysis-result-title">
@@ -53,14 +100,7 @@ function AnalysisResult({ analysis, requestedMode }) {
         <h3 id="analysis-result-title">{result.headline}</h3>
         <p>{result.summary}</p>
       </header>
-      {result.visual?.type !== "none" && result.visual?.items?.length > 0 ? (
-        <section className={`analysis-visual is-${result.visual.type}`} aria-label={result.visual.title}>
-          <strong>{result.visual.title}</strong>
-          <ol>{result.visual.items.map((item, index) => (
-            <li key={`${item.label}-${index}`}><span>{String(index + 1).padStart(2, "0")}</span><div><b>{item.label}</b><small>{item.detail}</small></div></li>
-          ))}</ol>
-        </section>
-      ) : null}
+      {result.visual?.type !== "none" && result.visual?.items?.length > 0 ? <AnalysisVisual visual={result.visual} /> : null}
       <div className="analysis-sections">
         {result.sections?.map((section, index) => (
           <section key={`${section.title}-${index}`}>
@@ -70,7 +110,7 @@ function AnalysisResult({ analysis, requestedMode }) {
         ))}
       </div>
       <section className="analysis-boundary">
-        <strong>Mandos가 밝힌 근거 범위 · 별도 확인 필요</strong><p>{result.sourceBoundary}</p>
+        <strong>{profile.title}가 밝힌 근거 범위 · 별도 확인 필요</strong><p>{result.sourceBoundary}</p>
       </section>
       {result.citations?.length ? (
         <section className="analysis-citations" aria-label="분석 근거">
@@ -160,8 +200,8 @@ export function analysisErrorNotice(error) {
 }
 
 export function AiDrawer({ analysisContext, onClose, pinned = false }) {
-  const [prompt, setPrompt] = useState("");
-  const [mode, setMode] = useState("auto");
+  const [prompt, setPrompt] = useState(() => analysisContext.initialPrompt ?? "");
+  const [mode, setMode] = useState(() => analysisContext.defaultMode ?? "auto");
   const [requestState, setRequestState] = useState("idle");
   const [analysis, setAnalysis] = useState(null);
   const [notice, setNotice] = useState("");
@@ -172,7 +212,12 @@ export function AiDrawer({ analysisContext, onClose, pinned = false }) {
   const drawerRef = useRef(null);
   const requestRef = useRef(null);
   const historyRef = useRef(null);
-  const selectedProfile = getMandosProfile(mode);
+  const autoSubmitRef = useRef(null);
+  const physicsEngine = physicsEngineForTask(analysisContext.taskType);
+  const profileOptions = physicsEngine ? Object.values(physicsEngine.profiles) : MANDOS_PROFILES;
+  const selectedProfile = getAnalysisProfile(mode, analysisContext.taskType);
+  const drawerTitle = physicsEngine?.engineName ?? "MANDOS";
+  const drawerAriaName = physicsEngine?.engineName ?? "Mandos";
 
   useEffect(() => { if (!pinned) drawerRef.current?.focus(); }, [pinned]);
   useEffect(() => () => requestRef.current?.abort(), []);
@@ -305,7 +350,7 @@ export function AiDrawer({ analysisContext, onClose, pinned = false }) {
       if (attempt && clearAttempt) clearAttempt(attempt.fingerprint);
       setAnalysis(completed);
       setRequestState("success");
-      setNotice("Mandos 분석이 완료되었습니다.");
+      setNotice(`${selectedProfile.title} 분석이 완료되었습니다.`);
       void loadHistory(historyQuery.trim());
     } catch (error) {
       if (error?.name === "AbortError") return;
@@ -319,6 +364,13 @@ export function AiDrawer({ analysisContext, onClose, pinned = false }) {
     }
   }
 
+  useEffect(() => {
+    const submissionKey = analysisContext.contextId ?? analysisContext.initialPrompt;
+    if (!analysisContext.autoSubmit || !submissionKey || autoSubmitRef.current === submissionKey) return;
+    autoSubmitRef.current = submissionKey;
+    void submit({ preventDefault() {} });
+  }, [analysisContext.contextId]);
+
   return (
     <div className={`drawer-layer${pinned ? " is-pinned" : ""}`} role="presentation">
       {!pinned ? <button className="drawer-scrim" type="button" onClick={onClose} tabIndex={-1} aria-hidden="true" /> : null}
@@ -327,13 +379,13 @@ export function AiDrawer({ analysisContext, onClose, pinned = false }) {
         aria-labelledby="ai-analysis-title" aria-describedby="mandos-context-meta" onKeyDown={handleKeyDown} tabIndex={-1}
       >
         <div className="drawer-heading">
-          <h2 id="ai-analysis-title">MANDOS</h2>
+          <h2 id="ai-analysis-title">{drawerTitle}</h2>
           <div>
             <button
               className="icon-button" type="button" onClick={() => { setHistoryOpen((current) => !current); setModelMenuOpen(false); }}
               aria-label="이전 분석 열기" aria-expanded={historyOpen} aria-controls="mandos-history-panel"
             ><ClockCounterClockwise size={21} /></button>
-            {!pinned ? <button className="icon-button" type="button" onClick={onClose} aria-label="Mandos 패널 닫기"><X size={22} /></button> : null}
+            {!pinned ? <button className="icon-button" type="button" onClick={onClose} aria-label={`${drawerAriaName} 패널 닫기`}><X size={22} /></button> : null}
           </div>
         </div>
         <div className="mandos-conversation">
@@ -348,7 +400,7 @@ export function AiDrawer({ analysisContext, onClose, pinned = false }) {
             </form>
             {historyState.message ? <p>{historyState.message}</p> : null}
             <ol>{historyState.items.map((item) => {
-              const itemProfile = getMandosProfile(item.requestedMode ?? item.mode);
+              const itemProfile = getAnalysisProfile(item.requestedMode ?? item.mode, item.plan?.taskType);
               return (
                 <li key={item.id}><button type="button" onClick={() => void openHistoryItem(item)}>
                   <span>{DOMAIN_LABELS[item.domain] ?? "분석"} · {itemProfile.title}</span><strong>{item.result?.headline ?? item.prompt}</strong><small>{new Date(item.createdAt).toLocaleString("ko-KR")}</small><ArrowRight size={14} />
@@ -357,10 +409,10 @@ export function AiDrawer({ analysisContext, onClose, pinned = false }) {
             })}</ol>
           </section> : null}
           {notice && <p className={`prototype-notice${requestState === "error" ? " is-error" : ""}`} role="status">{notice}</p>}
-          {analysis && <AnalysisResult analysis={analysis} requestedMode={mode} />}
+          {analysis && <AnalysisResult analysis={analysis} requestedMode={mode} taskType={analysisContext.taskType} />}
         </div>
         <form className="analysis-form" onSubmit={submit} aria-busy={requestState === "submitting"}>
-          <label className="sr-only" htmlFor="analysis-prompt">Mandos에게 질문</label>
+          <label className="sr-only" htmlFor="analysis-prompt">{drawerAriaName}에게 질문</label>
           <textarea
             id="analysis-prompt" value={prompt} onChange={updatePrompt} maxLength={4000}
             placeholder={analysisContext.placeholder} rows={2}
@@ -374,8 +426,8 @@ export function AiDrawer({ analysisContext, onClose, pinned = false }) {
                 <span><strong>{selectedProfile.title}</strong><small>{selectedProfile.task} · {selectedProfile.trait}</small></span>
                 <CaretDown size={14} aria-hidden="true" />
               </button>
-              {modelMenuOpen ? <div className="mandos-mode-menu" role="menu" aria-label="Mandos 모델 선택">
-                {MANDOS_PROFILES.map((profile) => (
+              {modelMenuOpen ? <div className="mandos-mode-menu" role="menu" aria-label={`${drawerAriaName} 실행 모드 선택`}>
+                {profileOptions.map((profile) => (
                   <button
                     type="button" role="menuitemradio" aria-checked={mode === profile.mode} key={profile.mode}
                     className={mode === profile.mode ? "is-selected" : ""}
@@ -386,7 +438,7 @@ export function AiDrawer({ analysisContext, onClose, pinned = false }) {
             </div>
             <button
               type="submit" className="analysis-submit" disabled={requestState === "submitting" || !prompt.trim()}
-              aria-label={requestState === "submitting" ? "Mandos가 분석 중" : "Mandos에게 요청"}
+              aria-label={requestState === "submitting" ? `${drawerAriaName} 분석 중` : `${drawerAriaName}에 요청`}
             ><PaperPlaneTilt size={20} /></button>
           </div>
         </form>
