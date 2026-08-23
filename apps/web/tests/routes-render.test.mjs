@@ -25,6 +25,7 @@ const vite = await createServer({
 });
 const { App, CandidateReviewDesk } = await vite.ssrLoadModule("/src/App.jsx");
 const { PhysicsWorkspace } = await vite.ssrLoadModule("/src/PhysicsWorkspace.jsx");
+const { PHYSICS_ANALYSIS_LEVEL, PHYSICS_PROFILE_SUMMARY } = await vite.ssrLoadModule("/src/physicsProfile.js");
 const { AiDrawer, buildAgentActivity } = await vite.ssrLoadModule("/src/AiDrawer.jsx");
 const { CandidatePromotionPanel } = await vite.ssrLoadModule("/src/CandidatePromotionPanel.jsx");
 const {
@@ -56,12 +57,13 @@ for (const [pathname, expectedText] of ROUTE_EXPECTATIONS) {
       const view = { "/physics/library": "library", "/physics/find": "finder", "/physics/ipho": "ipho" }[pathname] ?? "learn";
       const physicsHtml = renderToStaticMarkup(React.createElement(PhysicsWorkspace, {
         view,
-        level: 4,
-        onLevelChange() {},
         onOpenAi() {},
         onNotice() {},
       }));
       assert.ok(physicsHtml.includes(expectedText));
+      assert.ok(physicsHtml.includes(PHYSICS_PROFILE_SUMMARY));
+      assert.ok(!physicsHtml.includes("물리 설명 수준"));
+      assert.ok(!physicsHtml.includes('class="level-selector"'));
     } else {
       assert.ok(html.includes(expectedText));
     }
@@ -85,6 +87,11 @@ for (const [pathname, expectedText] of ROUTE_EXPECTATIONS) {
     }
   });
 }
+
+test("physics uses one personal olympiad analysis profile without a level selector", () => {
+  assert.equal(PHYSICS_ANALYSIS_LEVEL, "P4");
+  assert.equal(PHYSICS_PROFILE_SUMMARY, "수학적 구조·이론·유도 중심 · KPhO에서 IPhO까지 준비");
+});
 
 test("renders candidate evidence and review controls without claiming verification", () => {
   const candidate = {
