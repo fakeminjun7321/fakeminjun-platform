@@ -3,10 +3,8 @@ import test from "node:test";
 import {
   BackendApiError,
   clearAnalysisAttempt,
-  clearVisualAnalysisAttempt,
   createBackendClient,
   getAnalysisAttempt,
-  getVisualAnalysisAttempt,
   shouldClearAnalysisAttempt,
 } from "../src/backendClient.js";
 
@@ -269,76 +267,6 @@ test("analysis attempts survive ambiguous server and polling failures", () => {
   ), false);
 });
 
-test("visual analysis attempts reuse one key for unchanged metadata and image bytes", async () => {
-  const metadata = { domain: "physics", mode: "auto", prompt: "같은 캡처", context: { title: "그래프" } };
-  const firstImage = new Blob(["same-image-bytes"], { type: "image/png" });
-  const equivalentImage = new Blob(["same-image-bytes"], { type: "image/png" });
-  const first = await getVisualAnalysisAttempt({ metadata, image: firstImage }, 1_000);
-  const retry = await getVisualAnalysisAttempt({ metadata, image: equivalentImage }, 2_000);
-
-  assert.equal(retry.idempotencyKey, first.idempotencyKey);
-  assert.equal(retry.fingerprint, first.fingerprint);
-  assert.match(first.fingerprint, /^[0-9a-f]{64}$/);
-  assert.deepEqual(Object.keys(first).sort(), ["fingerprint", "idempotencyKey"]);
-  clearVisualAnalysisAttempt(first.fingerprint);
-});
-
-test("visual analysis attempts separate different image bytes and clear definite failures", async () => {
-  const metadata = { domain: "physics", mode: "auto", prompt: "이미지 비교", context: {} };
-  const first = await getVisualAnalysisAttempt({
-    metadata,
-    image: new Blob(["image-a"], { type: "image/png" }),
-  }, 3_000);
-  const different = await getVisualAnalysisAttempt({
-    metadata,
-    image: new Blob(["image-b"], { type: "image/png" }),
-  }, 3_100);
-
-  assert.notEqual(different.idempotencyKey, first.idempotencyKey);
-  assert.notEqual(different.fingerprint, first.fingerprint);
-  assert.equal(shouldClearAnalysisAttempt(new BackendApiError(400, "invalid_capture", "fix")), true);
-  clearVisualAnalysisAttempt(first.fingerprint);
-  const afterDefiniteFailure = await getVisualAnalysisAttempt({
-    metadata,
-    image: new Blob(["image-a"], { type: "image/png" }),
-  }, 3_200);
-  assert.notEqual(afterDefiniteFailure.idempotencyKey, first.idempotencyKey);
-
-  clearVisualAnalysisAttempt(afterDefiniteFailure.fingerprint);
-  clearVisualAnalysisAttempt(different.fingerprint);
-});
-
-test("visual analysis attempts separate the same bytes sent with a different MIME type", async () => {
-  const metadata = { domain: "physics", mode: "auto", prompt: "형식 비교", context: {} };
-  const png = await getVisualAnalysisAttempt({
-    metadata,
-    image: new Blob(["same-image-bytes"], { type: "image/png" }),
-  }, 4_000);
-  const jpeg = await getVisualAnalysisAttempt({
-    metadata,
-    image: new Blob(["same-image-bytes"], { type: "image/jpeg" }),
-  }, 4_100);
-
-  assert.notEqual(jpeg.idempotencyKey, png.idempotencyKey);
-  assert.notEqual(jpeg.fingerprint, png.fingerprint);
-  clearVisualAnalysisAttempt(png.fingerprint);
-  clearVisualAnalysisAttempt(jpeg.fingerprint);
-});
-
-test("visual analysis attempts expire after ten minutes", async () => {
-  const input = {
-    metadata: { domain: "international", mode: "standard", prompt: "재확인", context: {} },
-    image: new Blob(["expiry-image"], { type: "image/jpeg" }),
-  };
-  const first = await getVisualAnalysisAttempt(input, 10_000);
-  const retry = await getVisualAnalysisAttempt(input, 10_000 + (10 * 60 * 1000) - 1);
-  const expired = await getVisualAnalysisAttempt(input, 10_000 + (10 * 60 * 1000));
-
-  assert.equal(retry.idempotencyKey, first.idempotencyKey);
-  assert.notEqual(expired.idempotencyKey, first.idempotencyKey);
-  clearVisualAnalysisAttempt(expired.fingerprint);
-});
-
 test("backend client retrieves a private analysis by ID", async () => {
   const calls = [];
   const client = createBackendClient({
@@ -511,29 +439,6 @@ test("backend client reads Drive status and runs the server-verified resumable u
   assert.equal(completed.driveFileId, "drive-file-123456");
   assert.equal(calls[4].url, "/api/v1/physics/drive/uploads/9f165cbb-0315-4a0e-bf07-0c8c602e3da5/complete");
   assert.deepEqual(JSON.parse(calls[4].options.body), { driveFileId: "drive-file-123456" });
-});
-
-test("visual analysis uses browser multipart boundaries instead of forcing JSON content type", async () => {
-  const calls = [];
-  const client = createBackendClient({
-    fetchImpl: async (url, options) => {
-      calls.push({ url, options });
-      return jsonResponse({ data: { id: "analysis-visual", status: "completed" } }, { status: 201 });
-    },
-  });
-  const image = new Blob(["png"], { type: "image/png" });
-  const result = await client.createVisualAnalysis({
-    metadata: { domain: "physics", mode: "auto", prompt: "그래프를 분석해줘", context: {} },
-    image,
-  }, { idempotencyKey: "visual-1" });
-
-  assert.equal(result.id, "analysis-visual");
-  assert.equal(calls[0].url, "/api/v1/visual-analyses");
-  assert.ok(calls[0].options.body instanceof FormData);
-  assert.equal(calls[0].options.headers["content-type"], undefined);
-  assert.equal(calls[0].options.headers["idempotency-key"], "visual-1");
-  assert.equal(JSON.parse(calls[0].options.body.get("metadata")).mode, "auto");
-  assert.equal(calls[0].options.body.get("image").type, "image/png");
 });
 
 test("backend client uploads private physics files and starts file analysis", async () => {

@@ -111,7 +111,7 @@ function LearningHub({ onOpenAi }) {
           <dl><div><dt>입력</dt><dd>{selected.input}</dd></div><div><dt>결과 구조</dt><dd>{selected.output}</dd></div><div><dt>학습 예시</dt><dd>{selected.example}</dd></div></dl>
           <section className="physics-working-area">
             <div><p className="system-kicker">풀이 노트</p><h4>분석할 내용을 이 화면에 모읍니다</h4></div>
-            <p>그림·그래프 분석 모드에서는 Mandos의 내장 영역 캡처를 사용할 수 있습니다. 분석 기록은 소유자별로 보관됩니다.</p>
+            <p>그림·그래프 자료는 자료 보관소에 추가해 Mandos와 분석할 수 있습니다. 분석 기록은 소유자별로 보관됩니다.</p>
             <button type="button" onClick={() => onOpenAi({
               level: PHYSICS_ANALYSIS_LEVEL, contextKind: "physics-mode", contextId: selected.id, title: selected.title,
               ...(selected.id === "derivation" ? { taskType: "full-derivation" } : {}),

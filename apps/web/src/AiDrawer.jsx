@@ -1,28 +1,20 @@
-import React, { lazy, Suspense, useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ArrowRight,
-  Camera,
   CaretDown,
   ClockCounterClockwise,
   MagnifyingGlass,
-  Monitor,
   PaperPlaneTilt,
   Quotes,
-  Selection,
-  Trash,
   X,
 } from "@phosphor-icons/react";
 import {
   BackendApiError,
   backendClient,
   clearAnalysisAttempt,
-  clearVisualAnalysisAttempt,
   getAnalysisAttempt,
-  getVisualAnalysisAttempt,
   shouldClearAnalysisAttempt,
 } from "./backendClient.js";
-
-const CaptureComposer = lazy(() => import("./CaptureComposer.jsx"));
 
 const CONFIDENCE_LABELS = { high: "높음", medium: "중간", low: "낮음" };
 const BASIS_LABELS = {
@@ -131,15 +123,12 @@ async function resolvePendingAnalysis(initial, signal, onProgress) {
   return current;
 }
 
-export function AiDrawer({ analysisContext, onClose }) {
+export function AiDrawer({ analysisContext, onClose, pinned = false }) {
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState("auto");
   const [requestState, setRequestState] = useState("idle");
   const [analysis, setAnalysis] = useState(null);
   const [notice, setNotice] = useState("");
-  const [captureOpen, setCaptureOpen] = useState(false);
-  const [capture, setCapture] = useState(null);
-  const [captureUrl, setCaptureUrl] = useState("");
   const [historyQuery, setHistoryQuery] = useState("");
   const [historyState, setHistoryState] = useState({ status: "loading", items: [], message: "분석 기록을 불러오는 중" });
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -149,10 +138,9 @@ export function AiDrawer({ analysisContext, onClose }) {
   const historyRef = useRef(null);
   const selectedProfile = getMandosProfile(mode);
 
-  useEffect(() => { drawerRef.current?.focus(); }, []);
+  useEffect(() => { if (!pinned) drawerRef.current?.focus(); }, [pinned]);
   useEffect(() => () => requestRef.current?.abort(), []);
   useEffect(() => () => historyRef.current?.abort(), []);
-  useEffect(() => () => { if (captureUrl) URL.revokeObjectURL(captureUrl); }, [captureUrl]);
 
   async function loadHistory(query = "") {
     const controller = new AbortController();
@@ -191,13 +179,19 @@ export function AiDrawer({ analysisContext, onClose }) {
 
   function handleKeyDown(eventObject) {
     if (eventObject.key === "Escape") {
-      eventObject.preventDefault();
-      if (captureOpen) setCaptureOpen(false);
-      else if (modelMenuOpen) setModelMenuOpen(false);
-      else if (historyOpen) setHistoryOpen(false);
-      else onClose();
+      if (modelMenuOpen) {
+        eventObject.preventDefault();
+        setModelMenuOpen(false);
+      } else if (historyOpen) {
+        eventObject.preventDefault();
+        setHistoryOpen(false);
+      } else if (!pinned) {
+        eventObject.preventDefault();
+        onClose();
+      }
       return;
     }
+    if (pinned) return;
     if (eventObject.key !== "Tab") return;
     const focusable = drawerRef.current?.querySelectorAll(
       'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
@@ -216,21 +210,6 @@ export function AiDrawer({ analysisContext, onClose }) {
     input.style.height = `${Math.min(input.scrollHeight, 144)}px`;
   }
 
-  function confirmCapture(result) {
-    if (captureUrl) URL.revokeObjectURL(captureUrl);
-    setCapture(result);
-    setCaptureUrl(URL.createObjectURL(result.file));
-    setCaptureOpen(false);
-    setNotice("선택 영역이 준비되었습니다. 분석 요청을 누르기 전에는 전송되지 않습니다.");
-  }
-
-  function removeCapture() {
-    if (captureUrl) URL.revokeObjectURL(captureUrl);
-    setCapture(null);
-    setCaptureUrl("");
-    setNotice("첨부할 캡처를 제거했습니다.");
-  }
-
   async function submit(eventObject) {
     eventObject.preventDefault();
     const question = prompt.trim();
@@ -242,7 +221,7 @@ export function AiDrawer({ analysisContext, onClose }) {
     requestRef.current?.abort();
     requestRef.current = controller;
     setRequestState("submitting");
-    setNotice(`${selectedProfile.title}가 ${capture ? "선택 영역과 질문" : "질문"}을 분석하고 있습니다.`);
+    setNotice(`${selectedProfile.title}가 질문을 분석하고 있습니다.`);
     setAnalysis(null);
     const payload = {
       domain: analysisContext.domain,
@@ -263,14 +242,7 @@ export function AiDrawer({ analysisContext, onClose }) {
     let createdAnalysisId = null;
     try {
       let created;
-      if (capture) {
-        attempt = await getVisualAnalysisAttempt({ metadata: payload, image: capture.file });
-        clearAttempt = clearVisualAnalysisAttempt;
-        created = await backendClient.createVisualAnalysis(
-          { metadata: payload, image: capture.file },
-          { signal: controller.signal, idempotencyKey: attempt.idempotencyKey },
-        );
-      } else if (analysisContext.contextKind === "physics-file" && analysisContext.contextId) {
+      if (analysisContext.contextKind === "physics-file" && analysisContext.contextId) {
         attempt = await getAnalysisAttempt(payload);
         clearAttempt = clearAnalysisAttempt;
         created = await backendClient.createPhysicsFileAnalysis(analysisContext.contextId, payload, {
@@ -296,7 +268,7 @@ export function AiDrawer({ analysisContext, onClose }) {
       if (attempt && clearAttempt) clearAttempt(attempt.fingerprint);
       setAnalysis(completed);
       setRequestState("success");
-      setNotice(capture ? "Mandos 분석이 완료되었습니다. 이미지 해석은 검증된 사실이 아닙니다." : "Mandos 분석이 완료되었습니다.");
+      setNotice("Mandos 분석이 완료되었습니다.");
       void loadHistory(historyQuery.trim());
     } catch (error) {
       if (error?.name === "AbortError") return;
@@ -311,10 +283,10 @@ export function AiDrawer({ analysisContext, onClose }) {
   }
 
   return (
-    <div className="drawer-layer" role="presentation">
-      <button className="drawer-scrim" type="button" onClick={onClose} tabIndex={-1} aria-hidden="true" />
+    <div className={`drawer-layer${pinned ? " is-pinned" : ""}`} role="presentation">
+      {!pinned ? <button className="drawer-scrim" type="button" onClick={onClose} tabIndex={-1} aria-hidden="true" /> : null}
       <aside
-        className="ai-drawer" id="ai-analysis-drawer" ref={drawerRef} role="dialog" aria-modal="true"
+        className="ai-drawer" id="ai-analysis-drawer" ref={drawerRef} role={pinned ? "complementary" : "dialog"} aria-modal={pinned ? undefined : "true"}
         aria-labelledby="ai-analysis-title" aria-describedby="mandos-context-meta" onKeyDown={handleKeyDown} tabIndex={-1}
       >
         <div className="drawer-heading">
@@ -324,7 +296,7 @@ export function AiDrawer({ analysisContext, onClose }) {
               className="icon-button" type="button" onClick={() => { setHistoryOpen((current) => !current); setModelMenuOpen(false); }}
               aria-label="이전 분석 열기" aria-expanded={historyOpen} aria-controls="mandos-history-panel"
             ><ClockCounterClockwise size={21} /></button>
-            <button className="icon-button" type="button" onClick={onClose} aria-label="Mandos 패널 닫기"><X size={22} /></button>
+            {!pinned ? <button className="icon-button" type="button" onClick={onClose} aria-label="Mandos 패널 닫기"><X size={22} /></button> : null}
           </div>
         </div>
         <div className="mandos-conversation">
@@ -347,18 +319,6 @@ export function AiDrawer({ analysisContext, onClose }) {
               );
             })}</ol>
           </section> : null}
-          {captureOpen ? (
-            <Suspense fallback={<div className="capture-stage">캡처 도구를 불러오는 중</div>}>
-              <CaptureComposer onConfirm={confirmCapture} onCancel={() => setCaptureOpen(false)} />
-            </Suspense>
-          ) : null}
-          {capture && !captureOpen ? (
-            <section className="capture-attachment" aria-label="첨부할 화면 캡처">
-              <img src={captureUrl} alt="Mandos 분석에 첨부할 선택 영역" />
-              <div><Camera size={16} /><span>{capture.width} × {capture.height}px · 전송 전</span></div>
-              <button type="button" onClick={removeCapture}><Trash size={16} /> 제거</button>
-            </section>
-          ) : null}
           {notice && <p className={`prototype-notice${requestState === "error" ? " is-error" : ""}`} role="status">{notice}</p>}
           {analysis && <AnalysisResult analysis={analysis} requestedMode={mode} />}
         </div>
@@ -369,16 +329,6 @@ export function AiDrawer({ analysisContext, onClose }) {
             placeholder={analysisContext.placeholder} rows={2}
           />
           <div className="composer-toolbar">
-            <div className="composer-attachments" aria-label="분석할 화면 첨부">
-              <button
-                className={!capture ? "is-selected" : ""} type="button" onClick={capture ? removeCapture : undefined}
-                aria-label="현재 화면 사용" title="현재 화면" aria-pressed={!capture}
-              ><Monitor size={19} /></button>
-              <button
-                className={capture ? "is-selected" : ""} type="button" onClick={() => setCaptureOpen(true)}
-                aria-label={capture ? "선택 영역 변경" : "화면 영역 선택"} title={capture ? "선택 영역 변경" : "영역 선택"} aria-pressed={Boolean(capture)}
-              ><Selection size={18} /></button>
-            </div>
             <div className="mandos-mode-picker">
               <button
                 className="mandos-mode-trigger" type="button" onClick={() => { setModelMenuOpen((current) => !current); setHistoryOpen(false); }}

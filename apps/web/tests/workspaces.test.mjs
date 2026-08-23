@@ -6,7 +6,6 @@ import {
   PHYSICS_TOOLS,
   filterPhysicsResources,
 } from "../src/physicsData.js";
-import { fitWithin, normalizeCropRect, scaleCropRect } from "../src/captureGeometry.js";
 import { PHYSICS_SCAN_POLL_INTERVAL_MS, startPhysicsScanPolling } from "../src/physicsScanPolling.js";
 
 test("physics workspace exposes all seven selected exploration modes", () => {
@@ -57,35 +56,4 @@ test("pending physics scans keep polling until the component clears the interval
   assert.equal(refreshes, 2);
   stop();
   assert.equal(clearedId, 73);
-});
-
-test("capture crop geometry clamps reverse drags and scales to source pixels", () => {
-  assert.deepEqual(
-    normalizeCropRect({ x: 90, y: 70 }, { x: -10, y: 20 }, { width: 100, height: 80 }),
-    { x: 0, y: 20, width: 90, height: 50 },
-  );
-  assert.deepEqual(
-    scaleCropRect(
-      { x: 25, y: 10, width: 50, height: 40 },
-      { width: 100, height: 50 },
-      { width: 1000, height: 500 },
-    ),
-    { x: 250, y: 100, width: 500, height: 400 },
-  );
-  assert.deepEqual(fitWithin(4800, 2400), { width: 2400, height: 1200 });
-  assert.deepEqual(fitWithin(1200, 800), { width: 1200, height: 800 });
-});
-
-test("capture output sizing stays inside the visual analysis pixel budget", () => {
-  const fitted = fitWithin(5000, 5000);
-  assert.ok(fitted.width <= 2400);
-  assert.ok(fitted.height <= 2400);
-  assert.ok(fitted.width * fitted.height <= 4_000_000);
-});
-
-test("capture crop geometry rejects missing preview dimensions", () => {
-  assert.throws(
-    () => scaleCropRect({ x: 0, y: 0, width: 20, height: 20 }, { width: 0, height: 20 }, { width: 100, height: 100 }),
-    /크기를 계산할 수 없습니다/,
-  );
 });

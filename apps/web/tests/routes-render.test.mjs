@@ -28,12 +28,6 @@ const { PhysicsWorkspace } = await vite.ssrLoadModule("/src/PhysicsWorkspace.jsx
 const { PHYSICS_ANALYSIS_LEVEL, PHYSICS_PROFILE_SUMMARY } = await vite.ssrLoadModule("/src/physicsProfile.js");
 const { AiDrawer, getMandosProfile } = await vite.ssrLoadModule("/src/AiDrawer.jsx");
 const { CandidatePromotionPanel } = await vite.ssrLoadModule("/src/CandidatePromotionPanel.jsx");
-const {
-  claimCaptureStream,
-  createTrackedObjectUrl,
-  waitForVideo,
-  waitForVideoFrame,
-} = await vite.ssrLoadModule("/src/CaptureComposer.jsx");
 
 after(async () => {
   await vite.close();
@@ -80,7 +74,8 @@ for (const [pathname, expectedText] of ROUTE_EXPECTATIONS) {
     }
     assert.ok(!html.includes("정치"));
     assert.ok(!html.includes("/politics"));
-    assert.ok(!html.includes('id="ai-analysis-drawer"'));
+    assert.ok(html.includes('drawer-layer is-pinned'));
+    assert.ok(html.includes('role="complementary"') || html.includes("Mandos를 불러오는 중입니다."));
     if (pathname === "/international/briefing") {
       assert.ok(html.includes("자료 묶음 검토"));
       assert.ok(html.includes("자료 묶음 후보"));
@@ -168,8 +163,14 @@ test("Mandos drawer defaults to Core and keeps advanced controls compact", () =>
   }));
   assert.ok(html.includes("MANDOS"));
   assert.ok(html.includes("Mandos 3 Core"));
-  assert.ok(html.includes('title="영역 선택"'));
   assert.ok(html.includes('aria-label="이전 분석 열기"'));
+  assert.ok(html.includes('role="dialog"'));
+  assert.ok(html.includes('aria-modal="true"'));
+  assert.ok(html.includes("drawer-scrim"));
+  assert.ok(html.includes("Mandos 패널 닫기"));
+  assert.ok(!html.includes("현재 화면 사용"));
+  assert.ok(!html.includes("화면 영역 선택"));
+  assert.ok(!html.includes("분석할 화면 첨부"));
   assert.ok(!html.includes("자동 판단"));
   assert.ok(!html.includes("OPENAI EXECUTION TRACE"));
   assert.ok(!html.includes("TOKEN USAGE"));
@@ -181,114 +182,20 @@ test("Mandos drawer defaults to Core and keeps advanced controls compact", () =>
   assert.equal(getMandosProfile("deep").title, "Mandos 3 Deep");
 });
 
-test("capture lifecycle stops a stream that resolves after cleanup and revokes a late URL", () => {
-  const track = { stopCalls: 0, stop() { this.stopCalls += 1; } };
-  const stream = { getTracks: () => [track] };
-  const mountedRef = { current: false };
-  const operationRef = { current: 2 };
-  const streamRef = { current: null };
-
-  assert.equal(claimCaptureStream(stream, {
-    operationId: 1,
-    operationRef,
-    mountedRef,
-    streamRef,
-  }), false);
-  assert.equal(track.stopCalls, 1);
-  assert.equal(streamRef.current, null);
-
-  const trackedUrls = new Set();
-  const revoked = [];
-  let currentChecks = 0;
-  const url = createTrackedObjectUrl(new Blob(["pixels"]), {
-    isCurrent: () => { currentChecks += 1; return currentChecks === 1; },
-    objectUrls: trackedUrls,
-    createObjectURL: () => "blob:late-capture",
-    revokeObjectURL: (value) => revoked.push(value),
-  });
-  assert.equal(url, null);
-  assert.deepEqual(revoked, ["blob:late-capture"]);
-  assert.equal(trackedUrls.size, 0);
-});
-
-test("capture frame wait is bounded and releases ended listeners and callbacks", async () => {
-  function frameFixture() {
-    let frameCallback;
-    let endedHandler;
-    const cancelled = [];
-    return {
-      video: {
-        requestVideoFrameCallback(callback) { frameCallback = callback; return 19; },
-        cancelVideoFrameCallback(id) { cancelled.push(id); },
-      },
-      track: {
-        readyState: "live",
-        addEventListener(type, callback) { if (type === "ended") endedHandler = callback; },
-        removeEventListener(type, callback) { if (type === "ended" && endedHandler === callback) endedHandler = null; },
-      },
-      cancelled,
-      frame: () => frameCallback?.(),
-      end: () => endedHandler?.(),
-      listener: () => endedHandler,
-    };
-  }
-
-  const ended = frameFixture();
-  const endedWait = waitForVideoFrame(ended.video, { track: ended.track, timeoutMs: 100 });
-  ended.end();
-  await assert.rejects(endedWait, /종료/);
-  assert.deepEqual(ended.cancelled, [19]);
-  assert.equal(ended.listener(), null);
-
-  const timedOut = frameFixture();
-  await assert.rejects(
-    waitForVideoFrame(timedOut.video, { track: timedOut.track, timeoutMs: 5 }),
-    /시간이 초과/,
-  );
-  assert.deepEqual(timedOut.cancelled, [19]);
-  assert.equal(timedOut.listener(), null);
-
-  const completed = frameFixture();
-  const completedWait = waitForVideoFrame(completed.video, { track: completed.track, timeoutMs: 100 });
-  completed.frame();
-  await completedWait;
-  assert.deepEqual(completed.cancelled, [19]);
-  assert.equal(completed.listener(), null);
-});
-
-test("capture metadata wait is bounded and removes video and track handlers", async () => {
-  let endedHandler;
-  const track = {
-    readyState: "live",
-    addEventListener(type, callback) { if (type === "ended") endedHandler = callback; },
-    removeEventListener(type, callback) { if (type === "ended" && endedHandler === callback) endedHandler = null; },
-  };
-  const video = { onloadedmetadata: null, onerror: null, play: () => Promise.resolve() };
-  const endedWait = waitForVideo(video, { track, timeoutMs: 100 });
-  endedHandler();
-  await assert.rejects(endedWait, /종료/);
-  assert.equal(endedHandler, null);
-  assert.equal(video.onloadedmetadata, null);
-  assert.equal(video.onerror, null);
-
-  const timedOutVideo = { onloadedmetadata: null, onerror: null, play: () => Promise.resolve() };
-  await assert.rejects(waitForVideo(timedOutVideo, { timeoutMs: 5 }), /시간이 초과/);
-  assert.equal(timedOutVideo.onloadedmetadata, null);
-  assert.equal(timedOutVideo.onerror, null);
-
-  let completedEndedHandler;
-  const completedTrack = {
-    readyState: "live",
-    addEventListener(type, callback) { if (type === "ended") completedEndedHandler = callback; },
-    removeEventListener(type, callback) {
-      if (type === "ended" && completedEndedHandler === callback) completedEndedHandler = null;
+test("pinned Mandos is complementary and cannot block or close the workspace", () => {
+  const html = renderToStaticMarkup(React.createElement(AiDrawer, {
+    analysisContext: {
+      domain: "international",
+      title: "오늘의 국제정세",
+      meta: "데모 자료",
+      placeholder: "핵심을 분석해줘.",
     },
-  };
-  const completedVideo = { onloadedmetadata: null, onerror: null, play: () => Promise.resolve() };
-  const completedWait = waitForVideo(completedVideo, { track: completedTrack, timeoutMs: 100 });
-  completedVideo.onloadedmetadata();
-  await completedWait;
-  assert.equal(completedEndedHandler, null);
-  assert.equal(completedVideo.onloadedmetadata, null);
-  assert.equal(completedVideo.onerror, null);
+    onClose() {},
+    pinned: true,
+  }));
+  assert.ok(html.includes('drawer-layer is-pinned'));
+  assert.ok(html.includes('role="complementary"'));
+  assert.ok(!html.includes('aria-modal="true"'));
+  assert.ok(!html.includes("drawer-scrim"));
+  assert.ok(!html.includes("Mandos 패널 닫기"));
 });

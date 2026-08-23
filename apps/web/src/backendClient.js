@@ -11,10 +11,7 @@ export class BackendApiError extends Error {
 
 const ANALYSIS_ATTEMPT_TTL_MS = 10 * 60 * 1000;
 const MAX_RETAINED_ANALYSIS_ATTEMPTS = 24;
-const MAX_VISUAL_ATTEMPT_METADATA_BYTES = 8 * 1024;
-const MAX_VISUAL_ATTEMPT_IMAGE_BYTES = 2 * 1024 * 1024;
 const analysisAttempts = new Map();
-const visualAnalysisAttempts = new Map();
 
 async function sha256Hex(value) {
   const bytes = typeof value === "string" ? new TextEncoder().encode(value) : value;
@@ -26,25 +23,6 @@ async function sha256Hex(value) {
 
 async function analysisFingerprint(analysis) {
   return sha256Hex(JSON.stringify(analysis));
-}
-
-async function visualAnalysisFingerprint({ metadata, image }) {
-  const metadataText = JSON.stringify(metadata);
-  if (typeof metadataText !== "string") throw new TypeError("Visual analysis metadata must be serializable");
-  const metadataBytes = new TextEncoder().encode(metadataText);
-  if (metadataBytes.byteLength > MAX_VISUAL_ATTEMPT_METADATA_BYTES) {
-    throw new RangeError("Visual analysis metadata exceeds the retry fingerprint limit");
-  }
-  if (!image || typeof image.arrayBuffer !== "function" || !Number.isFinite(image.size)
-    || image.size < 1 || image.size > MAX_VISUAL_ATTEMPT_IMAGE_BYTES) {
-    throw new RangeError("Visual analysis image exceeds the retry fingerprint limit");
-  }
-  const imageBytes = new Uint8Array(await image.arrayBuffer());
-  if (imageBytes.byteLength !== image.size) {
-    throw new RangeError("Visual analysis image size changed while fingerprinting");
-  }
-  const imageHash = await sha256Hex(imageBytes);
-  return sha256Hex(JSON.stringify({ metadata: metadataText, imageHash, mimeType: image.type ?? "" }));
 }
 
 function sweepExpiredAnalysisAttempts(now) {
@@ -70,29 +48,6 @@ export async function getAnalysisAttempt(analysis, now = Date.now()) {
 
 export function clearAnalysisAttempt(fingerprint) {
   analysisAttempts.delete(fingerprint);
-}
-
-function sweepExpiredVisualAnalysisAttempts(now) {
-  for (const [fingerprint, attempt] of visualAnalysisAttempts) {
-    if (now - attempt.createdAt >= ANALYSIS_ATTEMPT_TTL_MS) visualAnalysisAttempts.delete(fingerprint);
-  }
-}
-
-export async function getVisualAnalysisAttempt(input, now = Date.now()) {
-  const fingerprint = await visualAnalysisFingerprint(input);
-  sweepExpiredVisualAnalysisAttempts(now);
-  const existing = visualAnalysisAttempts.get(fingerprint);
-  if (existing) return { fingerprint, idempotencyKey: existing.idempotencyKey };
-  while (visualAnalysisAttempts.size >= MAX_RETAINED_ANALYSIS_ATTEMPTS) {
-    visualAnalysisAttempts.delete(visualAnalysisAttempts.keys().next().value);
-  }
-  const attempt = { idempotencyKey: crypto.randomUUID(), createdAt: now };
-  visualAnalysisAttempts.set(fingerprint, attempt);
-  return { fingerprint, idempotencyKey: attempt.idempotencyKey };
-}
-
-export function clearVisualAnalysisAttempt(fingerprint) {
-  visualAnalysisAttempts.delete(fingerprint);
 }
 
 export function shouldClearAnalysisAttempt(error, { hasCreatedAnalysis = false } = {}) {
@@ -355,17 +310,6 @@ export function createBackendClient({ baseUrl = "", fetchImpl = globalThis.fetch
       `/api/v1/analyses${analysesQuery(params)}`,
       { signal, returnEnvelope: true },
     ),
-    createVisualAnalysis: ({ metadata, image }, { signal, idempotencyKey = crypto.randomUUID() } = {}) => {
-      const body = new FormData();
-      body.append("metadata", JSON.stringify(metadata));
-      body.append("image", image);
-      return request("/api/v1/visual-analyses", {
-        method: "POST",
-        body,
-        headers: { "idempotency-key": idempotencyKey },
-        signal,
-      });
-    },
     getAnalysis: (analysisId, { signal } = {}) => request(
       `/api/v1/analyses/${encodeURIComponent(analysisId)}`,
       { signal },

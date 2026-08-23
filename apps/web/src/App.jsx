@@ -116,7 +116,7 @@ function DomainNavigation({ domain, onNavigate }) {
   );
 }
 
-function Header({ domain, route, sourceState, mapEventState, onOpenAi, onNavigate, aiOpen, aiTriggerRef }) {
+function Header({ domain, route, sourceState, mapEventState, onOpenAi, onNavigate, aiOpen, aiPinned, aiTriggerRef }) {
   const sourceWorkspace = domain === "international" && route === "briefing";
   const headerTimestamp = sourceWorkspace
     ? sourceState.checkedAt
@@ -149,12 +149,12 @@ function Header({ domain, route, sourceState, mapEventState, onOpenAi, onNavigat
           type="button"
           onClick={onOpenAi}
           ref={aiTriggerRef}
-          aria-haspopup="dialog"
-          aria-expanded={aiOpen}
+          aria-haspopup={aiPinned ? undefined : "dialog"}
+          aria-expanded={aiPinned ? undefined : aiOpen}
           aria-controls="ai-analysis-drawer"
         >
           <Brain size={19} weight="duotone" aria-hidden="true" />
-          Mandos 열기
+          {aiPinned ? "Mandos 사용 중" : "Mandos 열기"}
         </button>
       </div>
     </header>
@@ -739,6 +739,7 @@ export function App() {
     routeFromPath(window.location.pathname) === "map" && !window.matchMedia("(max-width: 600px)").matches ? 1 : null
   ));
   const [aiOpen, setAiOpen] = useState(false);
+  const [desktopMandos, setDesktopMandos] = useState(() => !window.matchMedia("(max-width: 1279px)").matches);
   const [analysisContext, setAnalysisContext] = useState(null);
   const [notice, setNotice] = useState("");
   const [sourceState, setSourceState] = useState({
@@ -783,6 +784,18 @@ export function App() {
       : "국제정세 분석 워크스페이스 · 데모";
   }, [domain]);
 
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 1279px)");
+    const updateMandosLayout = () => {
+      const pinned = !mediaQuery.matches;
+      setDesktopMandos(pinned);
+      if (pinned) setAiOpen(false);
+    };
+    updateMandosLayout();
+    mediaQuery.addEventListener("change", updateMandosLayout);
+    return () => mediaQuery.removeEventListener("change", updateMandosLayout);
+  }, []);
+
   const defaultAnalysisContext = useMemo(() => {
     if (domain === "physics") {
       return {
@@ -806,6 +819,8 @@ export function App() {
       placeholder: "확인된 사실과 추론을 구분해서, 한국에 미칠 영향을 분석해줘.",
     };
   }, [domain, selectedEvent]);
+
+  useEffect(() => { setAnalysisContext(null); }, [route]);
 
   useEffect(() => {
     const syncRouteToPath = () => {
@@ -1051,7 +1066,8 @@ export function App() {
   function openAi(context = defaultAnalysisContext) {
     aiOpenerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : aiTriggerRef.current;
     setAnalysisContext({ domain, ...context });
-    setAiOpen(true);
+    setAiOpen(!desktopMandos);
+    if (desktopMandos) window.requestAnimationFrame(() => document.getElementById("analysis-prompt")?.focus());
   }
 
   function closeAi() {
@@ -1059,9 +1075,17 @@ export function App() {
     window.requestAnimationFrame(() => (aiOpenerRef.current ?? aiTriggerRef.current)?.focus());
   }
 
+  const mandosVisible = desktopMandos || aiOpen;
+  const activeAnalysisContext = analysisContext?.domain === domain ? analysisContext : defaultAnalysisContext;
+  const mandosContextKey = [
+    activeAnalysisContext.domain,
+    activeAnalysisContext.contextKind ?? "context",
+    activeAnalysisContext.contextId ?? activeAnalysisContext.eventId ?? route,
+  ].join(":");
+
   return (
-    <div className="application-shell">
-      <div className="app-surface" inert={aiOpen ? true : undefined}>
+    <div className={`application-shell${desktopMandos ? " has-pinned-mandos" : ""}`}>
+      <div className="app-surface" inert={!desktopMandos && aiOpen ? true : undefined}>
         <Header
           domain={domain}
           route={route}
@@ -1069,7 +1093,8 @@ export function App() {
           mapEventState={mapEventState}
           onOpenAi={() => openAi()}
           onNavigate={navigate}
-          aiOpen={aiOpen}
+          aiOpen={mandosVisible}
+          aiPinned={desktopMandos}
           aiTriggerRef={aiTriggerRef}
         />
         <WorkspaceSubnav domain={domain} route={route} onNavigate={navigate} />
@@ -1126,9 +1151,9 @@ export function App() {
       </div>
       <p className="sr-only" role="status" aria-live="polite">선택 사건: {selectedEvent.title}</p>
       {notice && <div className="domain-notice" role="status">{notice}</div>}
-      {aiOpen && (
-        <Suspense fallback={<div className="drawer-layer"><aside className="ai-drawer" role="status">Mandos를 불러오는 중입니다.</aside></div>}>
-          <AiDrawer analysisContext={analysisContext ?? defaultAnalysisContext} onClose={closeAi} />
+      {mandosVisible && (
+        <Suspense fallback={<div className={`drawer-layer${desktopMandos ? " is-pinned" : ""}`}><aside className="ai-drawer" role="status">Mandos를 불러오는 중입니다.</aside></div>}>
+          <AiDrawer key={mandosContextKey} analysisContext={activeAnalysisContext} onClose={closeAi} pinned={desktopMandos} />
         </Suspense>
       )}
     </div>
