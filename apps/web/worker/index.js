@@ -37,6 +37,7 @@ const DAILY_ANALYSIS_LIMIT = 50;
 const MONTHLY_ANALYSIS_LIMIT = 500;
 const DAILY_DEEP_LIMIT = 10;
 const OPENAI_TIMEOUT_MS = 90_000;
+const OPENAI_DEEP_TIMEOUT_MS = 150_000;
 const MAX_OPENAI_RESPONSE_BYTES = 1024 * 1024;
 const CANDIDATE_WINDOW_LIMIT = 10;
 const DAILY_CANDIDATE_LIMIT = 30;
@@ -1726,6 +1727,7 @@ export function mandosRuntimePolicy(requestedMode, env = {}, inputKind = "text")
       model: env.OPENAI_DEEP_MODEL || "gpt-5.6-sol",
       reasoningEffort: "high",
       maxOutputTokens: tokenBudgets.deep[kind],
+      timeoutMs: OPENAI_DEEP_TIMEOUT_MS,
     };
   }
   if (requestedMode === "auto") {
@@ -1735,6 +1737,7 @@ export function mandosRuntimePolicy(requestedMode, env = {}, inputKind = "text")
       model: env.OPENAI_CORE_MODEL || env.OPENAI_SPECIALIST_MODEL || "gpt-5.6-terra",
       reasoningEffort: "medium",
       maxOutputTokens: tokenBudgets.core[kind],
+      timeoutMs: OPENAI_TIMEOUT_MS,
     };
   }
   return {
@@ -1743,6 +1746,7 @@ export function mandosRuntimePolicy(requestedMode, env = {}, inputKind = "text")
     model: env.OPENAI_STANDARD_MODEL || "gpt-5.6-luna",
     reasoningEffort: "low",
     maxOutputTokens: tokenBudgets.swift[kind],
+    timeoutMs: OPENAI_TIMEOUT_MS,
   };
 }
 
@@ -2542,6 +2546,7 @@ async function createVisualAnalysis(request, env, ctx, requestId) {
       schemaName: "workspace_visual_analysis_report",
       reasoningEffort: policy.reasoningEffort,
       maxOutputTokens: policy.maxOutputTokens,
+      timeoutMs: policy.timeoutMs,
       metadata: {
         analysis_id: id,
         domain: analysis.domain,
@@ -2722,6 +2727,7 @@ async function createPhysicsFileAnalysis(fileId, request, env, ctx, requestId) {
       schemaName: "physics_file_analysis_report",
       reasoningEffort: policy.reasoningEffort,
       maxOutputTokens: policy.maxOutputTokens,
+      timeoutMs: policy.timeoutMs,
       metadata: {
         analysis_id: id,
         domain: "physics",
@@ -3399,6 +3405,7 @@ export async function runAnalysisWorkflow(analysis, context, env, { analysisId, 
       schemaName: "workspace_analysis_report",
       reasoningEffort: policy.reasoningEffort,
       maxOutputTokens: policy.maxOutputTokens,
+      timeoutMs: policy.timeoutMs,
       metadata,
       safetyIdentifier: safetyId,
       idempotencyKey: `${analysisId}-${policy.profile}`,
@@ -3431,6 +3438,7 @@ export async function runAnalysisWorkflow(analysis, context, env, { analysisId, 
     schemaName: `specialist_review_${index + 1}`,
     reasoningEffort: "medium",
     maxOutputTokens: 3600,
+    timeoutMs: policy.timeoutMs,
     metadata: { ...metadata, stage: `specialist_${index + 1}` },
     safetyIdentifier: safetyId,
     idempotencyKey: `${analysisId}-specialist-${index + 1}`,
@@ -3451,6 +3459,7 @@ export async function runAnalysisWorkflow(analysis, context, env, { analysisId, 
     schemaName: "deep_workspace_analysis_report",
     reasoningEffort: policy.reasoningEffort,
     maxOutputTokens: policy.maxOutputTokens,
+    timeoutMs: policy.timeoutMs,
     metadata: { ...metadata, stage: "synthesis" },
     safetyIdentifier: safetyId,
     idempotencyKey: `${analysisId}-synthesis`,
