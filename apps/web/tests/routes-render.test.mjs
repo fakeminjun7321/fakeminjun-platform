@@ -26,7 +26,7 @@ const vite = await createServer({
 const { App, CandidateReviewDesk } = await vite.ssrLoadModule("/src/App.jsx");
 const { PhysicsWorkspace } = await vite.ssrLoadModule("/src/PhysicsWorkspace.jsx");
 const { PHYSICS_ANALYSIS_LEVEL, PHYSICS_PROFILE_SUMMARY } = await vite.ssrLoadModule("/src/physicsProfile.js");
-const { AiDrawer, buildAgentActivity } = await vite.ssrLoadModule("/src/AiDrawer.jsx");
+const { AiDrawer, getMandosProfile } = await vite.ssrLoadModule("/src/AiDrawer.jsx");
 const { CandidatePromotionPanel } = await vite.ssrLoadModule("/src/CandidatePromotionPanel.jsx");
 const {
   claimCaptureStream,
@@ -149,7 +149,7 @@ test("renders promotion readiness without claiming a candidate is verified", () 
   assert.ok(!html.includes(">VERIFIED<"));
 });
 
-test("AI drawer defaults to auto and exposes built-in capture without faking stage progress", () => {
+test("Mandos drawer defaults to Core and keeps advanced controls compact", () => {
   const html = renderToStaticMarkup(React.createElement(AiDrawer, {
     analysisContext: {
       domain: "physics",
@@ -160,31 +160,19 @@ test("AI drawer defaults to auto and exposes built-in capture without faking sta
     },
     onClose() {},
   }));
-  assert.ok(html.includes("자동 판단"));
-  assert.ok(html.includes("영역 선택"));
-  assert.ok(html.includes("REQUESTED · AUTO"));
-  assert.ok(!html.includes("내장 영역 캡처 구현 후"));
+  assert.ok(html.includes("MANDOS"));
+  assert.ok(html.includes("Mandos 3 Core"));
+  assert.ok(html.includes('title="영역 선택"'));
+  assert.ok(html.includes('aria-label="이전 분석 열기"'));
+  assert.ok(!html.includes("자동 판단"));
+  assert.ok(!html.includes("OPENAI EXECUTION TRACE"));
+  assert.ok(!html.includes("TOKEN USAGE"));
 
-  assert.deepEqual(buildAgentActivity({ analysis: null, requestedMode: "deep", requestState: "submitting" }), [{
-    id: "server-execution",
-    label: "SERVER EXECUTION",
-    detail: "내부 단계별 상태는 서버가 반환한 경우에만 표시합니다.",
-    status: "running",
-  }]);
-
-  assert.deepEqual(buildAgentActivity({
-    requestedMode: "auto",
-    requestState: "success",
-    analysis: {
-      mode: "deep",
-      steps: [{ stage: "synthesis", role: "final-synthesizer", model: "gpt-test", status: "completed" }],
-    },
-  }), [{
-    id: "stage-1",
-    label: "final-synthesizer",
-    detail: "final-synthesizer · gpt-test",
-    status: "completed",
-  }]);
+  assert.deepEqual(getMandosProfile("standard"), {
+    mode: "standard", title: "Mandos 3 Swift", task: "요약·정리", trait: "빠른 응답",
+  });
+  assert.equal(getMandosProfile("auto").title, "Mandos 3 Core");
+  assert.equal(getMandosProfile("deep").title, "Mandos 3 Deep");
 });
 
 test("capture lifecycle stops a stream that resolves after cleanup and revokes a late URL", () => {

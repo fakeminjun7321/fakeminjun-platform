@@ -199,7 +199,7 @@ export function CaptureComposer({ onConfirm, onCancel }) {
       setSourceUrl(url);
       setSelection(null);
       setResult(null);
-      setMessage("드래그해서 AI가 볼 영역만 선택하세요.");
+      setMessage("드래그해서 Mandos가 볼 영역만 선택하세요.");
       setState("selecting");
     } catch (error) {
       if (!isCurrentOperation(operationId)) return;
@@ -312,7 +312,7 @@ export function CaptureComposer({ onConfirm, onCancel }) {
       ) : null}
       {state === "ready" && result ? (
         <div className="capture-preview">
-          <img src={result.url} alt="AI 분석에 첨부할 선택 영역" />
+          <img src={result.url} alt="Mandos 분석에 첨부할 선택 영역" />
           <div><span>{result.width} × {result.height}px</span><strong>아직 업로드되지 않음</strong></div>
         </div>
       ) : null}
