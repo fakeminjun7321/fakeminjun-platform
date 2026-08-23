@@ -76,7 +76,7 @@ function AnalysisResult({ analysis, requestedMode }) {
         <strong>Mandos가 밝힌 근거 범위 · 별도 확인 필요</strong><p>{result.sourceBoundary}</p>
       </section>
       {result.citations?.length ? (
-        <section className="analysis-citations" aria-label="서버가 ID를 검증한 분석 근거">
+        <section className="analysis-citations" aria-label="분석 근거">
           <strong><Quotes size={16} /> 근거 ID 검증</strong>
           <ol>{result.citations.map((citation, index) => {
             const evidence = evidenceById.get(citation.evidenceId);
@@ -86,7 +86,7 @@ function AnalysisResult({ analysis, requestedMode }) {
               ? <a href={locator} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">{content}</a>
               : <div>{content}</div>}</li>;
           })}</ol>
-          <p>서버는 근거 ID가 실제 요청 묶음에 있었는지 확인합니다. 인용 문장 자체의 진실성은 별도 검토 대상입니다.</p>
+          <p>표시된 근거가 이번 분석 자료에 포함됐는지 확인했습니다. 내용의 사실 여부는 별도 검토가 필요합니다.</p>
         </section>
       ) : null}
       {result.uncertainties?.length ? (
@@ -183,7 +183,7 @@ export function AiDrawer({ analysisContext, onClose }) {
       setRequestState(loaded.status === "completed" ? "success" : loaded.status === "failed" ? "error" : "submitting");
       setNotice("저장된 분석 기록을 열었습니다.");
     } catch (error) {
-      if (error?.name !== "AbortError") setNotice(error?.message ?? "분석 기록을 열지 못했습니다.");
+      if (error?.name !== "AbortError") setNotice("분석 기록을 열지 못했습니다. 잠시 후 다시 확인해 주세요.");
     } finally {
       if (historyRef.current === controller) historyRef.current = null;
     }
@@ -221,7 +221,7 @@ export function AiDrawer({ analysisContext, onClose }) {
     setCapture(result);
     setCaptureUrl(URL.createObjectURL(result.file));
     setCaptureOpen(false);
-    setNotice("선택 영역이 준비되었습니다. 분석 요청을 누르기 전에는 서버로 전송되지 않습니다.");
+    setNotice("선택 영역이 준비되었습니다. 분석 요청을 누르기 전에는 전송되지 않습니다.");
   }
 
   function removeCapture() {
@@ -304,7 +304,7 @@ export function AiDrawer({ analysisContext, onClose }) {
         clearAttempt?.(attempt.fingerprint);
       }
       setRequestState("error");
-      setNotice(error?.message ?? "분석 요청을 처리하지 못했습니다.");
+      setNotice("분석 요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.");
     } finally {
       if (requestRef.current === controller) requestRef.current = null;
     }

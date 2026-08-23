@@ -16,7 +16,7 @@ function initialReadiness(candidate) {
     ready: false,
     requirements: {},
     counts: {},
-    reason: "승격 준비 상태를 아직 조회하지 않았습니다.",
+    reason: "지도 반영 준비 상태를 아직 확인하지 않았습니다.",
   };
 }
 
@@ -41,7 +41,7 @@ export function CandidatePromotionPanel({ candidate, onPromoted }) {
     const controller = new AbortController();
     requestRef.current?.abort();
     requestRef.current = controller;
-    setStatus({ state: "loading", message: "승격 준비 상태를 확인하고 있습니다." });
+    setStatus({ state: "loading", message: "지도 반영 준비 상태를 확인하고 있습니다." });
     try {
       const next = await backendClient.getCandidateReadiness(candidate.id, { signal: controller.signal });
       setReadiness(next);
@@ -53,9 +53,9 @@ export function CandidatePromotionPanel({ candidate, onPromoted }) {
           accuracy: next.location.accuracy ?? "approximate",
         });
       }
-      setStatus({ state: "success", message: next.ready ? "지도 승격 조건이 모두 충족되었습니다." : next.reason ?? "아직 충족되지 않은 조건이 있습니다." });
+      setStatus({ state: "success", message: next.ready ? "지도 반영 조건이 모두 충족되었습니다." : next.reason ?? "아직 충족되지 않은 조건이 있습니다." });
     } catch (error) {
-      if (error?.name !== "AbortError") setStatus({ state: "error", message: error?.message ?? "준비 상태를 불러오지 못했습니다." });
+      if (error?.name !== "AbortError") setStatus({ state: "error", message: "준비 상태를 불러오지 못했습니다. 잠시 후 다시 확인해 주세요." });
     } finally {
       if (requestRef.current === controller) requestRef.current = null;
     }
@@ -90,7 +90,7 @@ export function CandidatePromotionPanel({ candidate, onPromoted }) {
       setStatus({ state: "success", message: "근거 검토를 저장했습니다. 이 기록만으로 사실 검증이 완료되지는 않습니다." });
       await refreshReadiness();
     } catch (error) {
-      setStatus({ state: "error", message: error?.message ?? "근거 검토를 저장하지 못했습니다." });
+      setStatus({ state: "error", message: "근거 검토를 저장하지 못했습니다. 입력 내용을 확인해 주세요." });
     }
   }
 
@@ -115,13 +115,13 @@ export function CandidatePromotionPanel({ candidate, onPromoted }) {
       setStatus({ state: "success", message: "위치를 저장했습니다. 원문 근거 검토가 끝나기 전에는 지도에 반영되지 않습니다." });
       await refreshReadiness();
     } catch (error) {
-      setStatus({ state: "error", message: error?.message ?? "확인 위치를 저장하지 못했습니다." });
+      setStatus({ state: "error", message: "확인 위치를 저장하지 못했습니다. 입력 내용을 확인해 주세요." });
     }
   }
 
   async function promote() {
     if (!readiness.ready || status.state === "submitting") return;
-    if (!window.confirm("검토된 근거와 위치로 이 후보를 실제 지도 사건으로 승격할까요?")) return;
+    if (!window.confirm("검토된 근거와 위치로 이 후보를 실제 지도 사건에 반영할까요?")) return;
     setStatus({ state: "submitting", message: "사건·위치·출처를 하나의 지도 사건으로 기록하고 있습니다." });
     try {
       const result = await backendClient.promoteEventCandidate(candidate.id, {
@@ -129,22 +129,22 @@ export function CandidatePromotionPanel({ candidate, onPromoted }) {
         candidateHash: candidate.candidateHash,
       });
       setReadiness((current) => ({ ...current, ready: false, promotedEventId: result.eventId ?? result.id }));
-      setStatus({ state: "success", message: `지도 사건 ${result.eventId ?? result.id}로 승격했습니다.` });
+      setStatus({ state: "success", message: `지도 사건 ${result.eventId ?? result.id}에 반영했습니다.` });
       onPromoted?.(result);
     } catch (error) {
-      setStatus({ state: "error", message: error?.message ?? "지도 사건으로 승격하지 못했습니다." });
+      setStatus({ state: "error", message: "지도 사건으로 반영하지 못했습니다. 준비 조건을 다시 확인해 주세요." });
     }
   }
 
   return (
     <section className={`promotion-readiness${readiness.ready ? " is-ready" : ""}`}>
       <header>
-        <div><p className="system-kicker">EVIDENCE · LOCATION · PROMOTION GATE</p><h4>지도 승격 준비</h4></div>
+        <div><p className="system-kicker">근거와 위치 확인</p><h4>지도 반영 준비</h4></div>
         <button type="button" onClick={toggleOpen}>{open ? "검토 도구 닫기" : "근거·위치 검토"}</button>
       </header>
       <div className="promotion-readiness-summary">
-        <span><LockKey size={14} />{readiness.ready ? "PROMOTION READY" : "FAIL-CLOSED"}</span>
-        <p>{readiness.promotedEventId ? `이미 지도 사건 ${readiness.promotedEventId}로 승격됨` : readiness.reason}</p>
+        <span><LockKey size={14} />{readiness.ready ? "반영 가능" : "반영 잠금"}</span>
+        <p>{readiness.promotedEventId ? `이미 지도 사건 ${readiness.promotedEventId}에 반영됨` : readiness.reason}</p>
       </div>
       {open ? (
         <div className="promotion-readiness-body">
@@ -157,7 +157,7 @@ export function CandidatePromotionPanel({ candidate, onPromoted }) {
           </ul>
           <div className="promotion-review-grid">
             <form className="evidence-review-form" onSubmit={submitEvidence}>
-              <header><FileText size={17} /><div><strong>원문 근거 검토</strong><span>{readiness.counts?.reviewedEvidence ?? 0}/{readiness.counts?.expectedEvidence ?? candidate.sourceCount ?? 0} sources</span></div></header>
+              <header><FileText size={17} /><div><strong>원문 근거 검토</strong><span>{readiness.counts?.reviewedEvidence ?? 0}/{readiness.counts?.expectedEvidence ?? candidate.sourceCount ?? 0}개 출처</span></div></header>
               <label>출처<select value={evidence.sourceItemId} onChange={(event) => setEvidence((current) => ({ ...current, sourceItemId: event.target.value }))}>
                 {candidate.evidenceSnapshots?.map((snapshot) => <option key={snapshot.sourceItemId} value={snapshot.sourceItemId}>{snapshot.sourceName} · {snapshot.title}</option>)}
               </select></label>
@@ -172,7 +172,7 @@ export function CandidatePromotionPanel({ candidate, onPromoted }) {
               <button type="submit" disabled={status.state === "submitting" || !candidate.candidateHash}>근거 검토 저장</button>
             </form>
             <form className="location-review-form" onSubmit={submitLocation}>
-              <header><Crosshair size={17} /><div><strong>사용자 확인 위치</strong><span>{readiness.location ? "LOCATION STORED" : "LOCATION REQUIRED"}</span></div></header>
+              <header><Crosshair size={17} /><div><strong>사용자 확인 위치</strong><span>{readiness.location ? "위치 저장됨" : "위치 확인 필요"}</span></div></header>
               <label>장소명<input value={location.placeName} onChange={(event) => setLocation((current) => ({ ...current, placeName: event.target.value }))} maxLength={160} placeholder="예: 서울특별시" /></label>
               <div><label>경도<input inputMode="decimal" value={location.longitude} onChange={(event) => setLocation((current) => ({ ...current, longitude: event.target.value }))} placeholder="126.9780" /></label>
                 <label>위도<input inputMode="decimal" value={location.latitude} onChange={(event) => setLocation((current) => ({ ...current, latitude: event.target.value }))} placeholder="37.5665" /></label></div>
@@ -185,7 +185,7 @@ export function CandidatePromotionPanel({ candidate, onPromoted }) {
           {status.message ? <p className={`promotion-status is-${status.state}`} role="status">{status.message}</p> : null}
           <footer>
             <button type="button" onClick={refreshReadiness} disabled={status.state === "submitting"}><ArrowClockwise size={15} /> 조건 다시 확인</button>
-            <button type="button" onClick={promote} disabled={!readiness.ready || status.state === "submitting" || Boolean(readiness.promotedEventId)}><UploadSimple size={15} /> 실제 지도 사건으로 승격</button>
+            <button type="button" onClick={promote} disabled={!readiness.ready || status.state === "submitting" || Boolean(readiness.promotedEventId)}><UploadSimple size={15} /> 실제 지도 사건에 반영</button>
           </footer>
         </div>
       ) : null}

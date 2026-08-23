@@ -14,7 +14,6 @@ import {
 } from "./backendClient.js";
 import {
   INTERNATIONAL_VIEW_REFRESH_MS,
-  SOURCE_INGESTION_CADENCE_MINUTES,
   aggregateSourceGroups,
   startVisibleRefresh,
 } from "./internationalRefresh.js";
@@ -123,10 +122,10 @@ function Header({ domain, route, sourceState, mapEventState, onOpenAi, onNavigat
     ? sourceState.checkedAt
     : domain === "international" ? mapEventState.generatedAt : null;
   const statusLabel = sourceWorkspace
-    ? "LIVE SOURCE · UNVERIFIED"
+    ? "공식 자료 · 검증 전"
     : domain === "physics"
-      ? "PRIVATE WORKSPACE"
-      : mapEventState.dataStatus === "mixed" ? "MIXED DATA" : "NON-LIVE DEMO";
+      ? "개인 공간"
+      : mapEventState.dataStatus === "mixed" ? "실제·데모 혼합" : "데모 자료";
 
   return (
     <header className="app-header">
@@ -136,12 +135,12 @@ function Header({ domain, route, sourceState, mapEventState, onOpenAi, onNavigat
         onClick={() => onNavigate("map")}
         aria-label="국제정세 상황지도 홈"
       >
-        <span>INTEL WORKSPACE</span>
+        <span>STUDIO 7321</span>
       </button>
       <h1 className="sr-only">{DOMAIN_META[domain].title}</h1>
       <DomainNavigation domain={domain} onNavigate={onNavigate} />
       <div className="header-utilities">
-        <span className="as-of">{domain === "physics" ? "개인 공간" : sourceWorkspace ? "API 확인" : "기준 시각"} <strong>{domain === "physics" ? "LOCAL" : headerTimestamp ? `${eventTimeLabel(headerTimestamp)} KST` : "--:--"}</strong></span>
+        <span className="as-of">{domain === "physics" ? "개인 공간" : sourceWorkspace ? "마지막 확인" : "기준 시각"} <strong>{domain === "physics" ? "비공개" : headerTimestamp ? `${eventTimeLabel(headerTimestamp)} KST` : "--:--"}</strong></span>
         <span className={`demo-stamp${sourceWorkspace ? " is-live-source" : ""}`}>{statusLabel}</span>
         <button
           className="ai-trigger"
@@ -220,7 +219,7 @@ function TodaySignalsPanel({ events, selectedId, onSelect, onOpenBriefing }) {
   return (
     <aside className={`signals-panel${collapsed ? " is-collapsed" : ""}`} aria-label="주요 신호">
       <div className="signals-heading">
-        <div><p className="system-kicker">INTELLIGENCE QUEUE</p><h2>주요 신호</h2></div>
+        <div><p className="system-kicker">오늘의 우선순위</p><h2>주요 신호</h2></div>
         <button
           className="panel-toggle"
           type="button"
@@ -253,21 +252,13 @@ const SOURCE_LANE_LABELS = {
   "rapid-change": "국제안보 관측",
 };
 
-const COLLECTION_STATUS_LABELS = {
-  current: "CURRENT",
-  stale: "STALE",
-  degraded: "DEGRADED",
-  "not-collected": "NOT COLLECTED",
-  unknown: "UNKNOWN",
-};
-
 function briefingDateLabel() {
-  return new Intl.DateTimeFormat("en-GB", {
+  return new Intl.DateTimeFormat("ko-KR", {
     timeZone: "Asia/Seoul",
-    day: "2-digit",
-    month: "short",
+    month: "long",
+    day: "numeric",
     year: "numeric",
-  }).format(new Date()).toUpperCase();
+  }).format(new Date());
 }
 
 function sourceTimestamp(value) {
@@ -310,19 +301,19 @@ function SourceInbox({
   const resolved = ["ready", "refreshing"].includes(state.status);
   const syncLabel = state.status === "refreshing"
     ? "최신 자료 확인 중"
-    : state.checkedAt ? `API 확인 ${eventTimeLabel(state.checkedAt)} KST` : "첫 동기화 대기";
+    : state.checkedAt ? `마지막 확인 ${eventTimeLabel(state.checkedAt)} KST` : "첫 동기화 대기";
 
   return (
     <section className="source-inbox" aria-labelledby="source-inbox-title">
       <header>
         <div>
-          <p className="system-kicker">OFFICIAL SOURCE INBOX</p>
+          <p className="system-kicker">공식 출처</p>
           <h3 id="source-inbox-title">공식 출처 수집함</h3>
         </div>
         <div className="source-header-actions">
           <div className={`source-sync-state is-${state.status}`} role="status" aria-live="polite">
             <i aria-hidden="true" />
-            <span>AUTO SYNC · {INTERNATIONAL_VIEW_REFRESH_MS / 1_000} SEC</span>
+            <span>{INTERNATIONAL_VIEW_REFRESH_MS / 1_000}초마다 확인</span>
             <strong>{syncLabel}</strong>
           </div>
           <div className="source-boundary" aria-label="자료 상태">
@@ -341,7 +332,7 @@ function SourceInbox({
       {state.status === "loading" && <p className="source-empty">공식 피드 수집 자료를 확인 중입니다.</p>}
       {state.status === "error" && (
         <p className="source-empty is-error">
-          수집 자료 API에 연결하지 못했습니다. {state.items.length ? "이전 성공 자료를 표시하며 최신성은 확인되지 않았습니다." : "데모 신호로 대체하지 않고 빈 상태로 둡니다."}
+          수집 자료를 불러오지 못했습니다. {state.items.length ? "이전에 받은 자료를 표시하며 최신성은 확인되지 않았습니다." : "데모 신호로 바꾸지 않고 빈 상태로 둡니다."}
         </p>
       )}
       {resolved && state.items.length === 0 && (
@@ -383,7 +374,7 @@ function SourceInbox({
       )}
       <footer className="source-selection-command" aria-busy={createState.status === "submitting"}>
         <div>
-          <span><strong>{selectedCount}</strong> / 8 SELECTED</span>
+          <span><strong>{selectedCount}</strong> / 8개 선택</span>
           <p>{selectionReady ? "선택한 자료를 하나의 사건 가설로 묶을 수 있습니다." : "서로 관련 있어 보이는 자료를 2개 이상 선택하세요."}</p>
         </div>
         <div className="source-selection-actions">
@@ -405,11 +396,11 @@ function SourceInbox({
 }
 
 const CANDIDATE_REVIEW_LABELS = {
-  pending: "UNREVIEWED",
-  unreviewed: "UNREVIEWED",
-  hold: "HOLD",
-  reviewed: "REVIEWED · NOT VERIFIED",
-  rejected: "REJECTED",
+  pending: "검토 전",
+  unreviewed: "검토 전",
+  hold: "보류",
+  reviewed: "검토 완료 · 검증 전",
+  rejected: "기각",
 };
 
 function textItems(value) {
@@ -443,7 +434,7 @@ function CandidateEvidence({ candidate }) {
 
   return (
     <section className="candidate-evidence" aria-label="근거 스냅샷과 출처 평가">
-      <div className="candidate-subheading"><h4>근거 스냅샷</h4><span>{snapshots.length} SOURCE RECORDS</span></div>
+      <div className="candidate-subheading"><h4>근거 스냅샷</h4><span>{snapshots.length}개 자료</span></div>
       {snapshots.length ? (
         <ol>
           {snapshots.map((snapshot, index) => {
@@ -485,13 +476,13 @@ export function CandidateReviewDesk({ state, noteDrafts, reviewState, onNoteChan
   return (
     <section className="candidate-review-desk" aria-labelledby="candidate-review-title">
       <header>
-        <div><p className="system-kicker">CANDIDATE REVIEW DESK</p><h3 id="candidate-review-title">사건 후보 검토대</h3></div>
+        <div><p className="system-kicker">자료 묶음 검토</p><h3 id="candidate-review-title">사건 후보 검토대</h3></div>
         <div className="candidate-boundary" aria-label="후보 자료 상태">
-          <span>METADATA HYPOTHESIS</span><span>UNVERIFIED</span><span>MAP PROMOTION LOCKED</span>
+          <span>자료 묶음 후보</span><span>검증 전</span><span>지도 반영 전</span>
         </div>
       </header>
       <p className="candidate-desk-explainer">
-        여러 공식 출처가 같은 사건을 가리킬 가능성을 메타데이터로 묶은 가설입니다. 검토 상태를 바꿔도 사실 검증이나 지도 반영은 이루어지지 않습니다.
+        제목과 발행 시각이 가까운 공식 자료를 하나의 사건 후보로 묶었습니다. 검토 상태를 바꿔도 사실 검증이나 지도 반영은 이루어지지 않습니다.
       </p>
       {reviewState.message ? (
         <p className={`candidate-request-notice${reviewState.status === "error" ? " is-error" : ""}`} role={reviewState.status === "error" ? "alert" : "status"}>
@@ -500,7 +491,7 @@ export function CandidateReviewDesk({ state, noteDrafts, reviewState, onNoteChan
       ) : null}
       {state.status === "loading" ? <p className="candidate-empty">저장된 사건 후보를 불러오는 중입니다.</p> : null}
       {state.status === "error" ? (
-        <p className="candidate-empty is-error" role="alert">후보 목록 API에 연결하지 못했습니다. 공식 출처 수집함의 자료에는 영향을 주지 않습니다.</p>
+        <p className="candidate-empty is-error" role="alert">후보 목록을 불러오지 못했습니다. 공식 출처 수집함의 자료에는 영향을 주지 않습니다.</p>
       ) : null}
       {state.status === "ready" && state.items.length === 0 ? (
         <p className="candidate-empty">아직 생성된 후보가 없습니다. 위 수집함에서 관련 있어 보이는 공식 자료 2~8개를 선택해 첫 가설을 만드세요.</p>
@@ -517,12 +508,12 @@ export function CandidateReviewDesk({ state, noteDrafts, reviewState, onNoteChan
               <article className={`candidate-record status-${reviewStatus}`} key={candidateId}>
                 <header>
                   <div className="candidate-record-code">
-                    <span>CANDIDATE {candidateId}</span>
+                    <span>후보 {candidateId}</span>
                     <strong>{CANDIDATE_REVIEW_LABELS[reviewStatus] ?? reviewStatus.toUpperCase()}</strong>
                   </div>
                   <div className="candidate-record-location">
                     <span>{displayCandidate.regionLabel ?? "지역 미분류"}</span>
-                    <span>{SOURCE_LANE_LABELS[displayCandidate.laneRecommendation] ?? displayCandidate.laneRecommendation ?? "레인 추천 없음"}</span>
+                    <span>{SOURCE_LANE_LABELS[displayCandidate.laneRecommendation] ?? displayCandidate.laneRecommendation ?? "분류 없음"}</span>
                   </div>
                 </header>
                 <div className="candidate-record-lead">
@@ -535,7 +526,7 @@ export function CandidateReviewDesk({ state, noteDrafts, reviewState, onNoteChan
                   <CandidateTextList title="불확실성" items={displayCandidate.uncertainties} emptyText="기록된 불확실성이 없습니다." />
                   <CandidateTextList title="다음 확인" items={displayCandidate.nextChecks} emptyText="제안된 다음 확인 절차가 없습니다." />
                 </div>
-                <Suspense fallback={<p className="candidate-empty-detail">승격 검토 도구를 불러오는 중입니다.</p>}>
+                <Suspense fallback={<p className="candidate-empty-detail">지도 반영 도구를 불러오는 중입니다.</p>}>
                   <CandidatePromotionPanel candidate={displayCandidate} onPromoted={onPromoted} />
                 </Suspense>
                 <footer className="candidate-review-command" aria-busy={reviewPending}>
@@ -588,11 +579,11 @@ function BriefingPage({
     <main className="focused-workspace briefing-workspace">
       <header className="workspace-heading">
         <div>
-          <p className="system-kicker">DAILY INTELLIGENCE BRIEF · {briefingDateLabel()}</p>
+          <p className="system-kicker">{briefingDateLabel()}</p>
           <h2>오늘 브리핑</h2>
           <p>한국을 중심으로 미국의 영향과 급격한 변화를 분리해 읽습니다.</p>
         </div>
-        <span className="workspace-count">{events.length} DEMO SIGNALS</span>
+        <span className="workspace-count">데모 신호 {events.length}개</span>
       </header>
       <SourceInbox
         state={sourceState}
@@ -613,8 +604,8 @@ function BriefingPage({
         onPromoted={onPromoted}
       />
       <div className="briefing-section-label">
-        <div><p className="system-kicker">ANALYSIS PROTOTYPE</p><h3>분석용 데모 신호</h3></div>
-        <span>NON-LIVE DEMO</span>
+        <div><p className="system-kicker">분석 연습</p><h3>분석용 데모 신호</h3></div>
+        <span>실시간 자료 아님</span>
       </div>
       <div className="briefing-feed">
         {events.map((event) => {
@@ -652,7 +643,7 @@ function IssuesPage({ selectedEvent, onSelect, onOpenAi }) {
   return (
     <main className="focused-workspace issues-workspace">
       <aside className="issue-index" aria-label="추적 중인 이슈">
-        <p className="system-kicker">TRACKED ISSUES</p><h2>이슈 추적</h2>
+        <p className="system-kicker">추적 중인 이슈</p><h2>이슈 추적</h2>
         <span className="issue-scroll-hint">좌우로 탐색 · {TRACKED_ISSUES.length}개</span>
         <div>
           {TRACKED_ISSUES.map((issue) => (
@@ -681,7 +672,7 @@ function IssuesPage({ selectedEvent, onSelect, onOpenAi }) {
         </header>
         <section className="issue-history" aria-labelledby="issue-history-title">
           <div>
-            <p className="system-kicker">CHANGE LOG</p>
+            <p className="system-kicker">변화 기록</p>
             <h3 id="issue-history-title">누적 변화</h3>
             <span>{issueEvents.length}개 기록</span>
           </div>
@@ -708,38 +699,6 @@ function IssuesPage({ selectedEvent, onSelect, onOpenAi }) {
         </footer>
       </article>
     </main>
-  );
-}
-
-function PassiveStatusBar({ domain, route, sourceState, mapEventState }) {
-  if (domain === "physics") {
-    return (
-      <footer className="system-status" aria-label="물리 워크스페이스 상태">
-        <span>LIBRARY <strong>PRIVATE API</strong></span><span>PROFILE <strong>OLYMPIAD THEORY</strong></span>
-        <span>TRACK <strong>KPHO → IPHO</strong></span><span>OPEN LINKS <strong>6</strong></span>
-        <span className="system-health">Mandos 분석 <i aria-hidden="true" /> 요청 시 연결 확인</span>
-      </footer>
-    );
-  }
-  if (route === "briefing") {
-    const sourceReady = ["ready", "refreshing"].includes(sourceState.status);
-    return (
-      <footer className="system-status" aria-label="수집 자료 상태">
-        <span>SOURCE INBOX <strong>{sourceReady ? COLLECTION_STATUS_LABELS[sourceState.collectionStatus] : sourceState.status.toUpperCase()}</strong></span>
-        <span>VISIBLE ITEMS <strong>{sourceState.items.length}</strong></span>
-        <span>AUTO SYNC <strong>{INTERNATIONAL_VIEW_REFRESH_MS / 1_000} SEC</strong></span><span>COLLECT <strong>{SOURCE_INGESTION_CADENCE_MINUTES} MIN</strong></span>
-        <span className="system-health"><i aria-hidden="true" /> 공식 출처 메타데이터</span>
-      </footer>
-    );
-  }
-  const isDemo = ["non-live-demo", "fallback-demo"].includes(mapEventState.dataStatus);
-  const sourceCount = mapEventState.items.reduce((total, event) => total + Number(event.sourceCount ?? event.sources ?? 0), 0);
-  return (
-    <footer className="system-status" aria-label="데이터 상태">
-      <span>DATASET <strong>{isDemo ? "DEMO" : mapEventState.dataStatus === "mixed" ? "MIXED" : "API"}</strong></span><span>VISIBLE SIGNALS <strong>{mapEventState.items.length}</strong></span>
-      <span>SOURCES <strong>{sourceCount}</strong></span><span>PROJECTION <strong>WEB MERCATOR</strong></span>
-      <span className="system-health">{mapEventState.status === "error" ? "API 연결 실패 · 데모 대체" : "사건 API 응답"} <i aria-hidden="true" /> {mapEventState.status.toUpperCase()}</span>
-    </footer>
   );
 }
 
@@ -841,7 +800,7 @@ export function App() {
       contextKind: "event",
       contextId: String(selectedEvent.id),
       title: selectedEvent.title,
-        meta: `${selectedEvent.region} · ${selectedEvent.time} KST · ${selectedEvent.live ? "승격된 실제 사건" : "명시된 데모 자료"}`,
+        meta: `${selectedEvent.region} · ${selectedEvent.time} KST · ${selectedEvent.live ? "지도에 반영된 실제 사건" : "명시된 데모 자료"}`,
       placeholder: "확인된 사실과 추론을 구분해서, 한국에 미칠 영향을 분석해줘.",
     };
   }, [domain, selectedEvent]);
@@ -955,7 +914,7 @@ export function App() {
       });
       setSourceRefreshVersion((version) => version + 1);
     } catch (error) {
-      setIngestionState({ status: "error", message: error?.message ?? "공식 출처 수집을 실행하지 못했습니다." });
+      setIngestionState({ status: "error", message: "공식 출처를 새로고침하지 못했습니다. 잠시 후 다시 시도해 주세요." });
     }
   }
 
@@ -998,7 +957,7 @@ export function App() {
         if (error instanceof BackendApiError && error.status >= 400 && error.status < 500 && ![408, 425, 429].includes(error.status)) {
           candidateCreateAttemptRef.current = null;
         }
-        setCreateState({ status: "error", message: error?.message ?? "사건 후보 생성 요청을 처리하지 못했습니다." });
+        setCreateState({ status: "error", message: "사건 후보를 만들지 못했습니다. 선택한 자료를 확인해 주세요." });
       }
     } finally {
       if (candidateCreateRef.current === controller) candidateCreateRef.current = null;
@@ -1046,7 +1005,7 @@ export function App() {
       setReviewState({
         status: "success",
         candidateId,
-        message: "검토 상태를 저장했습니다. 사실 검증 완료나 지도 승격을 의미하지 않습니다.",
+        message: "검토 상태를 저장했습니다. 사실 검증 완료나 지도 반영을 의미하지 않습니다.",
       });
     } catch (error) {
       if (error?.name === "AbortError") {
@@ -1055,7 +1014,7 @@ export function App() {
         if (error instanceof BackendApiError && error.status >= 400 && error.status < 500 && ![408, 425, 429].includes(error.status)) {
           candidateReviewAttemptRef.current = null;
         }
-        setReviewState({ status: "error", candidateId, message: error?.message ?? "검토 상태를 저장하지 못했습니다." });
+        setReviewState({ status: "error", candidateId, message: "검토 상태를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요." });
       }
     } finally {
       if (candidateReviewRef.current === controller) candidateReviewRef.current = null;
@@ -1121,7 +1080,7 @@ export function App() {
             </Suspense>
             <TodaySignalsPanel events={topSignals} selectedId={selectedId} onSelect={setSelectedId}
               onOpenBriefing={() => navigate("briefing")} />
-            {mapEventState.status === "error" ? <p className="map-data-notice" role="status">사건 API에 연결하지 못해 명시된 데모 자료를 표시합니다.</p> : null}
+            {mapEventState.status === "error" ? <p className="map-data-notice" role="status">사건 자료를 불러오지 못해 명시된 데모 자료를 표시합니다.</p> : null}
           </main>
         )}
 
@@ -1162,7 +1121,6 @@ export function App() {
           </Suspense>
         )}
 
-        <PassiveStatusBar domain={domain} route={route} sourceState={sourceState} mapEventState={mapEventState} />
       </div>
       <p className="sr-only" role="status" aria-live="polite">선택 사건: {selectedEvent.title}</p>
       {notice && <div className="domain-notice" role="status">{notice}</div>}

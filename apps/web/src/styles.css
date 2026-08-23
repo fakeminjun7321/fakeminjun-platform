@@ -2482,3 +2482,397 @@ mjx-container {
   button,
   a { transition: background-color var(--ease), border-color var(--ease), color var(--ease), opacity var(--ease); }
 }
+
+/* Whole-product Focus Line refinement */
+:root {
+  --shell: #070a0c;
+  --surface-0: #090d10;
+  --surface-1: #0e1418;
+  --surface-2: #141c21;
+  --surface-3: #1b272e;
+  --line: #202b31;
+  --line-strong: #314047;
+  --text: #edf1f0;
+  --text-soft: #c2cbcd;
+  --muted: #929fa4;
+  --faint: #6d7b81;
+  --cyan: #70c8c5;
+  --physics: #96bda2;
+  --display: "Noto Sans KR Variable", "Apple SD Gothic Neo", sans-serif;
+  --chrome-height: 64px;
+  --subnav-height: 44px;
+}
+
+body {
+  font-size: 15px;
+  background: var(--shell);
+}
+
+.app-header {
+  grid-template-columns: 202px minmax(280px, 1fr) auto;
+  border-bottom-color: rgba(49, 64, 71, 0.72);
+  background: rgba(7, 10, 12, 0.98);
+}
+
+.brand-lockup {
+  padding-inline: 24px;
+  border-right: 0;
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: 0.1em;
+}
+
+.domain-navigation { padding-left: 8px; }
+.domain-tab { min-width: 88px; padding-inline: 16px; font-size: 13px; }
+.domain-tab.is-active::after { right: 16px; left: 16px; }
+
+.header-utilities { gap: 10px; padding-left: 10px; }
+.as-of { font-size: 11px; }
+.demo-stamp {
+  padding: 5px 9px;
+  border-color: rgba(208, 160, 85, 0.44);
+  border-radius: 999px;
+  font-family: var(--body);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 0;
+  background: rgba(208, 160, 85, 0.07);
+}
+.demo-stamp.is-live-source { border-color: rgba(130, 172, 142, 0.45); }
+.ai-trigger {
+  min-width: 132px;
+  height: 38px;
+  margin-right: 16px;
+  border: 0;
+  border-radius: 10px;
+  background: #16232a;
+  font-size: 12px;
+}
+.ai-trigger:hover { background: #1c2d34; }
+
+.international-subnav {
+  gap: 0;
+  padding-inline: 22px;
+  border-bottom-color: rgba(49, 64, 71, 0.66);
+  background: #090d0f;
+}
+.international-subnav a { min-width: 104px; font-size: 12px; }
+
+.system-kicker {
+  color: #869499;
+  font-family: var(--body);
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.45;
+  letter-spacing: 0.01em;
+}
+
+.focused-workspace,
+.workspace-loading { background: var(--surface-0); }
+
+.workspace-heading,
+.source-inbox,
+.candidate-review-desk,
+.briefing-section-label,
+.briefing-feed,
+.domain-workspace-heading,
+.physics-hub-layout,
+.resource-workspace,
+.ipho-layout { max-width: 1220px; }
+
+.briefing-workspace { padding: 34px clamp(22px, 4vw, 52px) 68px; }
+.workspace-heading,
+.domain-workspace-heading { padding-bottom: 20px; border-bottom-color: var(--line); }
+.workspace-heading h2,
+.domain-workspace-heading h2 {
+  margin-top: 7px;
+  font-size: clamp(30px, 2.55vw, 38px);
+  font-weight: 680;
+  letter-spacing: -0.035em;
+}
+.workspace-heading p:last-child,
+.domain-workspace-heading > div:first-child > p:not(.system-kicker) {
+  margin-top: 8px;
+  color: #a6b1b5;
+  font-size: 13px;
+  line-height: 1.65;
+}
+.workspace-count {
+  padding: 6px 9px;
+  border-radius: 999px;
+  color: #aab5b8;
+  background: var(--surface-1);
+  font-family: var(--body);
+  font-size: 10px;
+  font-weight: 650;
+}
+
+.source-inbox { margin-top: 18px; border-top-color: var(--line); border-bottom-color: var(--line); }
+.candidate-review-desk { margin-top: 26px; border-top-color: var(--line); border-bottom-color: var(--line); }
+.source-inbox > header,
+.candidate-review-desk > header,
+.briefing-section-label { min-height: 62px; border-bottom-color: var(--line); }
+.source-inbox h3,
+.candidate-review-desk h3,
+.briefing-section-label h3 { font-size: 18px; }
+.source-sync-state {
+  min-height: 34px;
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--surface-1);
+  font-family: var(--body);
+  font-size: 10px;
+  letter-spacing: 0;
+}
+.source-sync-state strong { font-size: 10px; }
+.source-boundary span,
+.candidate-boundary span,
+.briefing-section-label > span {
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--surface-1);
+  font-family: var(--body);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.source-refresh {
+  min-height: 36px;
+  border: 0;
+  border-radius: 8px;
+  background: #16272b;
+  font-size: 11px;
+}
+.source-empty,
+.candidate-empty { padding: 22px 2px; font-size: 12px; line-height: 1.7; }
+.candidate-desk-explainer { max-width: 760px; color: #9ca8ac; line-height: 1.7; }
+.briefing-section-label { margin-top: 28px; }
+.briefing-item { gap: 14px; border-bottom-color: var(--line); }
+.briefing-item.is-selected { border-radius: 8px; background: rgba(105, 198, 194, 0.045); }
+.briefing-item > button:first-child { grid-template-columns: 44px minmax(0, 1fr); gap: 14px; padding: 18px 14px; }
+.briefing-rank { font-size: 21px; }
+.briefing-copy > strong { font-size: 14px; }
+.briefing-copy > span:last-child { font-size: 12px; line-height: 1.65; }
+
+.signals-panel {
+  top: 18px;
+  left: 18px;
+  width: min(306px, calc(100% - 36px));
+  max-height: calc(100% - 36px);
+  border-color: rgba(63, 80, 88, 0.82);
+  border-radius: 12px;
+  background: rgba(8, 12, 15, 0.96);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
+}
+.signals-heading { min-height: 54px; padding-inline: 14px; }
+.signals-heading h2 { font-size: 18px; }
+.signal-row { min-height: 78px; gap: 4px; }
+.signal-row > strong { font-size: 13px; }
+.signal-evidence { font-size: 10px; }
+.panel-link { min-height: 44px; }
+.map-data-cluster {
+  top: 18px;
+  right: 18px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(7, 11, 13, 0.92);
+  font-family: var(--body);
+  font-size: 10px;
+}
+.layer-controls {
+  border-color: rgba(63, 80, 88, 0.8);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.layer-heading { font-family: var(--body); font-size: 10px; letter-spacing: 0; }
+.map-controls { border-radius: 9px; overflow: hidden; }
+.map-camera-readout { color: #8f9da2; }
+.map-camera-readout small { color: #6f7c81; }
+.event-popover { border-color: rgba(63, 80, 88, 0.86); border-radius: 12px; }
+
+.issues-workspace { grid-template-columns: 270px minmax(0, 1fr); }
+.issue-index { padding: 28px 16px; background: #080c0e; }
+.issue-index h2 { margin: 6px 6px 17px; font-size: 25px; }
+.issue-index > div { border-top-color: var(--line); }
+.issue-index button { min-height: 78px; padding: 12px 8px; border-bottom-color: var(--line); border-radius: 8px; }
+.issue-index button.is-selected { background: #121b20; }
+.issue-index button strong { font-size: 12px; }
+.issue-index button small { font-size: 10px; line-height: 1.55; }
+.issue-dossier { padding: 36px clamp(28px, 5vw, 72px) 64px; }
+.issue-dossier h2 { font-size: clamp(29px, 3vw, 39px); letter-spacing: -0.035em; }
+.issue-dossier > header { padding-bottom: 22px; border-bottom-color: var(--line); }
+.issue-dossier > header > p:last-of-type { font-size: 13px; }
+.issue-history { margin-top: 24px; border-color: var(--line); }
+.issue-history button { min-height: 108px; }
+.evidence-grid { margin-top: 24px; border-color: var(--line); }
+.evidence-grid section { padding: 19px 16px; }
+.evidence-grid ul { font-size: 12px; line-height: 1.75; }
+.watch-condition { border-left: 0; border-radius: 10px; background: #121719; padding: 14px 16px; }
+.watch-condition button { border: 0; border-radius: 8px; background: #172b2e; }
+
+.domain-workspace { padding: 30px clamp(22px, 4vw, 52px) 64px; }
+.physics-profile-summary { margin-top: 7px !important; }
+.physics-hub-layout {
+  min-height: 520px;
+  grid-template-columns: 208px minmax(0, 1fr) 272px;
+  margin-top: 18px;
+  border-color: var(--line);
+  border-radius: 12px;
+  overflow: hidden;
+  background: #0a0f12;
+}
+.physics-tool-index { border-right-color: var(--line); background: #090d0f; }
+.physics-tool-index button { min-height: 61px; padding: 10px 12px; border-bottom-color: var(--line); }
+.physics-tool-index button.is-selected { background: #142019; }
+.physics-tool-reader { padding: 30px clamp(24px, 3vw, 42px); }
+.physics-tool-reader > header { padding-bottom: 22px; border-bottom-color: var(--line); }
+.physics-tool-reader h3 { margin-top: 9px; font-size: 29px; }
+.physics-tool-reader > header > p { font-size: 13px; line-height: 1.65; }
+.physics-tool-reader dl { margin-top: 20px; border-color: var(--line); }
+.physics-tool-reader dl > div { min-height: 58px; border-bottom-color: var(--line); }
+.physics-tool-reader dt { border-right-color: var(--line); font-family: var(--body); font-size: 11px; font-weight: 650; }
+.physics-tool-reader dd { font-size: 12px; }
+.physics-working-area {
+  grid-template-columns: minmax(165px, 0.72fr) minmax(220px, 1.2fr) auto;
+  gap: 16px;
+  margin-top: 18px;
+  padding: 16px;
+  border-left: 0;
+  border-radius: 10px;
+  background: #111a16;
+}
+.physics-working-area button,
+.official-olympiad-links > button,
+.primary-workspace-action {
+  min-height: 40px;
+  border: 0 !important;
+  border-radius: 8px;
+  background: #1a2b1f !important;
+}
+.physics-quick-resources { padding: 24px 16px; border-left-color: var(--line); background: #090d0f; }
+.physics-quick-resources a { min-height: 106px; }
+
+.resource-workspace { margin-top: 18px; }
+.resource-toolbar { margin-bottom: 12px; }
+.workspace-search { min-height: 42px; border-bottom-color: var(--line-strong); }
+.resource-type-filter { gap: 6px; }
+.resource-type-filter button {
+  min-height: 36px;
+  padding-inline: 12px;
+  border: 0;
+  border-radius: 999px;
+  background: #10161a;
+}
+.resource-type-filter button.is-selected { background: #1a2a1f; }
+.physics-resource-table { border-color: var(--line); }
+.resource-table-head { font-family: var(--body); font-weight: 650; }
+.physics-resource-table > article { min-height: 106px; border-top-color: var(--line); }
+.resource-actions a,
+.resource-actions button,
+.physics-file-actions a,
+.physics-file-actions button { border-color: var(--line-strong); border-radius: 7px; }
+.finder-query {
+  min-height: 62px;
+  border: 1px solid var(--line-strong);
+  border-radius: 11px;
+  background: #0d1316;
+}
+.finder-query button,
+.resource-load-more { min-height: 38px; border: 0 !important; border-radius: 8px; }
+.resource-query-status { border-color: var(--line); font-size: 12px; line-height: 1.65; }
+.physics-file-vault { margin-top: 26px; border-color: var(--line); }
+.physics-file-vault > header { min-height: 70px; }
+.physics-file-vault > header h3 { font-size: 19px; }
+.physics-file-vault > header button { border: 0; border-radius: 8px; }
+.physics-file-security {
+  min-height: 46px;
+  border-color: #40392d;
+  border-radius: 8px;
+  color: #cdb98f;
+  background: #14130f;
+}
+.physics-file-security strong { font-family: var(--body); font-size: 10px; }
+.ipho-layout { margin-top: 18px; border-color: var(--line); border-radius: 12px; overflow: hidden; }
+.olympiad-path,
+.ipho-topic-matrix,
+.official-olympiad-links { padding: 22px; }
+.olympiad-path,
+.ipho-topic-matrix { border-right-color: var(--line); }
+.olympiad-path li { min-height: 86px; }
+.ipho-topic-matrix article { min-height: 104px; }
+
+@media (max-width: 1180px) {
+  .app-header { grid-template-columns: 174px minmax(238px, 1fr) auto; }
+  .physics-hub-layout { grid-template-columns: 200px minmax(0, 1fr); }
+}
+
+@media (max-width: 900px) {
+  .app-header { grid-template-columns: 146px minmax(190px, 1fr) auto; }
+  .briefing-workspace,
+  .domain-workspace { padding-inline: 18px; }
+  .physics-hub-layout { grid-template-columns: 190px minmax(0, 1fr); overflow: hidden; }
+  .physics-tool-reader { min-width: 0; padding-inline: 22px; }
+  .resource-workspace { overflow-x: visible; }
+  .physics-resource-table { min-width: 0; }
+  .ipho-layout { min-width: 0; }
+  .ipho-workspace { overflow-x: visible; }
+}
+
+@media (max-width: 720px) {
+  .workspace-heading h2,
+  .domain-workspace-heading h2 { font-size: 29px; }
+  .physics-hub-layout,
+  .ipho-layout { display: block; min-width: 0; overflow: visible; }
+  .physics-tool-index { display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  .physics-tool-index button { flex: 0 0 168px; }
+  .physics-tool-reader h3 { font-size: 27px; }
+  .physics-working-area { grid-template-columns: 1fr; }
+  .resource-table-head { display: none; }
+  .physics-resource-table { border: 0; }
+  .physics-resource-table > article {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 9px;
+    margin-bottom: 10px;
+    padding: 15px 0;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+  }
+  .physics-resource-table > article > * { padding: 0; }
+  .physics-resource-table > article .resource-main { grid-column: 1 / -1; padding-bottom: 9px; border-bottom: 1px solid var(--line); }
+  .resource-provider { text-align: right; }
+  .resource-actions { position: static; grid-column: 1 / -1; justify-content: flex-end; padding-top: 9px !important; opacity: 1; }
+}
+
+@media (max-width: 620px) {
+  :root { --chrome-height: 56px; --subnav-height: 44px; }
+  .app-header { grid-template-columns: 46px minmax(168px, 1fr) 92px; }
+  .brand-lockup { padding: 0; }
+  .brand-lockup::after { content: "S7"; }
+  .demo-stamp::after { content: "데모"; font-family: var(--body); font-size: 10px; font-weight: 700; }
+  .demo-stamp.is-live-source::after { content: "자료"; }
+  .international-subnav { padding-inline: 8px; }
+  .signals-panel { top: 10px; left: 10px; width: calc(100% - 72px); }
+  .briefing-workspace,
+  .domain-workspace { padding: 22px 14px 44px; }
+  .source-inbox > header,
+  .candidate-review-desk > header,
+  .briefing-section-label { gap: 12px; }
+  .source-header-actions { align-items: stretch; }
+  .source-boundary,
+  .candidate-boundary { max-width: none; justify-content: flex-start; }
+  .issues-workspace { display: block; }
+  .issue-index { padding: 22px 14px 14px; }
+  .issue-dossier { padding: 26px 16px 46px; }
+  .issue-dossier h2 { font-size: 29px; }
+  .finder-query { grid-template-columns: 28px minmax(0, 1fr); gap: 6px; padding: 10px 12px; }
+  .finder-query button { grid-column: 1 / -1; width: 100%; }
+  .physics-file-vault > header { gap: 12px; }
+  .physics-file-security { align-items: start; }
+  .olympiad-path,
+  .ipho-topic-matrix,
+  .official-olympiad-links { padding: 18px 16px; }
+}

@@ -46,7 +46,7 @@ export function normalizePhysicsResource(resource) {
 function PhysicsHeading({ title, description, countLabel }) {
   return (
     <header className="domain-workspace-heading physics-heading">
-      <div><p className="system-kicker">PHYSICS WORKSPACE · PERSONAL OLYMPIAD PROFILE</p><h2>{title}</h2><p>{description}</p><p className="physics-profile-summary">{PHYSICS_PROFILE_SUMMARY}</p></div>
+      <div><p className="system-kicker">개인 물리 워크스페이스</p><h2>{title}</h2><p>{description}</p><p className="physics-profile-summary">{PHYSICS_PROFILE_SUMMARY}</p></div>
       <div className="workspace-heading-actions"><span className="workspace-count">{countLabel}</span></div>
     </header>
   );
@@ -57,7 +57,7 @@ function LearningHub({ onOpenAi }) {
   const selected = PHYSICS_TOOLS.find(({ id }) => id === selectedId) ?? PHYSICS_TOOLS[0];
   return (
     <main className="focused-workspace domain-workspace physics-workspace">
-      <PhysicsHeading title="물리 학습 허브" description="공식 암기보다 개념, 수학 구조, 유도와 검산을 중심으로 작업합니다." countLabel="7 STUDY MODES" />
+      <PhysicsHeading title="물리 학습 허브" description="공식 암기보다 개념, 수학 구조, 유도와 검산을 중심으로 작업합니다." countLabel="학습 모드 7개" />
       <div className="physics-hub-layout">
         <aside className="physics-tool-index" aria-label="물리 학습 도구">{PHYSICS_TOOLS.map((tool) => (
           <button type="button" key={tool.id} className={tool.id === selected.id ? "is-selected" : ""} onClick={() => setSelectedId(tool.id)} aria-pressed={tool.id === selected.id}>
@@ -65,10 +65,10 @@ function LearningHub({ onOpenAi }) {
           </button>
         ))}</aside>
         <article className="physics-tool-reader">
-          <header><span className="physics-tool-code">MODE {selected.code}</span><h3>{selected.title}</h3><p>{selected.summary}</p></header>
+          <header><span className="physics-tool-code">학습 모드 {selected.code}</span><h3>{selected.title}</h3><p>{selected.summary}</p></header>
           <dl><div><dt>입력</dt><dd>{selected.input}</dd></div><div><dt>결과 구조</dt><dd>{selected.output}</dd></div><div><dt>학습 예시</dt><dd>{selected.example}</dd></div></dl>
           <section className="physics-working-area">
-            <div><p className="system-kicker">WORKING NOTE</p><h4>분석할 내용을 이 화면에 모읍니다</h4></div>
+            <div><p className="system-kicker">풀이 노트</p><h4>분석할 내용을 이 화면에 모읍니다</h4></div>
             <p>그림·그래프 분석 모드에서는 Mandos의 내장 영역 캡처를 사용할 수 있습니다. 분석 기록은 소유자별로 보관됩니다.</p>
             <button type="button" onClick={() => onOpenAi({
               level: PHYSICS_ANALYSIS_LEVEL, contextKind: "physics-mode", contextId: selected.id, title: selected.title,
@@ -78,7 +78,7 @@ function LearningHub({ onOpenAi }) {
           </section>
         </article>
         <aside className="physics-quick-resources">
-          <p className="system-kicker">CURATED OPEN RESOURCES</p><h3>바로 볼 자료</h3>
+          <p className="system-kicker">추천 공개 자료</p><h3>바로 볼 자료</h3>
           {PHYSICS_RESOURCES.slice(0, 3).map((resource) => (
             <a key={resource.id} href={resource.href} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">
               <span>{resource.topic}</span><strong>{resource.title}</strong><small>{resource.provider} · {resource.level}</small><ArrowSquareOut size={14} aria-hidden="true" />
@@ -137,7 +137,7 @@ function LibraryPage({ onOpenAi, onNotice }) {
       const items = (Array.isArray(result) ? result : result?.items ?? []).map(normalizePhysicsResource).map((item) => ({ ...item, saved: true }));
       setState({ status: "ready", items, message: "" });
     } catch (error) {
-      if (error?.name !== "AbortError") setState((current) => ({ ...current, status: "error", message: error?.message ?? "개인 보관소를 불러오지 못했습니다." }));
+      if (error?.name !== "AbortError") setState((current) => ({ ...current, status: "error", message: "개인 보관소를 불러오지 못했습니다. 잠시 후 다시 확인해 주세요." }));
     }
   }
 
@@ -155,7 +155,7 @@ function LibraryPage({ onOpenAi, onNotice }) {
       setState((current) => ({ ...current, items: current.items.filter((item) => item.id !== resource.id) }));
       onNotice("보관소에서 자료를 제거했습니다. 원문에는 영향을 주지 않습니다.");
     } catch (error) {
-      onNotice(error?.message ?? "보관 자료를 제거하지 못했습니다.");
+      onNotice("보관 자료를 제거하지 못했습니다. 잠시 후 다시 시도해 주세요.");
     } finally {
       setPendingIds((current) => { const next = new Set(current); next.delete(resource.id); return next; });
     }
@@ -174,18 +174,18 @@ function LibraryPage({ onOpenAi, onNotice }) {
       URL.revokeObjectURL(url);
       onNotice("Obsidian용 Markdown 다운로드를 시작했습니다.");
     } catch (error) {
-      onNotice(error?.message ?? "Obsidian 내보내기를 만들지 못했습니다.");
+      onNotice("Markdown 파일을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.");
     }
   }
 
   return (
     <main className="focused-workspace domain-workspace physics-workspace">
-      <PhysicsHeading title="물리 자료 보관소" description="공개 자료 링크와 직접 올린 PDF·이미지를 분리해 개인 보관소에서 관리합니다." countLabel={`${state.items.length} SAVED LINKS`} />
+      <PhysicsHeading title="물리 자료 보관소" description="공개 자료 링크와 직접 올린 PDF·이미지를 분리해 개인 보관소에서 관리합니다." countLabel={`보관 링크 ${state.items.length}개`} />
       <PhysicsFileVault onOpenAi={onOpenAi} onNotice={onNotice} />
       <section className="resource-workspace">
         <div className="resource-toolbar">
           <label className="workspace-search"><MagnifyingGlass size={17} /><span className="sr-only">보관 자료 검색</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="제목·분야·출처 검색" /></label>
-          <button type="button" className="primary-workspace-action obsidian-export" onClick={exportObsidian} disabled={state.status !== "ready" || !state.items.length}><DownloadSimple size={17} /> Obsidian Markdown</button>
+          <button type="button" className="primary-workspace-action obsidian-export" onClick={exportObsidian} disabled={state.status !== "ready" || !state.items.length}><DownloadSimple size={17} /> Markdown 내보내기</button>
         </div>
         {state.message ? <p className={`resource-query-status is-${state.status}`} role="status">{state.message}</p> : null}
         <ResourceTable resources={resources} onOpenAi={onOpenAi} onRemove={removeResource} pendingIds={pendingIds} emptyLabel={state.status === "loading" ? "개인 보관소를 불러오는 중입니다." : "저장된 자료가 없거나 검색 결과가 없습니다."} />
@@ -203,10 +203,10 @@ function formatFileSize(bytes) {
 
 function antivirusLabel(status) {
   return ({
-    clean: "ClamAV CLEAN",
-    blocked: "보안 검사 차단",
-    error: "백신 검사 오류",
-    "not-scanned": "격리 검사 대기",
+    clean: "안전 확인 완료",
+    blocked: "안전 검사 차단",
+    error: "안전 검사 오류",
+    "not-scanned": "안전 검사 대기",
   })[status] ?? "검사 상태 미상";
 }
 
@@ -239,7 +239,7 @@ function PhysicsFileVault({ onOpenAi, onNotice }) {
       });
       return true;
     } catch (error) {
-      if (error?.name !== "AbortError") setState((current) => ({ ...current, status: "error", message: error?.message ?? "개인 파일을 불러오지 못했습니다." }));
+      if (error?.name !== "AbortError") setState((current) => ({ ...current, status: "error", message: "개인 파일을 불러오지 못했습니다. 잠시 후 다시 확인해 주세요." }));
       return false;
     } finally {
       if (requestRef.current === controller) requestRef.current = null;
@@ -277,13 +277,13 @@ function PhysicsFileVault({ onOpenAi, onNotice }) {
       if (refreshed) {
         setState((current) => ({ ...current, message: existed
           ? "이미 보관 중인 동일 파일을 다시 사용합니다. 저장 용량은 늘어나지 않았습니다."
-          : "격리 저장이 끝났습니다. ClamAV 검사가 끝나면 다운로드와 AI 분석이 열립니다." }));
+          : "비공개 저장이 끝났습니다. 안전 검사가 끝나면 다운로드와 Mandos 분석이 열립니다." }));
         onNotice("개인 물리 파일을 격리 저장하고 백신 검사를 요청했습니다.");
       } else {
         onNotice("파일은 저장됐지만 최신 목록을 다시 불러오지 못했습니다.");
       }
     } catch (error) {
-      setState((current) => ({ ...current, status: "error", message: error?.message ?? "파일을 저장하지 못했습니다." }));
+      setState((current) => ({ ...current, status: "error", message: "파일을 저장하지 못했습니다. 파일 형식과 용량을 확인해 주세요." }));
     } finally {
       setPendingId(null);
     }
@@ -295,13 +295,13 @@ function PhysicsFileVault({ onOpenAi, onNotice }) {
       await backendClient.deletePhysicsFile(file.id);
       const refreshed = await loadFiles();
       if (refreshed) {
-        setState((current) => ({ ...current, message: "파일 원본과 메타데이터를 삭제했습니다." }));
+        setState((current) => ({ ...current, message: "파일과 관련 기록을 삭제했습니다." }));
         onNotice("개인 물리 파일을 삭제했습니다.");
       } else {
         onNotice("파일은 삭제됐지만 최신 목록을 다시 불러오지 못했습니다.");
       }
     } catch (error) {
-      onNotice(error?.message ?? "파일을 삭제하지 못했습니다.");
+      onNotice("파일을 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.");
     } finally {
       setPendingId(null);
     }
@@ -310,13 +310,13 @@ function PhysicsFileVault({ onOpenAi, onNotice }) {
   return (
     <section className="physics-file-vault" aria-labelledby="physics-file-vault-title">
       <header>
-        <div><h3 id="physics-file-vault-title">개인 파일</h3><p>PDF·PNG·JPEG · 최대 10MiB · {state.storage === "private-r2" ? "비공개 R2" : "저장소 연결 확인 필요"}</p></div>
+        <div><h3 id="physics-file-vault-title">개인 파일</h3><p>PDF·PNG·JPEG · 최대 10MiB · {state.storage === "private-r2" ? "비공개 저장" : "저장소 연결 확인 필요"}</p></div>
         <div><span>{state.quota
-          ? `${state.quota.usedFiles}/${state.quota.maxFiles} FILES · ${formatFileSize(state.quota.usedBytes)} / ${formatFileSize(state.quota.maxBytes)}`
-          : `${state.items.length} FILES`}</span><button type="button" onClick={() => inputRef.current?.click()} disabled={pendingId === "upload" || state.storage !== "private-r2" || state.scanner !== "async-clamav"}><FileArrowUp size={17} />{pendingId === "upload" ? "업로드 중" : "파일 추가"}</button></div>
+          ? `파일 ${state.quota.usedFiles}/${state.quota.maxFiles}개 · ${formatFileSize(state.quota.usedBytes)} / ${formatFileSize(state.quota.maxBytes)}`
+          : `파일 ${state.items.length}개`}</span><button type="button" onClick={() => inputRef.current?.click()} disabled={pendingId === "upload" || state.storage !== "private-r2" || state.scanner !== "async-clamav"}><FileArrowUp size={17} />{pendingId === "upload" ? "업로드 중" : "파일 추가"}</button></div>
         <input ref={inputRef} className="sr-only" type="file" accept="application/pdf,image/png,image/jpeg" onChange={upload} />
       </header>
-      <div className="physics-file-security"><ShieldWarning size={17} /><p><strong>{state.storage === "unavailable" ? "비공개 저장소 미연결" : state.scanner === "async-clamav" ? "격리형 ClamAV 검사" : "백신 검사 미연결"}</strong> {state.storage === "unavailable"
+      <div className="physics-file-security"><ShieldWarning size={17} /><p><strong>{state.storage === "unavailable" ? "비공개 저장소 미연결" : state.scanner === "async-clamav" ? "업로드 파일 안전 검사" : "안전 검사 미연결"}</strong> {state.storage === "unavailable"
         ? "현재 환경에서는 업로드·다운로드·파일 분석을 사용할 수 없습니다."
         : state.scanner === "async-clamav"
           ? "새 파일은 비공개 격리 구역에서 검사되며 clean 판정과 객체 무결성이 확인되기 전까지 사용할 수 없습니다."
@@ -327,7 +327,7 @@ function PhysicsFileVault({ onOpenAi, onNotice }) {
           const actionsAvailable = state.storage === "private-r2" && file.antivirusStatus === "clean";
           return <article key={file.id}>
             <FileText size={20} />
-            <div><strong>{file.filename}</strong><span>{formatFileSize(file.byteSize)} · {file.mimeType}</span><small>SHA-256 {file.sha256.slice(0, 12)}… · {antivirusLabel(file.antivirusStatus)}</small></div>
+            <div><strong>{file.filename}</strong><span>{formatFileSize(file.byteSize)} · 개인 파일</span><small>{antivirusLabel(file.antivirusStatus)}</small></div>
             <div className="physics-file-actions">
               {actionsAvailable ? <a href={file.downloadUrl}>다운로드</a> : <span>다운로드 차단</span>}
               <button type="button" onClick={() => onOpenAi({
@@ -351,7 +351,7 @@ function PhysicsFileVault({ onOpenAi, onNotice }) {
 function FinderPage({ onOpenAi, onNotice }) {
   const [query, setQuery] = useState("");
   const [type, setType] = useState("전체");
-  const [state, setState] = useState({ status: "idle", items: [], cursor: null, message: "검색어를 입력하면 서버가 허용한 공개 물리 자료 출처를 조회합니다." });
+  const [state, setState] = useState({ status: "idle", items: [], cursor: null, message: "검색어를 입력하면 등록된 공개 물리 자료 출처를 조회합니다." });
   const [pendingIds, setPendingIds] = useState(() => new Set());
   const requestRef = useRef(null);
 
@@ -379,11 +379,11 @@ function FinderPage({ onOpenAi, onNotice }) {
         items: append ? [...current.items, ...items.filter((item) => !current.items.some((existing) => existing.id === item.id))] : items,
         cursor: result.meta?.nextCursor ?? null,
         message: items.length
-          ? `공개 자료 ${items.length}건 · arXiv/Crossref 결과는 메타데이터이며 내용 검증 전입니다.`
+          ? `공개 자료 ${items.length}건 · arXiv와 Crossref의 제목·초록 정보이며 원문 내용은 검증 전입니다.`
           : "검색 결과가 없습니다.",
       }));
     } catch (error) {
-      if (error?.name !== "AbortError") setState((current) => ({ ...current, status: "error", message: error?.message ?? "공개 자료 검색에 실패했습니다." }));
+      if (error?.name !== "AbortError") setState((current) => ({ ...current, status: "error", message: "공개 자료를 검색하지 못했습니다. 잠시 후 다시 시도해 주세요." }));
     } finally {
       if (requestRef.current === controller) requestRef.current = null;
     }
@@ -396,7 +396,7 @@ function FinderPage({ onOpenAi, onNotice }) {
       setState((current) => ({ ...current, items: current.items.map((item) => item.id === resource.id ? { ...item, ...saved, saved: true } : item) }));
       onNotice("개인 물리 보관소에 저장했습니다.");
     } catch (error) {
-      onNotice(error?.message ?? "자료를 저장하지 못했습니다.");
+      onNotice("자료를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.");
     } finally {
       setPendingIds((current) => { const next = new Set(current); next.delete(resource.id); return next; });
     }
@@ -409,7 +409,7 @@ function FinderPage({ onOpenAi, onNotice }) {
       setState((current) => ({ ...current, items: current.items.map((item) => item.id === resource.id ? { ...item, saved: false, libraryId: null } : item) }));
       onNotice("개인 보관소에서 제거했습니다.");
     } catch (error) {
-      onNotice(error?.message ?? "보관 자료를 제거하지 못했습니다.");
+      onNotice("보관 자료를 제거하지 못했습니다. 잠시 후 다시 시도해 주세요.");
     } finally {
       setPendingIds((current) => { const next = new Set(current); next.delete(resource.id); return next; });
     }
@@ -417,9 +417,9 @@ function FinderPage({ onOpenAi, onNotice }) {
 
   return (
     <main className="focused-workspace domain-workspace physics-workspace">
-      <PhysicsHeading title="물리 자료 찾기" description="검색할 때만 서버가 허용한 공개 출처를 조회하며, 결과를 개인 보관소에 따로 저장할 수 있습니다." countLabel={state.status === "ready" ? `${state.items.length} LIVE SEARCH RESULTS` : "SERVER SEARCH"} />
+      <PhysicsHeading title="물리 자료 찾기" description="등록된 공개 출처를 검색하고, 필요한 결과만 개인 보관소에 저장할 수 있습니다." countLabel={state.status === "ready" ? `검색 결과 ${state.items.length}개` : "공개 자료 검색"} />
       <section className="resource-workspace finder-workspace">
-        <form className="finder-query" onSubmit={search}><MagnifyingGlass size={20} aria-hidden="true" /><label><span className="sr-only">물리 자료 검색</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="예: 전자기학 심화 강의, IPhO 기출문제" /></label><button type="submit" disabled={!query.trim() || state.status === "loading"}>{state.status === "loading" ? "검색 중" : "실제 출처 검색"}</button></form>
+        <form className="finder-query" onSubmit={search}><MagnifyingGlass size={20} aria-hidden="true" /><label><span className="sr-only">물리 자료 검색</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="예: 전자기학 심화 강의, IPhO 기출문제" /></label><button type="submit" disabled={!query.trim() || state.status === "loading"}>{state.status === "loading" ? "검색 중" : "자료 검색"}</button></form>
         <div className="resource-type-filter" aria-label="자료 유형">{RESOURCE_TYPES.map((item) => <button type="button" key={item} className={type === item ? "is-selected" : ""} onClick={() => setType(item)} aria-pressed={type === item}>{item}</button>)}</div>
         <p className={`resource-query-status is-${state.status}`} role="status">{state.message}</p>
         <ResourceTable resources={state.items} onOpenAi={onOpenAi} onSave={saveResource} onRemove={removeResource} pendingIds={pendingIds} emptyLabel={state.status === "ready" ? "검색어 또는 자료 유형을 바꿔보세요." : "검색을 실행하면 실제 결과가 이곳에 표시됩니다."} />
@@ -432,16 +432,16 @@ function FinderPage({ onOpenAi, onNotice }) {
 function IphoPage({ onOpenAi }) {
   return (
     <main className="focused-workspace domain-workspace physics-workspace ipho-workspace">
-      <PhysicsHeading title="KPhO · IPhO 준비" description="KPhO를 먼저 준비하는 단계와 장기적인 IPhO 준비 영역을 한 공간에서 분리해 봅니다." countLabel="KPHO → IPHO" />
+      <PhysicsHeading title="KPhO · IPhO 준비" description="KPhO를 먼저 준비하는 단계와 장기적인 IPhO 준비 영역을 한 공간에서 분리해 봅니다." countLabel="KPhO에서 IPhO까지" />
       <div className="ipho-layout">
-        <section className="olympiad-path" aria-labelledby="olympiad-path-title"><header><p className="system-kicker">PREPARATION PATH</p><h3 id="olympiad-path-title">준비 단계</h3></header><ol>
+        <section className="olympiad-path" aria-labelledby="olympiad-path-title"><header><p className="system-kicker">학습 경로</p><h3 id="olympiad-path-title">준비 단계</h3></header><ol>
           <li className="is-current"><span>01</span><div><strong>일반물리 기반</strong><p>P3 내용을 완전히 자동화하고 P4 유도를 빈 종이에서 재구성합니다.</p></div></li>
           <li><span>02</span><div><strong>KPhO 준비</strong><p>공식 일정·교육과정을 확인하고 국내 선발 수준 문제에 적응합니다.</p></div></li>
           <li><span>03</span><div><strong>IPhO 이론·실험</strong><p>공식 syllabus 전체와 역대 문제를 이론·실험으로 나누어 훈련합니다.</p></div></li>
           <li><span>04</span><div><strong>국제대회 성과</strong><p>시간 제한, 풀이 서술, 실험 오차 분석까지 실전 수준으로 통합합니다.</p></div></li>
         </ol></section>
-        <section className="ipho-topic-matrix" aria-labelledby="ipho-topic-title"><header><p className="system-kicker">OFFICIAL SCOPE INDEX</p><h3 id="ipho-topic-title">준비 영역</h3></header><div>{IPHO_TOPICS.map((topic, index) => <article key={topic.id}><span>{String(index + 1).padStart(2, "0")}</span><strong>{topic.label}</strong><p>{topic.detail}</p></article>)}</div></section>
-        <aside className="official-olympiad-links"><p className="system-kicker">OFFICIAL SOURCES</p><h3>공식 자료</h3>
+        <section className="ipho-topic-matrix" aria-labelledby="ipho-topic-title"><header><p className="system-kicker">공식 범위</p><h3 id="ipho-topic-title">준비 영역</h3></header><div>{IPHO_TOPICS.map((topic, index) => <article key={topic.id}><span>{String(index + 1).padStart(2, "0")}</span><strong>{topic.label}</strong><p>{topic.detail}</p></article>)}</div></section>
+        <aside className="official-olympiad-links"><p className="system-kicker">공식 출처</p><h3>공식 자료</h3>
           {PHYSICS_RESOURCES.filter(({ id }) => ["kpho-official", "ipho-syllabus", "ipho-problems"].includes(id)).map((resource) => (
             <a key={resource.id} href={resource.href} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer"><FileText size={17} /><span><strong>{resource.title}</strong><small>{resource.provider}</small></span><ArrowSquareOut size={14} /></a>
           ))}

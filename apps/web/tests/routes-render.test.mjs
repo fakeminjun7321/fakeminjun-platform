@@ -68,21 +68,21 @@ for (const [pathname, expectedText] of ROUTE_EXPECTATIONS) {
       assert.ok(html.includes(expectedText));
     }
     if (pathname === "/international/briefing") {
-      assert.ok(html.includes("LIVE SOURCE · UNVERIFIED"));
+      assert.ok(html.includes("공식 자료 · 검증 전"));
     } else {
-      assert.ok(html.includes("PRIVATE WORKSPACE"));
+      assert.ok(html.includes("개인 공간"));
     }
     assert.ok(!html.includes("정치"));
     assert.ok(!html.includes("/politics"));
     assert.ok(!html.includes('id="ai-analysis-drawer"'));
     if (pathname === "/international/briefing") {
-      assert.ok(html.includes("CANDIDATE REVIEW DESK"));
-      assert.ok(html.includes("METADATA HYPOTHESIS"));
-      assert.ok(html.includes("UNVERIFIED"));
-      assert.ok(html.includes("MAP PROMOTION LOCKED"));
+      assert.ok(html.includes("자료 묶음 검토"));
+      assert.ok(html.includes("자료 묶음 후보"));
+      assert.ok(html.includes("검증 전"));
+      assert.ok(html.includes("지도 반영 전"));
       assert.ok(html.includes("공식 출처 새로고침"));
       assert.ok(html.includes("사건 후보 만들기"));
-      assert.ok(html.includes("AUTO SYNC · 60 SEC"));
+      assert.ok(html.includes("60초마다 확인"));
       assert.ok(html.includes("첫 동기화 대기"));
     }
   });
@@ -123,7 +123,7 @@ test("renders candidate evidence and review controls without claiming verificati
     onReview() {},
   }));
 
-  assert.ok(html.includes("REVIEWED · NOT VERIFIED"));
+  assert.ok(html.includes("검토 완료 · 검증 전"));
   assert.ok(html.includes("검토 완료 · 검증 아님"));
   assert.ok(html.includes("근거 스냅샷"));
   assert.ok(html.includes('target="_blank"'));
@@ -143,8 +143,8 @@ test("renders promotion readiness without claiming a candidate is verified", () 
     },
     onPromoted() {},
   }));
-  assert.ok(html.includes("지도 승격 준비"));
-  assert.ok(html.includes("FAIL-CLOSED"));
+  assert.ok(html.includes("지도 반영 준비"));
+  assert.ok(html.includes("반영 잠금"));
   assert.ok(!html.includes("PROMOTION READY"));
   assert.ok(!html.includes(">VERIFIED<"));
 });
