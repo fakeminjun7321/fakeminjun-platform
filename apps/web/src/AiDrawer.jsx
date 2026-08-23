@@ -122,9 +122,9 @@ async function resolvePendingAnalysis(initial, signal, onProgress, requestedMode
   let current = initial;
   onProgress?.(current);
   const profileMode = current?.requestedMode ?? requestedMode;
-  // Deep can run two parallel specialist passes followed by a separate synthesis.
-  // Give the browser slightly more time than the Worker's two 150s stage limits.
-  const maxAttempts = profileMode === "deep" ? 165 : 45;
+  // Deep can retry a specialist or synthesis once after a token-bound incomplete result.
+  // Keep polling through the Worker's 11-minute Deep recovery window.
+  const maxAttempts = profileMode === "deep" ? 330 : 45;
   for (let attempt = 0; current?.status === "pending" && attempt < maxAttempts; attempt += 1) {
     await waitForPoll(2000, signal);
     current = await backendClient.getAnalysis(current.id, { signal });

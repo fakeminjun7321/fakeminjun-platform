@@ -45,6 +45,8 @@ const MONTHLY_ANALYSIS_LIMIT = 500;
 const DAILY_DEEP_LIMIT = 10;
 const OPENAI_TIMEOUT_MS = 90_000;
 const OPENAI_DEEP_TIMEOUT_MS = 150_000;
+const STANDARD_ANALYSIS_STALE_MS = 5 * 60 * 1000;
+const DEEP_ANALYSIS_STALE_MS = 11 * 60 * 1000;
 const MAX_OPENAI_RESPONSE_BYTES = 1024 * 1024;
 const CANDIDATE_WINDOW_LIMIT = 10;
 const DAILY_CANDIDATE_LIMIT = 30;
@@ -3225,7 +3227,7 @@ async function recoverStaleEventCandidate(db, row, ownerId) {
 async function recoverStaleAnalysis(db, row, ownerId) {
   if (row.status !== "pending") return row;
   const createdAt = Date.parse(row.created_at);
-  if (!Number.isFinite(createdAt) || Date.now() - createdAt < 5 * 60 * 1000) return row;
+  if (!Number.isFinite(createdAt) || Date.now() - createdAt < analysisStaleAfterMs(row.mode)) return row;
   await db.batch([
     db.prepare(`
       UPDATE analysis_runs
@@ -3240,6 +3242,10 @@ async function recoverStaleAnalysis(db, row, ownerId) {
     `).bind(row.id),
   ]);
   return db.prepare("SELECT * FROM analysis_runs WHERE id = ? AND owner_id = ?").bind(row.id, ownerId).first();
+}
+
+export function analysisStaleAfterMs(mode) {
+  return mode === "deep" ? DEEP_ANALYSIS_STALE_MS : STANDARD_ANALYSIS_STALE_MS;
 }
 
 async function reserveAnalysisUsage(db, { id, ownerId, mode, idempotencyKey, requestHash }) {

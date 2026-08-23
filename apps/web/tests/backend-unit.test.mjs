@@ -5,6 +5,7 @@ import worker, {
   EVENT_CANDIDATE_SCHEMA,
   analysisReportSchemaForProfile,
   analysisReportSchemaForEvidence,
+  analysisStaleAfterMs,
   analysisStepPlan,
   captureImageDimensions,
   eventCandidateEvidenceDigest,
@@ -631,6 +632,11 @@ test("Mandos runtime policies use distinct models, reasoning, and bounded output
     maxOutputTokens: 4800, timeoutMs: 150_000,
   });
   assert.equal(mandosRuntimePolicy("deep", env, "text").maxOutputTokens, 6400);
+});
+
+test("Deep recovery has a longer stale window than single-pass Mandos runs", () => {
+  assert.equal(analysisStaleAfterMs("standard"), 5 * 60 * 1000);
+  assert.equal(analysisStaleAfterMs("deep"), 11 * 60 * 1000);
 });
 
 test("Mandos request contracts preserve profile, task, domain, and input kind", () => {

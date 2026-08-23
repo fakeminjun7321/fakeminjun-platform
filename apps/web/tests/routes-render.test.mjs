@@ -202,6 +202,7 @@ test("Mandos keeps requested profile history and localizes recoverable errors", 
   assert.match(aiDrawerSource, /setMode\(loaded\.requestedMode \?\? loaded\.mode \?\? "auto"\)/);
   assert.match(aiDrawerSource, /item\.requestedMode \?\? item\.mode/);
   assert.match(aiDrawerSource, /analysis\.requestedMode \?\? analysis\.mode \?\? requestedMode/);
+  assert.match(aiDrawerSource, /profileMode === "deep" \? 330 : 45/);
 
   const cases = [
     ["ai_incomplete", "답변을 끝까지 만들지 못했습니다. 다시 요청해 주세요."],
