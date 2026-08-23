@@ -12,6 +12,7 @@ import worker, {
   eventCandidateRequestHash,
   eventCandidateReviewRequestHash,
   inspectPhysicsFile,
+  mandosRuntimePolicy,
   parseAnalysesQuery,
   parseEventCandidatesQuery,
   parseEventsQuery,
@@ -518,12 +519,43 @@ test("analysis validation keeps model and owner controls on the server", () => {
     mode: "auto",
     taskType: "full-derivation",
     prompt: "가정부터 유도해줘.",
-  })), { mode: "deep", reason: "auto-task-full-derivation" });
+  })), { mode: "standard", profile: "core", reason: "selected-mandos-core" });
   assert.deepEqual(resolveAnalysisMode(validateAnalysisPayload({
     domain: "physics",
     mode: "auto",
     prompt: "핵심 개념을 설명해줘.",
-  })), { mode: "standard", reason: "auto-routine-request" });
+  })), { mode: "standard", profile: "core", reason: "selected-mandos-core" });
+  assert.deepEqual(resolveAnalysisMode(validateAnalysisPayload({
+    domain: "physics",
+    mode: "standard",
+    prompt: "핵심만 요약해줘.",
+  })), { mode: "standard", profile: "swift", reason: "selected-mandos-swift" });
+  assert.deepEqual(resolveAnalysisMode(validateAnalysisPayload({
+    domain: "physics",
+    mode: "deep",
+    prompt: "교차 검토해줘.",
+  })), { mode: "deep", profile: "deep", reason: "selected-mandos-deep" });
+});
+
+test("Mandos runtime policies use distinct models, reasoning, and bounded output budgets", () => {
+  const env = {
+    OPENAI_STANDARD_MODEL: "swift-model",
+    OPENAI_CORE_MODEL: "core-model",
+    OPENAI_DEEP_MODEL: "deep-model",
+  };
+  assert.deepEqual(mandosRuntimePolicy("standard", env, "text"), {
+    profile: "swift", resolvedMode: "standard", model: "swift-model",
+    reasoningEffort: "low", maxOutputTokens: 1600,
+  });
+  assert.deepEqual(mandosRuntimePolicy("auto", env, "visual"), {
+    profile: "core", resolvedMode: "standard", model: "core-model",
+    reasoningEffort: "medium", maxOutputTokens: 3400,
+  });
+  assert.deepEqual(mandosRuntimePolicy("deep", env, "file"), {
+    profile: "deep", resolvedMode: "deep", model: "deep-model",
+    reasoningEffort: "high", maxOutputTokens: 4800,
+  });
+  assert.equal(mandosRuntimePolicy("deep", env, "text").maxOutputTokens, 6400);
 });
 
 test("capture image inspection accepts only bounded PNG and JPEG signatures", () => {
@@ -592,6 +624,57 @@ test("analysis citations can only reference evidence from the server bundle", ()
   );
 });
 
+test("Swift and Core execute as distinct single-pass Mandos profiles", async () => {
+  const report = {
+    headline: "프로필 확인",
+    summary: "요약",
+    sourceBoundary: "별도 근거 없음",
+    sections: [
+      { title: "결과", content: "프로필별 실행을 확인했다.", confidence: "medium", basis: "inference" },
+      { title: "경계", content: "별도 근거는 제공되지 않았다.", confidence: "high", basis: "uncertain" },
+    ],
+    uncertainties: [],
+    nextQuestions: [],
+    citations: [],
+    visual: { type: "none", title: "", items: [] },
+  };
+  const calls = [];
+  const env = {
+    OPENAI_API_KEY: "test-key-that-is-long-enough",
+    OPENAI_STANDARD_MODEL: "swift-model",
+    OPENAI_CORE_MODEL: "core-model",
+    OPENAI_FETCH: async (_url, options) => {
+      const body = JSON.parse(options.body);
+      calls.push(body);
+      return jsonResponse({
+        id: `resp-${calls.length}`,
+        status: "completed",
+        model: body.model,
+        output_text: JSON.stringify(report),
+        usage: { input_tokens: 10, output_tokens: 5, total_tokens: 15 },
+      });
+    },
+  };
+  const context = { domain: "physics", evidenceBundle: [], evidenceNotice: "별도 출처 없음" };
+
+  const swift = await runAnalysisWorkflow({
+    domain: "physics", mode: "standard", requestedMode: "standard", prompt: "요약해줘.",
+  }, context, env, { analysisId: "analysis-swift", safetyId: "safe-swift" });
+  const core = await runAnalysisWorkflow({
+    domain: "physics", mode: "standard", requestedMode: "auto", prompt: "맥락을 설명해줘.",
+  }, context, env, { analysisId: "analysis-core", safetyId: "safe-core" });
+
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls.map(({ model, reasoning, max_output_tokens, metadata }) => ({
+    model, effort: reasoning.effort, maxOutputTokens: max_output_tokens, profile: metadata.mandos_profile,
+  })), [
+    { model: "swift-model", effort: "low", maxOutputTokens: 1600, profile: "swift" },
+    { model: "core-model", effort: "medium", maxOutputTokens: 2800, profile: "core" },
+  ]);
+  assert.equal(swift.steps[0].role, "single-model-swift-analysis");
+  assert.equal(core.steps[0].role, "single-model-core-analysis");
+});
+
 test("deep analysis plans two bounded specialists and one final synthesis", async () => {
   const calls = [];
   const report = {
@@ -636,6 +719,7 @@ test("deep analysis plans two bounded specialists and one final synthesis", asyn
   const completed = await runAnalysisWorkflow({
     domain: "physics",
     mode: "deep",
+    requestedMode: "deep",
     taskType: "solution-audit",
     prompt: "풀이를 검산해줘.",
   }, { domain: "physics", evidenceNotice: "별도 출처 없음" }, env, {
@@ -650,6 +734,8 @@ test("deep analysis plans two bounded specialists and one final synthesis", asyn
   ]);
   assert.equal(completed.result.headline, "통합 검토");
   assert.equal(completed.usage.totalTokens, 45);
+  assert.deepEqual(calls.map(({ reasoning }) => reasoning.effort), ["medium", "medium", "high"]);
+  assert.deepEqual(calls.map(({ max_output_tokens }) => max_output_tokens), [3600, 3600, 6400]);
   assert.equal(calls.every(({ store, tools }) => store === false && Array.isArray(tools) && tools.length === 0), true);
 });
 

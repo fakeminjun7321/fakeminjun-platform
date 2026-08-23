@@ -160,8 +160,9 @@ API 응답은 기본적으로 `Cache-Control: no-store`, `X-Content-Type-Options
 
 분석 생성은 `domain`, `mode`, `prompt`, 선택적인 `eventId`, `level`, 제한된 화면 맥락만 받는다. 모델 이름, 소유자, 도구와 공급자 URL은 브라우저가 정할 수 없다. `Idempotency-Key`가 필수이며 같은 키에 다른 본문을 쓰면 `409 idempotency_conflict`다. 삭제 후에도 별도 사용량 원장은 남아 삭제→재호출로 한도를 우회할 수 없다.
 
-- 일반 분석: OpenAI `gpt-5.6-luna` 1회
-- 정밀 분석: `gpt-5.6-terra` 전문 검토 2회 + `gpt-5.6-sol` 통합 1회
+- Mandos 3 Swift (`mode=standard`): `gpt-5.6-luna`, low reasoning, 짧은 출력 예산의 단일 호출
+- Mandos 3 Core (`mode=auto`): `gpt-5.6-terra`, medium reasoning, 균형 출력 예산의 단일 호출. 작업 길이나 종류로 Deep에 자동 전환하지 않음
+- Mandos 3 Deep (`mode=deep`): `gpt-5.6-terra` medium reasoning 전문 검토 2회 + `gpt-5.6-sol` high reasoning 최종 통합 1회
 - 10분 20회, 하루 50회, 30일 500회, 정밀 분석 하루 10회
 - `store: false`, 모델 도구 없음, strict JSON schema와 서버의 2차 형태 검사
 - OpenAI 응답 전체 90초 제한, 응답 본문 1 MiB 제한

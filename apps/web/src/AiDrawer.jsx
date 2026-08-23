@@ -47,7 +47,7 @@ export function getMandosProfile(mode) {
 function AnalysisResult({ analysis, requestedMode }) {
   const result = analysis.result;
   if (!result) return null;
-  const profile = getMandosProfile(analysis.execution?.resolvedMode ?? analysis.mode ?? requestedMode);
+  const profile = getMandosProfile(analysis.requestedMode ?? analysis.mode ?? requestedMode);
   const evidenceById = new Map((analysis.evidence ?? []).map((item) => [item.evidenceId, item]));
   return (
     <article className="analysis-result" aria-labelledby="analysis-result-title">
@@ -339,7 +339,7 @@ export function AiDrawer({ analysisContext, onClose }) {
             </form>
             {historyState.message ? <p>{historyState.message}</p> : null}
             <ol>{historyState.items.map((item) => {
-              const itemProfile = getMandosProfile(item.mode);
+              const itemProfile = getMandosProfile(item.requestedMode ?? item.mode);
               return (
                 <li key={item.id}><button type="button" onClick={() => void openHistoryItem(item)}>
                   <span>{DOMAIN_LABELS[item.domain] ?? "분석"} · {itemProfile.title}</span><strong>{item.result?.headline ?? item.prompt}</strong><small>{new Date(item.createdAt).toLocaleString("ko-KR")}</small><ArrowRight size={14} />
