@@ -17,6 +17,7 @@ import {
   aggregateSourceGroups,
   startVisibleRefresh,
 } from "./internationalRefresh.js";
+import { buildOfficialIssueTracks } from "./internationalIssues.js";
 import { CATEGORY_META, STATUS_META, getTopSignals } from "./mapLayers.js";
 import { PHYSICS_ANALYSIS_LEVEL, PHYSICS_PROFILE_SUMMARY } from "./physicsProfile.js";
 
@@ -117,7 +118,7 @@ function DomainNavigation({ domain, onNavigate }) {
 }
 
 function Header({ domain, route, sourceState, mapEventState, onOpenAi, onNavigate, aiOpen, aiPinned, aiTriggerRef }) {
-  const sourceWorkspace = domain === "international" && route === "briefing";
+  const sourceWorkspace = domain === "international" && ["briefing", "issues"].includes(route);
   const headerTimestamp = sourceWorkspace
     ? sourceState.checkedAt
     : domain === "international" ? mapEventState.generatedAt : null;
@@ -684,32 +685,125 @@ function BriefingPage({
   );
 }
 
-function IssuesPage({ selectedEvent, onSelect, onOpenAi }) {
+function OfficialIssueDossier({ issue, onOpenAi }) {
+  const visibleItems = issue.items.slice(0, 10);
+  return (
+    <article className="issue-dossier official-issue-dossier">
+      <header>
+        <p className="system-kicker">공식 업데이트 묶음 · 사건 검증 전</p>
+        <h2>{issue.title}</h2><p>{issue.summary}</p>
+        <div className="dossier-meta">
+          <span><Database size={15} /> 업데이트 {issue.items.length}건</span>
+          <span><ShieldCheck size={15} /> 공식 기관 {issue.sourceCount}곳</span>
+          <span>최신 {sourceTimestamp(issue.latestAt)}</span>
+        </div>
+      </header>
+      <section className="official-issue-updates" aria-labelledby="official-issue-updates-title">
+        <div>
+          <div><p className="system-kicker">관련 발표</p><h3 id="official-issue-updates-title">최근 업데이트</h3></div>
+          <span>{visibleItems.length} / {issue.items.length}건</span>
+        </div>
+        <ol>
+          {visibleItems.map((item) => {
+            const sourceUrl = safeExternalUrl(item.originalUrl);
+            return (
+              <li key={item.id ?? `${item.source?.key}-${item.providerItemId}`}>
+                <div className="official-update-meta">
+                  <span>{item.source?.name ?? "공식 출처"}</span>
+                  <time dateTime={item.publishedAt ?? item.collectedAt}>{sourceTimestamp(item.publishedAt ?? item.collectedAt)}</time>
+                </div>
+                {sourceUrl ? (
+                  <a href={sourceUrl} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">
+                    {item.title}<ArrowRight size={14} aria-hidden="true" />
+                  </a>
+                ) : <strong>{item.title}</strong>}
+              </li>
+            );
+          })}
+        </ol>
+      </section>
+      <div className="official-issue-boundary">
+        <div><span>관찰 초점</span><strong>{issue.focus}</strong></div>
+        <p>제목·기관·발행 시각을 주제별로 묶은 화면입니다. 같은 사건이라는 뜻이 아니며 사실관계와 한국 영향은 원문 대조 뒤 판단해야 합니다.</p>
+      </div>
+      <footer className="watch-condition">
+        <span>다음 행동</span><strong>관련 발표의 공통점과 차이를 원문 기준으로 대조합니다.</strong>
+        <button type="button" onClick={() => onOpenAi({
+          domain: "international",
+          level: "I2",
+          taskType: "evidence-crosscheck",
+          contextKind: "official-source-theme",
+          contextId: issue.id,
+          title: issue.title,
+          meta: `공식 업데이트 ${issue.items.length}건 · 사건 검증 전`,
+          placeholder: "공식 발표를 서로 대조하고, 확인된 내용과 추가 확인이 필요한 부분을 나눠줘.",
+        })}><Brain size={17} /> Mandos로 비교</button>
+      </footer>
+    </article>
+  );
+}
+
+function IssuesPage({ selectedEvent, sourceState, onSelect, onOpenAi }) {
+  const officialIssues = useMemo(() => buildOfficialIssueTracks(sourceState.items), [sourceState.items]);
+  const [selectedOfficialIssueId, setSelectedOfficialIssueId] = useState(undefined);
   const activeIssue = TRACKED_ISSUES.find((issue) => issue.eventIds.includes(selectedEvent.id)) ?? TRACKED_ISSUES[0];
+  const activeOfficialIssue = officialIssues.find(({ id }) => id === selectedOfficialIssueId) ?? null;
   const issueEvents = activeIssue.eventIds
     .map((eventId) => EVENTS.find((event) => event.id === eventId))
     .filter(Boolean);
 
+  useEffect(() => {
+    const selectedOfficialIssueMissing = selectedOfficialIssueId !== null
+      && !officialIssues.some(({ id }) => id === selectedOfficialIssueId);
+    if (officialIssues.length && selectedOfficialIssueMissing) {
+      setSelectedOfficialIssueId(officialIssues[0].id);
+    }
+  }, [officialIssues, selectedOfficialIssueId]);
+
   return (
     <main className="focused-workspace issues-workspace">
       <aside className="issue-index" aria-label="추적 중인 이슈">
-        <p className="system-kicker">추적 중인 이슈</p><h2>이슈 추적</h2>
-        <span className="issue-scroll-hint">좌우로 탐색 · {TRACKED_ISSUES.length}개</span>
-        <div>
+        <p className="system-kicker">주제별로 모아보기</p><h2>이슈 추적</h2>
+        <span className="issue-scroll-hint">좌우로 탐색 · {officialIssues.length + TRACKED_ISSUES.length}개</span>
+        <section className="issue-index-group">
+          <header><span>공식 업데이트</span><strong>{officialIssues.length}</strong></header>
+          {sourceState.status === "loading" && <p className="issue-index-state">공식 업데이트를 분류하고 있습니다.</p>}
+          {sourceState.status === "error" && <p className="issue-index-state is-error">공식 업데이트를 불러오지 못했습니다.</p>}
+          {["ready", "refreshing"].includes(sourceState.status) && officialIssues.length === 0 && <p className="issue-index-state">분류할 공식 업데이트가 없습니다.</p>}
+          <div>
+          {officialIssues.map((issue) => (
+            <button
+              type="button"
+              key={issue.id}
+              className={issue.id === activeOfficialIssue?.id ? "is-selected" : ""}
+              onClick={() => setSelectedOfficialIssueId(issue.id)}
+              aria-pressed={issue.id === activeOfficialIssue?.id}
+            >
+              <span>{issue.code}</span><strong>{issue.title}</strong>
+              <small>{issue.items.length}건 · 최신 {sourceTimestamp(issue.latestAt)}</small>
+            </button>
+          ))}
+          </div>
+        </section>
+        <section className="issue-index-group is-demo">
+          <header><span>분석용 데모</span><strong>{TRACKED_ISSUES.length}</strong></header>
+          <div>
           {TRACKED_ISSUES.map((issue) => (
             <button
               type="button"
               key={issue.id}
-              className={issue.id === activeIssue.id ? "is-selected" : ""}
-              onClick={() => onSelect(issue.eventIds[0])}
-              aria-pressed={issue.id === activeIssue.id}
+              className={!activeOfficialIssue && issue.id === activeIssue.id ? "is-selected" : ""}
+              onClick={() => { setSelectedOfficialIssueId(null); onSelect(issue.eventIds[0]); }}
+              aria-pressed={!activeOfficialIssue && issue.id === activeIssue.id}
             >
               <span>{issue.code.slice(-2)}</span><strong>{issue.title}</strong>
               <small>{issue.eventIds.length}개 변화 · 최근 {EVENTS.find((event) => event.id === issue.eventIds[0]).time} KST</small>
             </button>
           ))}
-        </div>
+          </div>
+        </section>
       </aside>
+      {activeOfficialIssue ? <OfficialIssueDossier issue={activeOfficialIssue} onOpenAi={onOpenAi} /> : (
       <article className="issue-dossier">
         <header>
           <p className="system-kicker">장기 추적</p>
@@ -748,6 +842,7 @@ function IssuesPage({ selectedEvent, onSelect, onOpenAi }) {
           <button type="button" onClick={onOpenAi}><Brain size={17} /> Mandos로 추가 분석</button>
         </footer>
       </article>
+      )}
     </main>
   );
 }
@@ -913,7 +1008,7 @@ export function App() {
     return () => controller.abort();
   }, [domain, mapRefreshVersion]);
   useEffect(() => {
-    if (route !== "briefing") return undefined;
+    if (!["briefing", "issues"].includes(route)) return undefined;
     const controller = new AbortController();
     setSourceState((current) => ({
       ...current,
@@ -955,7 +1050,7 @@ export function App() {
     return startVisibleRefresh({
       onRefresh: () => {
         setMapRefreshVersion((version) => version + 1);
-        if (route === "briefing") setSourceRefreshVersion((version) => version + 1);
+        if (["briefing", "issues"].includes(route)) setSourceRefreshVersion((version) => version + 1);
       },
     });
   }, [domain, route]);
@@ -1186,7 +1281,7 @@ export function App() {
         )}
 
         {route === "issues" && (
-          <IssuesPage selectedEvent={selectedEvent} onSelect={setSelectedId} onOpenAi={() => openAi()} />
+          <IssuesPage selectedEvent={selectedEvent} sourceState={sourceState} onSelect={setSelectedId} onOpenAi={(context) => openAi(context)} />
         )}
 
         {domain === "physics" && (
