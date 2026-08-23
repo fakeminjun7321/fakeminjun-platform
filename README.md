@@ -23,7 +23,7 @@
 - 사용자가 공식 자료 2~8개를 선택하면 변경 불가능한 메타데이터 스냅샷을 만들고, `gpt-5.6-luna` 단일 OpenAI Responses 호출로 `미검증 사건 후보`를 생성함
 - 사건 후보와 보류·검토 완료·기각 기록은 소유자별로 분리하며, 검토 완료도 사실 검증으로 간주하지 않음. 서로 다른 출처의 원문 지지 근거 2개와 확인된 위치가 없는 후보의 지도 승격은 서버에서 차단함
 - 국제정세·물리의 호출형 AI 패널은 로컬 Worker를 거쳐 OpenAI Responses API에 연결되고, 결과·사용량·요청 중복 방지 기록을 소유자별 D1에 저장
-- 일반 분석은 비용 효율적인 OpenAI 단일 모델, 정밀 분석은 OpenAI 전문 검토 2회와 최종 통합 1회로 제한
+- Mandos 3 Swift는 `gpt-5.6-luna` 저추론 단일 호출, Core는 `gpt-5.6-terra` 중간 추론 단일 호출, Deep은 `gpt-5.6-terra` 전문 검토 2회와 `gpt-5.6-sol` 고추론 최종 통합 1회로 제한
 - 분석 요청 당시 서버가 제공한 사건·출처·물리 자료·개인 파일·캡처의 근거 ID와 스냅샷을 분석 기록에 저장하고, 모델이 허용되지 않은 ID를 인용하면 실패 처리. 분석 기록은 분야·상태·검색어로 다시 열 수 있음
 - `fakeminjun.vip`는 Cloudflare Access 뒤의 프론트/API Worker, production D1, APAC Standard R2, OpenAI secret과 10분 Cron에 연결됨. 0015·0016·0018 D1 migration과 frontend/API/scanner 배포를 완료함
 
