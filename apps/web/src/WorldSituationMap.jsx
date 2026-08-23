@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import "maplibre-gl/dist/maplibre-gl.css";
 import {
   ArrowSquareOut,
   Brain,
@@ -23,6 +24,7 @@ import {
 } from "./mapLayers.js";
 
 const MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/dark";
+const MAP_FONT_STACK = ["Noto Sans Regular"];
 const KOREA_VIEW = Object.freeze({ center: [126.98, 37.56], zoom: 4.8 });
 const MAP_VIEW_STORAGE_KEY = "intel-workspace:international-map-view";
 const KOREAN_LABEL_LAYERS = Object.freeze([
@@ -111,6 +113,11 @@ function localizeBasemapLabels(map) {
     ["get", "name_en"],
     ["get", "name:latin"],
   ];
+  map.getStyle().layers?.forEach((layer) => {
+    if (layer.type === "symbol" && layer.layout?.["text-field"]) {
+      map.setLayoutProperty(layer.id, "text-font", MAP_FONT_STACK);
+    }
+  });
   KOREAN_LABEL_LAYERS.forEach((layerId) => {
     if (!map.getLayer(layerId)) return;
     map.setLayoutProperty(layerId, "text-field", textField);
@@ -172,6 +179,7 @@ function addIntelligenceLayers(map, events) {
     filter: ["has", "point_count"],
     layout: {
       "text-field": ["get", "point_count_abbreviated"],
+      "text-font": MAP_FONT_STACK,
       "text-size": 11,
     },
     paint: { "text-color": "#edf6f8" },
@@ -221,6 +229,7 @@ function addIntelligenceLayers(map, events) {
     filter: ["!", ["has", "point_count"]],
     layout: {
       "text-field": ["get", "shortId"],
+      "text-font": MAP_FONT_STACK,
       "text-size": 9,
       "text-allow-overlap": true,
       "text-ignore-placement": true,
