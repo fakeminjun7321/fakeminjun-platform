@@ -233,6 +233,8 @@ test("international routes and physics modes select explicit task contracts", ()
     assert.match(physicsWorkspaceSource, new RegExp(`["']?${escapedMode}["']?\\s*:\\s*["']${taskType}["']`));
   }
   assert.match(physicsWorkspaceSource, /taskType: PHYSICS_TASK_TYPES\[selected\.id\] \?\? "general"/);
+  assert.match(physicsWorkspaceSource, /Mandos로 분석하기/);
+  assert.doesNotMatch(physicsWorkspaceSource, /selected\.title\}로 Mandos 열기/);
 });
 
 test("pinned Mandos is complementary and cannot block or close the workspace", () => {
