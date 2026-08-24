@@ -30,12 +30,14 @@ const {
   googleDriveConnectionErrorMessage,
   parseGoogleDriveCallbackSearch,
 } = await vite.ssrLoadModule("/src/PhysicsWorkspace.jsx");
+const { PhysicsCanvasWorkspace } = await vite.ssrLoadModule("/src/PhysicsCanvasWorkspace.jsx");
 const { PHYSICS_ANALYSIS_LEVEL, PHYSICS_PROFILE_SUMMARY } = await vite.ssrLoadModule("/src/physicsProfile.js");
 const { AiDrawer, analysisErrorNotice, getAnalysisProfile, getMandosProfile } = await vite.ssrLoadModule("/src/AiDrawer.jsx");
 const { CandidatePromotionPanel } = await vite.ssrLoadModule("/src/CandidatePromotionPanel.jsx");
 const aiDrawerSource = await readFile(new URL("../src/AiDrawer.jsx", import.meta.url), "utf8");
 const appSource = await readFile(new URL("../src/App.jsx", import.meta.url), "utf8");
 const physicsWorkspaceSource = await readFile(new URL("../src/PhysicsWorkspace.jsx", import.meta.url), "utf8");
+const physicsCanvasWorkspaceSource = await readFile(new URL("../src/PhysicsCanvasWorkspace.jsx", import.meta.url), "utf8");
 const indexSource = await readFile(new URL("../index.html", import.meta.url), "utf8");
 const faviconSource = await readFile(new URL("../public/favicon.svg", import.meta.url), "utf8");
 const siteManifest = JSON.parse(await readFile(new URL("../public/site.webmanifest", import.meta.url), "utf8"));
@@ -50,9 +52,8 @@ after(async () => {
 const ROUTE_EXPECTATIONS = [
   ["/international/briefing", "사건 후보 검토대"],
   ["/international/issues", "이슈 추적"],
+  ["/physics/workspace", "최종 답변 캔버스"],
   ["/physics/drive", "통합 자료 워크스페이스"],
-  ["/physics/ps", "PLSO"],
-  ["/physics/te", "THEx"],
   ["/physics/library", "통합 자료 워크스페이스"],
 ];
 
@@ -62,20 +63,21 @@ for (const [pathname, expectedText] of ROUTE_EXPECTATIONS) {
     const html = renderToStaticMarkup(React.createElement(App));
     if (pathname.startsWith("/physics/")) {
       assert.ok(html.includes("물리 작업공간을 불러오는 중입니다.") || html.includes(expectedText));
-      const view = { "/physics/ps": "ps", "/physics/te": "te" }[pathname] ?? "drive";
+      const view = pathname === "/physics/workspace" ? "workspace" : "drive";
       const physicsHtml = renderToStaticMarkup(React.createElement(PhysicsWorkspace, {
         view,
         onOpenAi() {},
         onNotice() {},
+        onNavigate() {},
       }));
       assert.ok(physicsHtml.includes(expectedText));
-      assert.ok(physicsHtml.includes(PHYSICS_PROFILE_SUMMARY));
       assert.ok(!physicsHtml.includes("물리 설명 수준"));
       assert.ok(!physicsHtml.includes('class="level-selector"'));
       assert.ok(!physicsHtml.includes("학습 허브"));
       assert.ok(!physicsHtml.includes("KPhO"));
       assert.ok(!physicsHtml.includes("IPhO"));
       if (view === "drive") {
+        assert.ok(physicsHtml.includes(PHYSICS_PROFILE_SUMMARY));
         assert.ok(physicsHtml.includes("Google Drive 원본 보관소"));
         assert.ok(physicsHtml.includes("Drive 전체 권한을 요청하지 않습니다."));
         assert.ok(physicsHtml.includes("Google Drive 연결"));
@@ -86,8 +88,15 @@ for (const [pathname, expectedText] of ROUTE_EXPECTATIONS) {
         assert.ok(physicsHtml.includes("통합 자료 검색"));
         assert.ok(physicsHtml.includes("보관 링크"));
       } else {
-        assert.ok(physicsHtml.includes("CODE-NATIVE VISUAL"));
-        assert.ok(physicsHtml.includes("SVG NATIVE"));
+        assert.ok(physicsHtml.includes("physics-conversation-rail"));
+        assert.ok(physicsHtml.includes("최종 답변 캔버스"));
+        assert.ok(physicsHtml.includes("후속 질문 또는 간단한 설명 요청"));
+        assert.ok(physicsHtml.includes("PLSO"));
+        assert.ok(physicsHtml.includes("THEx"));
+        assert.ok(physicsHtml.includes("Swift"));
+        assert.ok(physicsHtml.includes("Core"));
+        assert.ok(physicsHtml.includes("Deep"));
+        assert.ok(!physicsHtml.includes("실행하면 오른쪽 전용 패널"));
       }
     } else {
       assert.ok(html.includes(expectedText));
@@ -100,8 +109,15 @@ for (const [pathname, expectedText] of ROUTE_EXPECTATIONS) {
     }
     assert.ok(!html.includes("정치"));
     assert.ok(!html.includes("/politics"));
-    assert.ok(html.includes('drawer-layer is-pinned'));
-    assert.ok(html.includes('role="complementary"') || html.includes("Mandos를 불러오는 중입니다."));
+    if (pathname.startsWith("/international/")) {
+      assert.ok(html.includes('drawer-layer is-pinned'));
+      assert.ok(html.includes('role="complementary"') || html.includes("Mandos를 불러오는 중입니다."));
+    } else {
+      assert.ok(!html.includes('drawer-layer is-pinned'));
+      assert.ok(!html.includes("Mandos 사용 중"));
+      assert.ok(!html.includes(">P.S.<"));
+      assert.ok(!html.includes(">T.E.<"));
+    }
     if (pathname === "/international/briefing") {
       assert.ok(html.includes("자료 묶음 검토"));
       assert.ok(html.includes("자료 묶음 후보"));
@@ -347,13 +363,38 @@ test("Mandos keeps requested profile history and localizes recoverable errors", 
   }
 });
 
-test("international routes and physics engines select explicit task contracts", () => {
+test("international routes and the physics canvas select explicit task contracts", () => {
   assert.match(appSource, /route === "briefing" \? "evidence-crosscheck" : "causal-synthesis"/);
-  assert.match(physicsWorkspaceSource, /PHYSICS_AI_ENGINES\.ps/);
-  assert.match(physicsWorkspaceSource, /PHYSICS_AI_ENGINES\.te/);
-  assert.match(physicsWorkspaceSource, /taskType: engine\.taskType/);
-  assert.match(physicsWorkspaceSource, /autoSubmit: true/);
-  assert.match(physicsWorkspaceSource, /<EngineDiagram engine=\{engine\}/);
+  assert.match(physicsWorkspaceSource, /PhysicsCanvasWorkspace/);
+  assert.match(physicsCanvasWorkspaceSource, /taskType: engine\.taskType/);
+  assert.match(physicsCanvasWorkspaceSource, /createPhysicsFileAnalysis/);
+  assert.match(physicsCanvasWorkspaceSource, /resolvePendingAnalysis/);
+  assert.match(physicsCanvasWorkspaceSource, /이전 캔버스는 보존했습니다/);
+  assert.doesNotMatch(appSource, /\{ id: "ps", label: "P\.S\." \}/);
+  assert.doesNotMatch(appSource, /\{ id: "te", label: "T\.E\." \}/);
+});
+
+test("physics canvas renders conversation, history, and a single evolving document", () => {
+  const html = renderToStaticMarkup(React.createElement(PhysicsCanvasWorkspace, {
+    analysisContext: {
+      domain: "physics",
+      level: "P4",
+      taskType: "physics-theory-explanation",
+      contextKind: "physics-theory",
+      contextId: "physics-canvas-test",
+      title: "이론 캔버스",
+      meta: "개인 맞춤 P4",
+    },
+    onNavigate() {},
+    onNotice() {},
+  }));
+  assert.ok(html.includes("physics-conversation-rail"));
+  assert.ok(html.includes("physics-canvas-pane"));
+  assert.ok(html.includes("슈뢰딩거 방정식"));
+  assert.ok(html.includes("시작 예시"));
+  assert.ok(html.includes('aria-controls="physics-history-palette"'));
+  assert.ok(html.includes("후속 질문 또는 간단한 설명 요청"));
+  assert.ok(!html.includes('id="ai-analysis-drawer"'));
 });
 
 test("pinned Mandos is complementary and cannot block or close the workspace", () => {

@@ -1,62 +1,63 @@
-# Design QA
+# Physics Conversation Canvas Design QA
 
-## Scope
+## Comparison target
 
-- Routes: `/international/map`, `/international/briefing`, `/physics/learn`
-- Browser viewport: 1710 x 804 in Chrome
-- Visual sources: the approved map, briefing, and physics workstation concepts generated during this project
-- Comparison method: each source was cropped to its 1487 x 699 wide-screen area, each implementation screenshot was normalized to the same size, and the two were stacked into one comparison image before review.
+- Source visual truth: `/Users/minjun/.codex/generated_images/01a02ede-131b-7611-a013-fe24eb27022e/exec-5085f40a-8664-4d7a-8435-a46e1ca1129d.png`
+- Browser-rendered implementation: `/Users/minjun/.codex/worktrees/physics-conversation-canvas/studio-7321/apps/web/design-qa-assets/physics-canvas-history-qa-final.png`
+- Route: `http://127.0.0.1:5173/physics/workspace`
+- Browser viewport: 1440 x 1024 CSS px
+- Device scale factor: 1, inferred from the 1440 x 1024 CSS viewport producing a 1440 x 1024 PNG
+- Source pixels: 1487 x 1058
+- Implementation pixels: 1440 x 1024
+- Density normalization: source resized to 1440 x 1024 as `physics-canvas-source-normalized.png`; implementation remained at native 1440 x 1024
+- State: desktop dark/light split, PLSO selected, Core selected, saved v2 answer open, and history popover open
 
 ## Evidence
 
-- `design-qa-assets/map-comparison.png`
-- `design-qa-assets/briefing-comparison.png`
-- `design-qa-assets/physics-comparison.png`
-- `design-qa-assets/map-implementation.png`
-- `design-qa-assets/briefing-implementation.png`
-- `design-qa-assets/physics-implementation.png`
+- Full-view comparison: `design-qa-assets/physics-canvas-comparison-final.png`
+- Focused conversation-rail comparison: `design-qa-assets/physics-canvas-comparison-rail-final.png`
+- Focused answer-canvas comparison: `design-qa-assets/physics-canvas-comparison-canvas-final.png`
+- Responsive implementation capture: `design-qa-assets/physics-canvas-mobile-800.png`
+- Final answer without the history popover: `design-qa-assets/physics-canvas-implementation-final.png`
 
-## Review
+The focused comparisons were required because chat typography, history placement, formula rendering, and the structured canvas diagram were too small to judge reliably in the full-width pair.
 
-- Map: matches the approved dark defensive-intelligence atlas language, dense information hierarchy, restrained cyan status accents, and operational map controls.
-- Briefing: preserves the source-inbox workflow instead of duplicating every international-affairs function on one screen; typography, table rhythm, borders, and evidence-status treatment match the system.
-- Physics: applies the same operator-workstation language to the seven selected study modes, resource search, library, and IPhO workspace without turning it into a generic card dashboard.
-- Typography and iconography: Noto Sans KR Variable, IBM Plex Sans Condensed, JetBrains Mono, STIX Two Math, and Phosphor icons are used consistently. Font licenses are OFL-1.1 and Phosphor is MIT licensed.
-- Runtime iteration: the first Chrome pass exposed a blank screen caused by classic JSX transform files missing a React default import. The affected components were corrected; the repeated Chrome pass rendered all three routes with zero JavaScript errors.
-- No P0, P1, or P2 visual defects remain in the reviewed desktop viewport. The MapLibre production chunk-size warning is a performance follow-up, not a visual acceptance blocker.
+## Findings
 
-## Final result
+No actionable P0, P1, or P2 differences remain.
 
-passed
+- P3, intentional proportion difference: the source visual gives the dark rail slightly more than one third of the frame, while the implementation uses the user's explicit one-third conversation and two-thirds answer contract. This improves answer-canvas width and is accepted.
+- P3, runtime-content difference: the source shows an infinite-well example with six conversational turns; the implementation shows the real locally persisted inclined-plane thread with two successful versions and one visibly unmerged failure. The interaction state and information hierarchy match even though the physics content differs.
+- P3, update treatment: the source uses a dashed spatial connector to the updated section. The implementation uses a persistent sync badge, a version count, and a highlighted latest section so it can render safely for variable-length structured responses without a misleading fixed connector.
 
-# Mandos Drawer Design QA
+## Required fidelity surfaces
 
-## Result
+- Fonts and typography: the existing Noto Sans KR, IBM Plex Sans Condensed, JetBrains Mono, and STIX/KaTeX math stack preserves the source hierarchy. Display headings, dense metadata, chat copy, and equations have distinct optical weights and readable line heights. No clipping or unintended truncation was visible.
+- Spacing and layout rhythm: the desktop frame keeps the required 1:2 split, fixed composer, independently scrolling rail and answer canvas, restrained radii, and consistent section dividers. At 800 px the two regions stack without horizontal clipping.
+- Colors and visual tokens: near-black blue conversation surfaces, muted cyan state accents, ivory answer paper, subtle warm dividers, and restrained success/error states match the visual direction with sufficient contrast.
+- Image quality and asset fidelity: the screen has no fixed photographic or brand image asset. Physics diagrams are runtime data rendered through the existing allowlisted code-native analysis-visual contract, so the diagram subject correctly follows the saved answer instead of copying a static mock illustration. Lines and KaTeX formulas are sharp at native density.
+- Copy and content: PLSO, THEx, Swift, Core, Deep, history, question, canvas version, evidence boundary, and failure language are concise and consistent. User-facing OpenAI/GPT names do not appear.
 
-PASS — the revised Mandos panel follows the Focus Line direction as a narrow, persistent desktop workspace and an on-demand mobile drawer.
+## Primary interactions tested
 
-## Reference and capture
+- Opened and closed the history popover.
+- Searched history and reopened a saved canvas thread.
+- Confirmed the saved thread restores all three user turns, two successful assistant turns, and one unmerged failure while keeping the latest successful v2 canvas.
+- Switched PLSO and THEx and verified their task labels and composer guidance.
+- Switched Swift, Core, and Deep controls without submitting an extra paid request.
+- Started a new canvas and verified the empty conversation/canvas state.
+- Verified an actual local Worker and D1 path for question persistence, short chat response, canvas update, history listing, and reopen.
+- Checked the 800 x 1000 responsive breakpoint.
+- Browser console errors and warnings checked after the final interaction pass: none.
 
-- Reference: `/Users/minjun/.codex/generated_images/01a02df7-46d6-7ed0-955d-f186702e5741/exec-a79bddc2-0002-4e57-8926-2a789b118350.png`
-- Previous overlay implementation: `/Users/minjun/.codex/visualizations/2026/08/23/01a02df7-46d6-7ed0-955d-f186702e5741/mandos-qa/desktop-final-drawer.png`
-- Side-by-side comparison: `/Users/minjun/.codex/visualizations/2026/08/23/01a02df7-46d6-7ed0-955d-f186702e5741/mandos-qa/desktop-final-comparison.png`
-- Focused composer comparison: `/Users/minjun/.codex/visualizations/2026/08/23/01a02df7-46d6-7ed0-955d-f186702e5741/mandos-qa/composer-comparison.png`
-- Mobile capture: `/Users/minjun/.codex/visualizations/2026/08/23/01a02df7-46d6-7ed0-955d-f186702e5741/mandos-qa/mobile-390.png`
+## Comparison history
 
-## Visual checks
+1. Initial comparison found a P2 mismatch: history behaved as a centered modal with a full-page dimming backdrop, while the source uses a compact non-blocking popover. The layer was changed to a desktop popover with no backdrop; the modal backdrop remains only at the mobile breakpoint. Post-fix evidence: `design-qa-assets/physics-canvas-comparison-postfix.png`.
+2. The first popover revision still obscured the answer-canvas title at the desktop split. The desktop palette was reduced to 280 px and right-aligned inside the one-third rail. Post-fix evidence: `design-qa-assets/physics-canvas-comparison-final.png`, `design-qa-assets/physics-canvas-comparison-rail-final.png`, and `design-qa-assets/physics-canvas-comparison-canvas-final.png`.
 
-- Desktop at 1440 px keeps Mandos pinned on the right at 388.8 px and reserves 1051.2 px for the workspace without overlap or horizontal overflow.
-- Desktop at 1280 px narrows Mandos to 345.6 px and keeps all visible interactive controls inside the viewport.
-- The composer contains only the prompt, closed model selector, and send action. Screen capture, current-screen, and region-selection controls are removed.
-- Mobile at 390 px keeps Mandos behind the header action, then uses the full viewport width without horizontal overflow or clipped composer controls.
-- The model menu opens above the composer on desktop and mobile and keeps all three Mandos profiles visible.
+## Residual verification gaps
 
-## Interaction checks
+- Physical-device rendering is not verified.
+- Production rendering is not verified and no production request was made for this QA pass.
 
-- Mandos is always open as a non-modal complementary panel on desktop and starts on Mandos 3 Core.
-- A workspace action updates the pinned context and focuses the prompt; route navigation resets stale custom context to the current workspace.
-- At 1279 px and below, Mandos opens as a modal dialog and closes through the close action or Escape with focus returned to the trigger.
-- Mandos 3 Swift, Core, and Deep are selectable and expose distinct task and reasoning descriptions.
-- The prompt grows from 62 px to its 144 px cap for multi-line input, and the send action enables only when content exists.
-- History opens from the header control and shows a concise user-facing failure state when the local API is unavailable.
-- No analysis request was submitted during visual QA because live backend verification was outside this frontend-only scope.
+final result: passed

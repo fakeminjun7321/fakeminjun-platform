@@ -17,6 +17,7 @@ import {
 } from "./backendClient.js";
 import { physicsEngineForTask, physicsEngineProfile } from "./physicsEngines.js";
 import { MANDOS_SOURCE_MIME, parseMandosSourceTransfer } from "./mandosSourceTransfer.js";
+import { PhysicsMathText } from "./PhysicsMath.jsx";
 
 const CONFIDENCE_LABELS = { high: "높음", medium: "중간", low: "낮음" };
 const SUPPORT_LABELS = {
@@ -47,7 +48,7 @@ export function getAnalysisProfile(mode, taskType = null) {
   return physicsEngineProfile(taskType, mode) ?? getMandosProfile(mode);
 }
 
-function AnalysisVisual({ visual }) {
+export function AnalysisVisual({ visual }) {
   const markerId = `analysis-arrow-${useId().replaceAll(":", "")}`;
   const items = visual.items ?? [];
   const diagramType = ["causal-chain", "timeline", "equation-map", "concept-map", "free-body-diagram"].includes(visual.type);
@@ -82,7 +83,7 @@ function AnalysisVisual({ visual }) {
         })}
       </svg> : null}
       <ol>{items.map((item, index) => (
-        <li key={`${item.label}-${index}`}><span>{String(index + 1).padStart(2, "0")}</span><div><b>{item.label}</b><small>{item.detail}</small></div></li>
+        <li key={`${item.label}-${index}`}><span>{String(index + 1).padStart(2, "0")}</span><div><b>{item.label}</b><small><PhysicsMathText>{item.detail}</PhysicsMathText></small></div></li>
       ))}</ol>
     </section>
   );
@@ -99,19 +100,19 @@ function AnalysisResult({ analysis, requestedMode, taskType }) {
       <header>
         <p className="analysis-model-label">{profile.title}</p>
         <h3 id="analysis-result-title">{result.headline}</h3>
-        <p>{result.summary}</p>
+        <p><PhysicsMathText>{result.summary}</PhysicsMathText></p>
       </header>
       {result.visual?.type !== "none" && result.visual?.items?.length > 0 ? <AnalysisVisual visual={result.visual} /> : null}
       <div className="analysis-sections">
         {result.sections?.map((section, index) => (
           <section key={`${section.title}-${index}`}>
             <div><h4>{section.title}</h4><span>{BASIS_LABELS[section.basis] ?? "분석 근거 · 구분 안 됨"} · 판단 확신도 {CONFIDENCE_LABELS[section.confidence] ?? "미표시"}</span></div>
-            <p>{section.content}</p>
+            <p><PhysicsMathText>{section.content}</PhysicsMathText></p>
           </section>
         ))}
       </div>
       <section className="analysis-boundary">
-        <strong>{profile.title}가 밝힌 근거 범위 · 별도 확인 필요</strong><p>{result.sourceBoundary}</p>
+        <strong>{profile.title}가 밝힌 근거 범위 · 별도 확인 필요</strong><p><PhysicsMathText>{result.sourceBoundary}</PhysicsMathText></p>
       </section>
       {result.citations?.length ? (
         <section className="analysis-citations" aria-label="분석 근거">
@@ -159,7 +160,7 @@ function waitForPoll(delayMs, signal) {
   });
 }
 
-async function resolvePendingAnalysis(initial, signal, onProgress, requestedMode) {
+export async function resolvePendingAnalysis(initial, signal, onProgress, requestedMode) {
   let current = initial;
   onProgress?.(current);
   const profileMode = current?.requestedMode ?? requestedMode;
