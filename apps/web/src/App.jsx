@@ -21,6 +21,13 @@ import { buildOfficialIssueTracks } from "./internationalIssues.js";
 import { CATEGORY_META, STATUS_META, getTopSignals } from "./mapLayers.js";
 import { buildOfficialObservations } from "./officialObservations.js";
 import { PHYSICS_ANALYSIS_LEVEL, PHYSICS_PROFILE_SUMMARY } from "./physicsProfile.js";
+import {
+  MANDOS_SOURCE_MIME,
+  createMandosSourceTransfer,
+  mandosSourceAnalysisContext,
+  mandosSourcePlainText,
+  serializeMandosSourceTransfer,
+} from "./mandosSourceTransfer.js";
 
 const AiDrawer = lazy(() => import("./AiDrawer.jsx"));
 const CandidatePromotionPanel = lazy(() => import("./CandidatePromotionPanel.jsx"));
@@ -308,7 +315,7 @@ function safeExternalUrl(value) {
   }
 }
 
-function SourceInbox({
+export function SourceInbox({
   state,
   selectedIds,
   createState,
@@ -317,6 +324,7 @@ function SourceInbox({
   onCreate,
   onCancelCreate,
   onRunIngestion,
+  onSendToMandos,
 }) {
   const [laneFilter, setLaneFilter] = useState("all");
   const [visibleLimit, setVisibleLimit] = useState(SOURCE_INITIAL_VISIBLE);
@@ -341,6 +349,17 @@ function SourceInbox({
     setVisibleLimit(SOURCE_INITIAL_VISIBLE);
   }
 
+  function startSourceDrag(eventObject, item) {
+    const source = createMandosSourceTransfer(item);
+    if (!source) {
+      eventObject.preventDefault();
+      return;
+    }
+    eventObject.dataTransfer.effectAllowed = "copy";
+    eventObject.dataTransfer.setData(MANDOS_SOURCE_MIME, serializeMandosSourceTransfer(source));
+    eventObject.dataTransfer.setData("text/plain", mandosSourcePlainText(source));
+  }
+
   return (
     <section className="source-inbox" aria-labelledby="source-inbox-title">
       <header>
@@ -348,6 +367,7 @@ function SourceInbox({
           <p className="system-kicker">공식 기관 발표</p>
           <h3 id="source-inbox-title">공식 업데이트</h3>
           <p className="source-intro">공식 기관이 공개한 최신 발표입니다. 사건으로 검증되거나 지도에 배치된 자료는 아닙니다.</p>
+          <p className="sr-only" id="source-mandos-transfer-help">업데이트 행을 Mandos 입력창으로 끌거나 Mandos로 버튼을 누르면 분석 대화에 추가됩니다.</p>
         </div>
         <div className="source-header-actions">
           <div className={`source-sync-state is-${state.status}`} role="status" aria-live="polite">
@@ -396,8 +416,15 @@ function SourceInbox({
           {visibleItems.map((item) => {
             const selected = selectedIds.has(item.id);
             const sourceUrl = safeExternalUrl(item.originalUrl);
+            const transferableSource = createMandosSourceTransfer(item);
             return (
-              <li className={selected ? "is-selected" : ""} key={item.id ?? `${item.source.key}-${item.providerItemId}`}>
+              <li
+                className={selected ? "is-selected" : ""}
+                key={item.id ?? `${item.source.key}-${item.providerItemId}`}
+                draggable={Boolean(transferableSource)}
+                aria-describedby="source-mandos-transfer-help"
+                onDragStart={(eventObject) => startSourceDrag(eventObject, item)}
+              >
                 <label className="source-item-selector">
                   <input
                     type="checkbox"
@@ -414,11 +441,22 @@ function SourceInbox({
                     <span>{item.source.name}</span>
                     <time dateTime={item.publishedAt ?? item.collectedAt}>{sourceTimestamp(item.publishedAt)}</time>
                   </div>
-                  {sourceUrl ? (
-                    <a href={sourceUrl} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">
-                      {item.title}<ArrowRight size={14} aria-hidden="true" />
-                    </a>
-                  ) : <strong className="source-title-without-link">{item.title}</strong>}
+                  <div className="source-item-primary">
+                    {sourceUrl ? (
+                      <a href={sourceUrl} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">
+                        {item.title}<ArrowRight size={14} aria-hidden="true" />
+                      </a>
+                    ) : <strong className="source-title-without-link">{item.title}</strong>}
+                    <button
+                      className="source-to-mandos"
+                      type="button"
+                      disabled={!transferableSource}
+                      onClick={() => onSendToMandos?.(transferableSource)}
+                      aria-label={`${item.title} Mandos에 추가`}
+                    >
+                      <Brain size={14} aria-hidden="true" /><span>Mandos로</span>
+                    </button>
+                  </div>
                 </div>
               </li>
             );
@@ -633,6 +671,7 @@ function BriefingPage({
   onReviewCandidate,
   onRunIngestion,
   onPromoted,
+  onSendSourceToMandos,
 }) {
   return (
     <main className="focused-workspace briefing-workspace">
@@ -653,6 +692,7 @@ function BriefingPage({
         onCreate={onCreateCandidate}
         onCancelCreate={onCancelCandidate}
         onRunIngestion={onRunIngestion}
+        onSendToMandos={onSendSourceToMandos}
       />
       <CandidateReviewDesk
         state={candidateState}
@@ -1252,6 +1292,16 @@ export function App() {
     if (desktopMandos) window.requestAnimationFrame(() => document.getElementById("analysis-prompt")?.focus());
   }
 
+  function openSourceInMandos(source) {
+    const context = mandosSourceAnalysisContext(source);
+    if (!context) {
+      showNotice("이 업데이트는 Mandos에 추가할 수 없습니다.");
+      return;
+    }
+    openAi(context);
+    showNotice("공식 업데이트를 Mandos 대화에 추가했습니다.");
+  }
+
   function closeAi() {
     setAiOpen(false);
     window.requestAnimationFrame(() => (aiOpenerRef.current ?? aiTriggerRef.current)?.focus());
@@ -1325,6 +1375,7 @@ export function App() {
             onReviewCandidate={reviewCandidate}
             onRunIngestion={runOfficialSourceIngestion}
             onPromoted={() => setMapRefreshVersion((version) => version + 1)}
+            onSendSourceToMandos={openSourceInMandos}
           />
         )}
 
@@ -1347,7 +1398,13 @@ export function App() {
       {notice && <div className="domain-notice" role="status">{notice}</div>}
       {mandosVisible && (
         <Suspense fallback={<div className={`drawer-layer${desktopMandos ? " is-pinned" : ""}`}><aside className="ai-drawer" role="status">Mandos를 불러오는 중입니다.</aside></div>}>
-          <AiDrawer key={mandosContextKey} analysisContext={activeAnalysisContext} onClose={closeAi} pinned={desktopMandos} />
+          <AiDrawer
+            key={mandosContextKey}
+            analysisContext={activeAnalysisContext}
+            onClose={closeAi}
+            onSourceDrop={openSourceInMandos}
+            pinned={desktopMandos}
+          />
         </Suspense>
       )}
     </div>
