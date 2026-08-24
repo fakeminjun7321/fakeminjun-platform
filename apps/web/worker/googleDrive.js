@@ -162,12 +162,12 @@ export async function createGoogleOAuthAttempt(cryptoImpl = globalThis.crypto) {
   };
 }
 
-export function buildGoogleDriveAuthorizationUrl({ clientId, redirectUri, state, codeChallenge }) {
+export function buildGoogleDriveAuthorizationUrl({ clientId, redirectUri, state, codeChallenge, picker = false }) {
   if (!clientId || !redirectUri || !/^[A-Za-z0-9_-]{43}$/u.test(state) || !/^[A-Za-z0-9_-]{43}$/u.test(codeChallenge)) {
     throw new GoogleDriveIntegrationError(500, "google_oauth_request_invalid", "Google Drive 연결 요청을 만들지 못했습니다.");
   }
   const url = new URL(GOOGLE_AUTHORIZATION_URL);
-  url.search = new URLSearchParams({
+  const parameters = {
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: "code",
@@ -178,7 +178,13 @@ export function buildGoogleDriveAuthorizationUrl({ clientId, redirectUri, state,
     code_challenge: codeChallenge,
     code_challenge_method: "S256",
     enable_granular_consent: "true",
-  }).toString();
+  };
+  if (picker) {
+    parameters.trigger_onepick = "true";
+    parameters.allow_multiple = "true";
+    parameters.mimetypes = "application/pdf";
+  }
+  url.search = new URLSearchParams(parameters).toString();
   return url.toString();
 }
 
@@ -360,6 +366,8 @@ function validateGoogleDriveFileMetadata(value, { expectedMimeType = null } = {}
   }
   const appProperties = value.appProperties && typeof value.appProperties === "object" && !Array.isArray(value.appProperties)
     ? value.appProperties : {};
+  const trashed = value.trashed === true;
+  const canDownload = value.capabilities?.canDownload !== false;
   return {
     id,
     name,
@@ -370,6 +378,8 @@ function validateGoogleDriveFileMetadata(value, { expectedMimeType = null } = {}
     modifiedTime,
     webViewLink: safeGoogleDriveWebViewLink(value.webViewLink),
     appProperties,
+    trashed,
+    canDownload,
   };
 }
 
@@ -704,12 +714,29 @@ export async function getGoogleDrivePdfMetadata({
   fetchImpl = globalThis.fetch,
 }) {
   const metadataUrl = new URL(`${GOOGLE_DRIVE_FILES_URL}/${encodeURIComponent(validateGoogleDriveFileId(fileId))}`);
-  metadataUrl.searchParams.set("fields", "id,name,mimeType,size,parents,md5Checksum,modifiedTime,webViewLink,appProperties");
+  metadataUrl.searchParams.set(
+    "fields",
+    "id,name,mimeType,size,parents,md5Checksum,modifiedTime,webViewLink,appProperties,trashed,capabilities(canDownload)",
+  );
   return authorizedGoogleJsonRequest(metadataUrl, {
     accessToken,
     fetchImpl,
     expectedMimeType: "application/pdf",
   });
+}
+
+export async function getGoogleDriveSelectedPdfMetadata(options) {
+  const metadata = await getGoogleDrivePdfMetadata(options);
+  if (metadata.trashed) {
+    throw new GoogleDriveIntegrationError(409, "google_drive_file_trashed", "휴지통에 있는 Drive PDF는 등록할 수 없습니다.");
+  }
+  if (!metadata.canDownload) {
+    throw new GoogleDriveIntegrationError(409, "google_drive_download_unavailable", "다운로드할 수 없는 Drive PDF는 등록할 수 없습니다.");
+  }
+  if (!Number.isSafeInteger(metadata.byteSize) || metadata.byteSize < 1) {
+    throw new GoogleDriveIntegrationError(409, "google_drive_size_unavailable", "크기를 확인할 수 없는 Drive PDF는 등록할 수 없습니다.");
+  }
+  return metadata;
 }
 
 export async function googleOAuthStateHash(state, cryptoImpl = globalThis.crypto) {

@@ -470,6 +470,45 @@ test("backend client reads Drive status and runs the server-verified resumable u
   assert.deepEqual(JSON.parse(calls[5].options.body), { driveFileId: "drive-file-123456" });
 });
 
+test("backend client opens the selected-file OAuth Picker and relays only selected IDs", async () => {
+  const calls = [];
+  const client = createBackendClient({
+    fetchImpl: async (url, options) => {
+      calls.push({ url, options });
+      if (url.endsWith("/picker")) return jsonResponse({ data: {
+        authorizationUrl: "https://accounts.google.com/o/oauth2/v2/auth?trigger_onepick=true",
+        permission: "selected-files-only",
+      } }, { status: 201 });
+      return jsonResponse({ data: { outcome: "selected", importedCount: 1, refreshedCount: 0 } });
+    },
+  });
+  const controller = new AbortController();
+  const picker = await client.startPhysicsDrivePicker({ signal: controller.signal });
+  const callback = await client.finishGoogleDriveConnection(
+    {
+      state: "s".repeat(43),
+      code: "authorization-code",
+      pickedFileIds: ["drive-file-selected-123456"],
+    },
+    { signal: controller.signal },
+  );
+
+  assert.equal(picker.permission, "selected-files-only");
+  assert.equal(callback.outcome, "selected");
+  assert.equal(calls[0].url, "/api/v1/physics/drive/picker");
+  assert.equal(calls[0].options.method, "POST");
+  assert.deepEqual(JSON.parse(calls[0].options.body), {});
+  assert.equal(calls[0].options.signal, controller.signal);
+  assert.equal(calls[1].url, "/api/v1/integrations/google-drive/callback");
+  assert.equal(calls[1].options.method, "POST");
+  assert.deepEqual(JSON.parse(calls[1].options.body), {
+    state: "s".repeat(43),
+    code: "authorization-code",
+    pickedFileIds: ["drive-file-selected-123456"],
+  });
+  assert.doesNotMatch(calls.map(({ options }) => options.body ?? "").join("\n"), /accessToken|developerKey/u);
+});
+
 test("backend client uploads private physics files and starts file analysis", async () => {
   const calls = [];
   const client = createBackendClient({

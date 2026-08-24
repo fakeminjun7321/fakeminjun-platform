@@ -80,6 +80,9 @@ for (const [pathname, expectedText] of ROUTE_EXPECTATIONS) {
         assert.ok(physicsHtml.includes("Drive 전체 권한을 요청하지 않습니다."));
         assert.ok(physicsHtml.includes("Google Drive 연결"));
         assert.ok(!physicsHtml.includes("Google Drive 연결됨"));
+        assert.match(physicsWorkspaceSource, /Drive에서 파일 선택/u);
+        assert.match(physicsWorkspaceSource, /startPhysicsDrivePicker/u);
+        assert.doesNotMatch(physicsWorkspaceSource, /googleDrivePicker/u);
         assert.ok(physicsHtml.includes("통합 자료 검색"));
         assert.ok(physicsHtml.includes("보관 링크"));
       } else {
@@ -152,10 +155,20 @@ test("Drive callback relay keeps only one bounded Google result", () => {
   assert.deepEqual(parseGoogleDriveCallbackSearch(`?state=${state}&code=authorization-code`), {
     state, code: "authorization-code",
   });
+  assert.deepEqual(parseGoogleDriveCallbackSearch(
+    `?state=${state}&code=authorization-code&picked_file_ids=drive-file-123456%2Cdrive-file-654321`,
+  ), {
+    state,
+    code: "authorization-code",
+    pickedFileIds: ["drive-file-123456", "drive-file-654321"],
+  });
   assert.deepEqual(parseGoogleDriveCallbackSearch(`?state=${state}&error=access_denied`), {
     state, error: "access_denied",
   });
   assert.equal(parseGoogleDriveCallbackSearch(`?state=${state}&code=code&error=access_denied`), null);
+  assert.equal(parseGoogleDriveCallbackSearch(
+    `?state=${state}&code=authorization-code&picked_file_ids=drive-file-123456%2Cdrive-file-123456`,
+  ), null);
   assert.equal(parseGoogleDriveCallbackSearch("?state=short&code=code"), null);
 });
 

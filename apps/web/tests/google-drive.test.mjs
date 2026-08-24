@@ -13,6 +13,7 @@ import {
   findOrCreateGoogleDrivePhysicsFolder,
   getGoogleDrivePdfMetadata,
   getGoogleDriveConfiguration,
+  getGoogleDriveSelectedPdfMetadata,
   googleDriveRedirectUri,
   googleOAuthStateHash,
   initiateGoogleDrivePdfUpload,
@@ -45,6 +46,17 @@ test("Drive OAuth is limited to the selected-file scope and fixed callback", asy
   assert.equal(authorization.searchParams.get("prompt"), "consent");
   assert.equal(authorization.searchParams.get("code_challenge_method"), "S256");
   assert.equal(authorization.searchParams.has("include_granted_scopes"), false);
+  const pickerAuthorization = new URL(buildGoogleDriveAuthorizationUrl({
+    clientId: "client.apps.googleusercontent.com",
+    redirectUri,
+    state: attempt.state,
+    codeChallenge: attempt.challenge,
+    picker: true,
+  }));
+  assert.equal(pickerAuthorization.searchParams.get("scope"), GOOGLE_DRIVE_FILE_SCOPE);
+  assert.equal(pickerAuthorization.searchParams.get("trigger_onepick"), "true");
+  assert.equal(pickerAuthorization.searchParams.get("allow_multiple"), "true");
+  assert.equal(pickerAuthorization.searchParams.get("mimetypes"), "application/pdf");
 });
 
 test("Drive OAuth configuration fails closed without every secret", () => {
@@ -415,5 +427,45 @@ test("Drive completion metadata is validated and upload-session URLs use separat
   await assert.rejects(
     () => decryptGoogleToken(encrypted, key(12)),
     (error) => error.code === "google_refresh_token_unreadable",
+  );
+});
+
+test("selected Drive PDFs must remain downloadable, non-trashed, and non-empty", async () => {
+  const baseMetadata = {
+    id: "drive-file-selected-123456",
+    name: "Selected.pdf",
+    mimeType: "application/pdf",
+    size: "8192",
+    modifiedTime: "2026-08-24T02:00:00.000Z",
+    webViewLink: "https://drive.google.com/file/d/drive-file-selected-123456/view",
+    capabilities: { canDownload: true },
+    trashed: false,
+  };
+  const selected = await getGoogleDriveSelectedPdfMetadata({
+    accessToken: "access-token-value-1234567890",
+    fileId: baseMetadata.id,
+    fetchImpl: async (url) => {
+      assert.match(new URL(url).searchParams.get("fields"), /capabilities\(canDownload\)/u);
+      return new Response(JSON.stringify(baseMetadata));
+    },
+  });
+  assert.equal(selected.id, baseMetadata.id);
+  assert.equal(selected.canDownload, true);
+
+  await assert.rejects(
+    () => getGoogleDriveSelectedPdfMetadata({
+      accessToken: "access-token-value-1234567890",
+      fileId: baseMetadata.id,
+      fetchImpl: async () => new Response(JSON.stringify({ ...baseMetadata, trashed: true })),
+    }),
+    (error) => error.code === "google_drive_file_trashed",
+  );
+  await assert.rejects(
+    () => getGoogleDriveSelectedPdfMetadata({
+      accessToken: "access-token-value-1234567890",
+      fileId: baseMetadata.id,
+      fetchImpl: async () => new Response(JSON.stringify({ ...baseMetadata, capabilities: { canDownload: false } })),
+    }),
+    (error) => error.code === "google_drive_download_unavailable",
   );
 });

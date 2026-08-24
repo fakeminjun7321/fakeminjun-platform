@@ -14,6 +14,7 @@ import {
   findOrCreateGoogleDrivePhysicsFolder,
   getGoogleDrivePdfMetadata,
   getGoogleDriveConfiguration,
+  getGoogleDriveSelectedPdfMetadata,
   googleOAuthStateHash,
   initiateGoogleDrivePdfUpload,
   refreshGoogleAccessToken,
@@ -82,6 +83,7 @@ const PHYSICS_UPLOAD_WINDOW_LIMIT = 20;
 const DAILY_PHYSICS_UPLOAD_LIMIT = 100;
 const MONTHLY_PHYSICS_UPLOAD_LIMIT = 1_000;
 const MAX_ACTIVE_GOOGLE_DRIVE_UPLOADS = 10;
+const MAX_GOOGLE_DRIVE_PICKER_FILES = 10;
 
 const ANALYSIS_CITATION_SCHEMA = {
   type: "object",
@@ -4813,7 +4815,7 @@ async function getGoogleDriveStatus(env, ctx, requestId) {
   } }, 200, requestId);
 }
 
-async function startGoogleDriveConnection(request, env, ctx, requestId) {
+async function startGoogleDriveConnection(request, env, ctx, requestId, { picker = false } = {}) {
   requireMutationOrigin(request, env);
   const db = requireDatabase(env);
   const principal = await requirePrincipal(ctx);
@@ -4831,6 +4833,7 @@ async function startGoogleDriveConnection(request, env, ctx, requestId) {
       redirectUri: configuration.redirectUri,
       state: attempt.state,
       codeChallenge: attempt.challenge,
+      picker,
     });
   } catch (error) {
     rethrowGoogleDriveError(error);
@@ -4860,11 +4863,12 @@ async function startGoogleDriveConnection(request, env, ctx, requestId) {
     authorizationUrl,
     expiresInSeconds: 600,
     permission: "selected-files-only",
+    purpose: picker ? "select-existing-files" : "connect",
   } }, 201, requestId);
 }
 
 export function validateGoogleDriveCallbackPayload(payload) {
-  assertOnlyKeys(payload, new Set(["state", "code", "error"]));
+  assertOnlyKeys(payload, new Set(["state", "code", "error", "pickedFileIds"]));
   const state = typeof payload.state === "string" ? payload.state.trim() : "";
   const code = typeof payload.code === "string" ? payload.code.trim() : "";
   const error = typeof payload.error === "string" ? payload.error.trim() : "";
@@ -4872,15 +4876,64 @@ export function validateGoogleDriveCallbackPayload(payload) {
     throw new ApiError(400, "google_oauth_state_invalid", "Google Drive 연결 상태값이 올바르지 않습니다.");
   }
   if (error) {
-    if (!/^[A-Za-z0-9_.-]{1,100}$/u.test(error) || code) {
+    if (!/^[A-Za-z0-9_.-]{1,100}$/u.test(error) || code || payload.pickedFileIds !== undefined) {
       throw new ApiError(400, "google_oauth_result_invalid", "Google Drive 연결 결과가 올바르지 않습니다.");
     }
-    return { state, code: null, error };
+    return { state, code: null, error, pickedFileIds: [] };
   }
   if (!code || code.length > 4096) {
     throw new ApiError(400, "google_oauth_code_invalid", "Google Drive 연결 코드가 올바르지 않습니다.");
   }
-  return { state, code, error: null };
+  const pickedFileIds = payload.pickedFileIds === undefined
+    ? []
+    : validateGoogleDriveImportPayload({ fileIds: payload.pickedFileIds }).fileIds;
+  return { state, code, error: null, pickedFileIds };
+}
+
+async function storePhysicsDriveMetadata(db, ownerId, metadataList) {
+  const { results: existingRows = [] } = await db.prepare(`
+    SELECT drive_file_id FROM physics_drive_items WHERE owner_id = ?
+  `).bind(ownerId).all();
+  const existingIds = new Set(existingRows.map((row) => row.drive_file_id));
+  const newItemCount = metadataList.filter((metadata) => !existingIds.has(metadata.id)).length;
+  await db.batch(metadataList.map((metadata) => db.prepare(`
+    INSERT INTO physics_drive_items (
+      id, owner_id, drive_file_id, name, mime_type, byte_size, modified_time,
+      md5_checksum, web_view_link, availability_status, index_status, ai_access_allowed
+    ) VALUES (?, ?, ?, ?, 'application/pdf', ?, ?, ?, ?, 'available', 'not-indexed', 0)
+    ON CONFLICT(owner_id, drive_file_id) DO UPDATE SET
+      name = excluded.name,
+      mime_type = excluded.mime_type,
+      byte_size = excluded.byte_size,
+      modified_time = excluded.modified_time,
+      md5_checksum = excluded.md5_checksum,
+      web_view_link = excluded.web_view_link,
+      availability_status = 'available',
+      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+  `).bind(
+    crypto.randomUUID(), ownerId, metadata.id, metadata.name, metadata.byteSize,
+    metadata.modifiedTime, metadata.md5Checksum, metadata.webViewLink,
+  )));
+  const { results: storedRows = [] } = await db.prepare(`
+    SELECT * FROM physics_drive_items
+    WHERE owner_id = ? ORDER BY updated_at DESC, id
+    LIMIT 500
+  `).bind(ownerId).all();
+  const selectedIds = new Set(metadataList.map((metadata) => metadata.id));
+  const storedByDriveId = new Map(storedRows
+    .filter((row) => selectedIds.has(row.drive_file_id))
+    .map((row) => [row.drive_file_id, row]));
+  const items = metadataList.map((metadata) => storedByDriveId.get(metadata.id))
+    .filter(Boolean)
+    .map(physicsDriveItemFromRow);
+  if (items.length !== metadataList.length) {
+    throw new ApiError(500, "google_drive_catalog_missing", "선택한 Drive 자료의 목록 저장을 확인하지 못했습니다.");
+  }
+  return {
+    items,
+    importedCount: newItemCount,
+    refreshedCount: items.length - newItemCount,
+  };
 }
 
 async function finishGoogleDriveConnection(request, env, ctx, requestId) {
@@ -4950,7 +5003,31 @@ async function finishGoogleDriveConnection(request, env, ctx, requestId) {
     encryptedRefreshToken.iv,
     token.scope,
   ).run();
-  return jsonResponse({ data: { outcome: "connected" } }, 200, requestId);
+  if (!payload.pickedFileIds.length) {
+    return jsonResponse({ data: { outcome: "connected" } }, 200, requestId);
+  }
+  let metadataList;
+  try {
+    const access = await refreshGoogleAccessToken({
+      refreshToken: token.refreshToken,
+      clientId: configuration.clientId,
+      clientSecret: configuration.clientSecret,
+      fetchImpl: env.GOOGLE_DRIVE_FETCH ?? env.GOOGLE_OAUTH_FETCH ?? globalThis.fetch,
+    });
+    metadataList = await Promise.all(payload.pickedFileIds.map((fileId) => getGoogleDriveSelectedPdfMetadata({
+      accessToken: access.accessToken,
+      fileId,
+      fetchImpl: env.GOOGLE_DRIVE_FETCH ?? env.GOOGLE_OAUTH_FETCH ?? globalThis.fetch,
+    })));
+  } catch (error) {
+    rethrowGoogleDriveError(error);
+  }
+  const stored = await storePhysicsDriveMetadata(db, ownerId, metadataList);
+  return jsonResponse({ data: {
+    outcome: "selected",
+    importedCount: stored.importedCount,
+    refreshedCount: stored.refreshedCount,
+  } }, 200, requestId);
 }
 
 export function validateGoogleDriveUploadPayload(value) {
@@ -4973,6 +5050,26 @@ export function validateGoogleDriveUploadCompletionPayload(value) {
     throw new ApiError(400, "google_drive_file_invalid", "Google Drive 파일 식별자가 올바르지 않습니다.");
   }
   return { driveFileId };
+}
+
+export function validateGoogleDriveImportPayload(value) {
+  assertOnlyKeys(value, new Set(["fileIds"]));
+  if (!Array.isArray(value.fileIds) || value.fileIds.length < 1
+    || value.fileIds.length > MAX_GOOGLE_DRIVE_PICKER_FILES) {
+    throw new ApiError(
+      400,
+      "google_drive_selection_invalid",
+      `한 번에 1개에서 ${MAX_GOOGLE_DRIVE_PICKER_FILES}개까지 Drive PDF를 선택할 수 있습니다.`,
+    );
+  }
+  const fileIds = value.fileIds.map((fileId) => typeof fileId === "string" ? fileId.trim() : "");
+  if (fileIds.some((fileId) => !/^[A-Za-z0-9_-]{10,200}$/u.test(fileId))) {
+    throw new ApiError(400, "google_drive_file_invalid", "Google Drive 파일 식별자가 올바르지 않습니다.");
+  }
+  if (new Set(fileIds).size !== fileIds.length) {
+    throw new ApiError(400, "google_drive_selection_duplicate", "같은 Drive 파일을 중복해서 선택할 수 없습니다.");
+  }
+  return { fileIds };
 }
 
 async function requireGoogleDriveAccess(env, db, ownerId) {
@@ -5002,6 +5099,7 @@ async function requireGoogleDriveAccess(env, db, ownerId) {
     });
     return {
       accessToken: token.accessToken,
+      expiresIn: token.expiresIn,
       configuration,
       connection,
       fetchImpl: env.GOOGLE_DRIVE_FETCH ?? env.GOOGLE_OAUTH_FETCH ?? globalThis.fetch,
@@ -5370,6 +5468,10 @@ async function handleApiRequest(request, env, ctx) {
     if (pathname === `${API_PREFIX}/integrations/google-drive/callback`) {
       if (request.method !== "POST") return methodNotAllowed(["POST"], requestId);
       return await finishGoogleDriveConnection(request, env, ctx, requestId);
+    }
+    if (pathname === `${API_PREFIX}/physics/drive/picker`) {
+      if (request.method !== "POST") return methodNotAllowed(["POST"], requestId);
+      return await startGoogleDriveConnection(request, env, ctx, requestId, { picker: true });
     }
 
     if (pathname === `${API_PREFIX}/physics/resources`) {

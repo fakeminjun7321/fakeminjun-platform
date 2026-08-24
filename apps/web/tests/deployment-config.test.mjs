@@ -28,6 +28,8 @@ test("production static assets carry restrictive security headers without blocki
   const headersFile = await readFile(new URL("../public/_headers", import.meta.url), "utf8");
   assert.match(headersFile, /^\/\*/m);
   assert.match(headersFile, /Content-Security-Policy: .*script-src 'self'/);
+  assert.match(headersFile, /frame-src 'none'/);
+  assert.doesNotMatch(headersFile, /apis\.google\.com|docs\.google\.com/);
   assert.match(headersFile, /connect-src 'self' https:\/\/tiles\.openfreemap\.org https:\/\/www\.googleapis\.com/);
   assert.match(headersFile, /frame-ancestors 'none'/);
   assert.match(headersFile, /Strict-Transport-Security: max-age=86400/);
@@ -133,6 +135,9 @@ test("frontend guard never serves the SPA shell for a missing API route", async 
   assert.equal(assetFetches, 1);
   assert.match(appResponse.headers.get("content-security-policy") ?? "", /connect-src 'self' https:\/\/tiles\.openfreemap\.org https:\/\/www\.googleapis\.com/);
   assert.match(appResponse.headers.get("content-security-policy") ?? "", /frame-ancestors 'none'/);
+  assert.match(appResponse.headers.get("content-security-policy") ?? "", /script-src 'self'/);
+  assert.match(appResponse.headers.get("content-security-policy") ?? "", /frame-src 'none'/);
+  assert.doesNotMatch(appResponse.headers.get("content-security-policy") ?? "", /apis\.google\.com|docs\.google\.com/);
   assert.equal(appResponse.headers.get("strict-transport-security"), "max-age=86400");
   assert.equal(appResponse.headers.get("x-content-type-options"), "nosniff");
   assert.equal(appResponse.headers.get("x-frame-options"), "DENY");

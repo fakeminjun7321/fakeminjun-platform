@@ -39,6 +39,7 @@ import worker, {
   parsePhysicsSearchResourceIds,
   validatePhysicsSearchPayload,
   validateGoogleDriveUploadCompletionPayload,
+  validateGoogleDriveImportPayload,
   validateGoogleDriveCallbackPayload,
   validateGoogleDriveUploadPayload,
 } from "../worker/index.js";
@@ -306,6 +307,7 @@ test("candidate mutations reject an untrusted origin before identity, D1, or Ope
     ["/api/v1/physics/library", "POST"],
     ["/api/v1/integrations/google-drive/connect", "POST"],
     ["/api/v1/integrations/google-drive/callback", "POST"],
+    ["/api/v1/physics/drive/picker", "POST"],
     ["/api/v1/physics/drive/uploads", "POST"],
     ["/api/v1/physics/drive/uploads/9f165cbb-0315-4a0e-bf07-0c8c602e3da5/complete", "POST"],
   ]) {
@@ -349,13 +351,41 @@ test("Drive upload contracts accept only bounded PDFs and server-verifiable file
   );
 });
 
+test("Drive Picker imports accept only unique bounded file selections", () => {
+  assert.deepEqual(validateGoogleDriveImportPayload({
+    fileIds: ["drive-file-123456", "drive-file-654321"],
+  }), { fileIds: ["drive-file-123456", "drive-file-654321"] });
+  assert.throws(
+    () => validateGoogleDriveImportPayload({ fileIds: [] }),
+    (error) => error.code === "google_drive_selection_invalid",
+  );
+  assert.throws(
+    () => validateGoogleDriveImportPayload({ fileIds: ["drive-file-123456", "drive-file-123456"] }),
+    (error) => error.code === "google_drive_selection_duplicate",
+  );
+  assert.throws(
+    () => validateGoogleDriveImportPayload({ fileIds: ["drive-file-123456"], ownerId: 7 }),
+    (error) => error.code === "unknown_fields",
+  );
+});
+
 test("Drive OAuth callback relay accepts one bounded result shape", () => {
   const state = "s".repeat(43);
   assert.deepEqual(validateGoogleDriveCallbackPayload({ state, code: "authorization-code" }), {
-    state, code: "authorization-code", error: null,
+    state, code: "authorization-code", error: null, pickedFileIds: [],
+  });
+  assert.deepEqual(validateGoogleDriveCallbackPayload({
+    state,
+    code: "authorization-code",
+    pickedFileIds: ["drive-file-123456", "drive-file-654321"],
+  }), {
+    state,
+    code: "authorization-code",
+    error: null,
+    pickedFileIds: ["drive-file-123456", "drive-file-654321"],
   });
   assert.deepEqual(validateGoogleDriveCallbackPayload({ state, error: "access_denied" }), {
-    state, code: null, error: "access_denied",
+    state, code: null, error: "access_denied", pickedFileIds: [],
   });
   assert.throws(
     () => validateGoogleDriveCallbackPayload({ state, code: "code", error: "access_denied" }),
@@ -364,6 +394,10 @@ test("Drive OAuth callback relay accepts one bounded result shape", () => {
   assert.throws(
     () => validateGoogleDriveCallbackPayload({ state: "short", code: "code" }),
     (error) => error.code === "google_oauth_state_invalid",
+  );
+  assert.throws(
+    () => validateGoogleDriveCallbackPayload({ state, code: "authorization-code", pickedFileIds: [] }),
+    (error) => error.code === "google_drive_selection_invalid",
   );
 });
 

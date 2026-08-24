@@ -7,6 +7,7 @@ import {
   DownloadSimple,
   FileArrowUp,
   FileText,
+  FolderOpen,
   MagnifyingGlass,
   ShieldWarning,
   Trash,
@@ -248,9 +249,17 @@ export function parseGoogleDriveCallbackSearch(search) {
   const state = params.get("state")?.trim() ?? "";
   const code = params.get("code")?.trim() ?? "";
   const error = params.get("error")?.trim() ?? "";
+  const pickedFileIdsValue = params.get("picked_file_ids")?.trim() ?? "";
   if (!/^[A-Za-z0-9_-]{43}$/u.test(state)) return null;
-  if (error && /^[A-Za-z0-9_.-]{1,100}$/u.test(error) && !code) return { state, error };
-  if (code && code.length <= 4096 && !error) return { state, code };
+  if (error && /^[A-Za-z0-9_.-]{1,100}$/u.test(error) && !code && !pickedFileIdsValue) return { state, error };
+  if (code && code.length <= 4096 && !error) {
+    if (!pickedFileIdsValue) return { state, code };
+    const pickedFileIds = pickedFileIdsValue.split(",").map((fileId) => fileId.trim());
+    if (pickedFileIds.length < 1 || pickedFileIds.length > 10
+      || pickedFileIds.some((fileId) => !/^[A-Za-z0-9_-]{10,200}$/u.test(fileId))
+      || new Set(pickedFileIds).size !== pickedFileIds.length) return null;
+    return { state, code, pickedFileIds };
+  }
   return null;
 }
 
@@ -324,6 +333,8 @@ function GoogleDriveVault({ onNotice }) {
       catalogRefreshNeeded: false,
       message: outcome === "connected"
         ? "Google Drive 연결이 완료되었습니다. 이제 PDF를 전용 폴더에 바로 추가할 수 있습니다."
+        : outcome === "selected"
+          ? "Drive에서 선택한 PDF를 자료실에 등록했습니다."
         : outcome === "cancelled"
           ? "Google Drive 연결을 취소했습니다. 변경된 파일은 없습니다."
           : readPendingDriveCompletion()
@@ -343,13 +354,17 @@ function GoogleDriveVault({ onNotice }) {
           setState((current) => ({ ...current, status: "connecting", message: "Google Drive 연결을 안전하게 확인하고 있습니다." }));
           const result = await relayGoogleDriveCallback(callback);
           if (!active) return;
-          const nextOutcome = result.outcome === "cancelled" ? "cancelled" : "connected";
+          const nextOutcome = result.outcome === "cancelled"
+            ? "cancelled"
+            : result.outcome === "selected"
+              ? "selected"
+              : "connected";
           clearGoogleDriveCallback(callback);
           window.history.replaceState({}, "", `/physics/drive?drive=${nextOutcome}`);
           try {
             await load(controller.signal, nextOutcome);
           } catch (error) {
-            if (error?.name !== "AbortError" && nextOutcome === "connected") {
+            if (error?.name !== "AbortError" && ["connected", "selected"].includes(nextOutcome)) {
               setState((current) => ({
                 ...current,
                 status: "ready",
@@ -492,6 +507,38 @@ function GoogleDriveVault({ onNotice }) {
     }
   }
 
+  async function selectExistingDrivePdfs() {
+    if (!state.connected) {
+      onNotice("먼저 Google Drive를 연결해 주세요.");
+      return;
+    }
+    const controller = new AbortController();
+    requestRef.current?.abort();
+    requestRef.current = controller;
+    setState((current) => ({
+      ...current,
+      status: "picking",
+      message: "Google Drive에서 접근을 허용할 PDF를 고르는 창을 준비하고 있습니다.",
+    }));
+    try {
+      const result = await backendClient.startPhysicsDrivePicker({ signal: controller.signal });
+      const authorizationUrl = safeGoogleAuthorizationUrl(result.authorizationUrl);
+      if (!authorizationUrl) throw new Error("Unexpected Google authorization URL");
+      window.location.assign(authorizationUrl);
+    } catch (error) {
+      if (error?.name !== "AbortError") {
+        setState((current) => ({
+          ...current,
+          status: "error",
+          message: error?.message || "Google Drive에서 선택한 PDF를 등록하지 못했습니다.",
+        }));
+        onNotice("Drive 선택 파일 등록을 완료하지 못했습니다.");
+      }
+    } finally {
+      if (requestRef.current === controller) requestRef.current = null;
+    }
+  }
+
   function cancelUpload() {
     requestRef.current?.abort();
     setState((current) => ({ ...current, status: "ready", progress: 0, message: "업로드를 중단했습니다. 다시 추가하면 새 업로드로 안전하게 시작합니다." }));
@@ -592,6 +639,7 @@ function GoogleDriveVault({ onNotice }) {
   const stateLabel = state.connected ? "연결됨" : state.configured ? "연결 필요" : "설정 대기";
   const uploading = state.status === "uploading";
   const finalizing = state.status === "finalizing";
+  const picking = state.status === "picking";
   return (
     <section className="google-drive-vault" aria-labelledby="google-drive-vault-title">
       <header>
@@ -604,27 +652,41 @@ function GoogleDriveVault({ onNotice }) {
           <span>등록 자료 {state.catalogItemCount}개</span>
           {state.connected ? <>
             <input ref={inputRef} className="sr-only" type="file" accept="application/pdf,.pdf" onChange={(event) => void uploadSelectedPdf(event)} />
-            <button
-              type="button"
-              onClick={() => {
-                if (state.pendingCompletion) void finishDriveCatalogRegistration(state.pendingCompletion);
-                else if (state.catalogRefreshNeeded) void refreshDriveCatalog();
-                else if (uploading) cancelUpload();
-                else inputRef.current?.click();
-              }}
-              disabled={state.status === "connecting" || finalizing}
-            >
-              <FileArrowUp size={16} />
-              {finalizing
-                ? "목록 등록 확인 중"
-                : state.pendingCompletion
-                  ? "목록 등록 확인 다시 시도"
-                  : state.catalogRefreshNeeded
-                    ? "Drive 목록 새로고침"
-                    : uploading
-                      ? `업로드 중단 · ${state.progress}%`
-                      : "Drive에 PDF 추가"}
-            </button>
+            <div className="drive-vault-buttons">
+              <button
+                type="button"
+                className="drive-picker-button"
+                onClick={() => void selectExistingDrivePdfs()}
+                disabled={picking || uploading || finalizing}
+                title="내 Drive에서 접근을 허용할 PDF 선택"
+              >
+                <FolderOpen size={16} />
+                {state.status === "picking"
+                  ? "Drive 선택 창 여는 중"
+                  : "Drive에서 파일 선택"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (state.pendingCompletion) void finishDriveCatalogRegistration(state.pendingCompletion);
+                  else if (state.catalogRefreshNeeded) void refreshDriveCatalog();
+                  else if (uploading) cancelUpload();
+                  else inputRef.current?.click();
+                }}
+                disabled={state.status === "connecting" || finalizing || picking}
+              >
+                <FileArrowUp size={16} />
+                {finalizing
+                  ? "목록 등록 확인 중"
+                  : state.pendingCompletion
+                    ? "목록 등록 확인 다시 시도"
+                    : state.catalogRefreshNeeded
+                      ? "Drive 목록 새로고침"
+                      : uploading
+                        ? `업로드 중단 · ${state.progress}%`
+                        : "새 PDF 업로드"}
+              </button>
+            </div>
           </> : <button type="button" onClick={() => void connect()} disabled={!state.configured || state.status === "connecting"}>
             <ArrowSquareOut size={16} />
             {state.status === "connecting" ? "연결 중" : "Google Drive 연결"}
