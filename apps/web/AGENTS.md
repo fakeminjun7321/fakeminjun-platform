@@ -10,6 +10,7 @@ Build app UI in `src/`. Keep `.openai/hosting.json`, `worker/index.js`, `scripts
 
 ## Project-specific design decisions
 
+- Use `STUDIO 7321` as the stable browser, installed-app, and social-preview name on every route. Do not apply a generated favicon until the user selects a new visual direction; the first coordinate, orbit, descending-bars, and folded-line concepts were explicitly rejected.
 - The selected source of truth is the revised Atlas Canvas concept from 2026-08-21: a full-map situation workspace with a compact three-signal intelligence queue, an anchored event inspector, two-level navigation, and no right-hand briefing rail or bottom timeline.
 - The 2026-08-22 visual system combines three purpose-built references rather than forcing one dashboard layout everywhere: BLACK ATLAS for the map workspace, EVIDENCE LEDGER for briefing and evidence review, and OPERATOR'S LAB for physics. Share typography, iconography, color semantics, and interaction quality across them, but preserve their distinct workspace anatomy.
 - Typography and icons are first-class design assets. Use reviewed open-source font families with real Korean, condensed-heading, mono-metadata, and math weights as needed, and one coherent maintained open-source icon library. Do not substitute emoji, text glyphs, generic browser defaults, or hand-drawn SVG/CSS icons.

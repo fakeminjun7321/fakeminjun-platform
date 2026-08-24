@@ -36,6 +36,7 @@ const { CandidatePromotionPanel } = await vite.ssrLoadModule("/src/CandidateProm
 const aiDrawerSource = await readFile(new URL("../src/AiDrawer.jsx", import.meta.url), "utf8");
 const appSource = await readFile(new URL("../src/App.jsx", import.meta.url), "utf8");
 const physicsWorkspaceSource = await readFile(new URL("../src/PhysicsWorkspace.jsx", import.meta.url), "utf8");
+const indexSource = await readFile(new URL("../index.html", import.meta.url), "utf8");
 
 after(async () => {
   await vite.close();
@@ -114,6 +115,12 @@ for (const [pathname, expectedText] of ROUTE_EXPECTATIONS) {
 test("physics uses one personal P4 analysis profile without a level selector", () => {
   assert.equal(PHYSICS_ANALYSIS_LEVEL, "P4");
   assert.equal(PHYSICS_PROFILE_SUMMARY, "수학적 구조·이론·유도·검산 중심 · 개인 맞춤 P4");
+});
+
+test("browser identity stays STUDIO 7321 on every route", () => {
+  assert.ok(indexSource.includes("<title>STUDIO 7321</title>"));
+  assert.ok(indexSource.includes('content="STUDIO 7321"'));
+  assert.ok(appSource.includes('document.title = "STUDIO 7321"'));
 });
 
 test("Drive callback relay keeps only one bounded Google result", () => {
