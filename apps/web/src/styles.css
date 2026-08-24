@@ -1833,6 +1833,7 @@ p { margin-block: 0; }
 .google-drive-vault > header p { grid-column: 1 / -1; color: var(--muted); font-size: 11px; }
 .google-drive-vault > header > div:last-child { display: flex; align-items: center; gap: 14px; }
 .google-drive-vault > header > div:last-child > span { color: var(--faint); font-family: var(--mono); font-size: 10px; }
+.drive-vault-buttons { display: flex; align-items: center; gap: 8px; }
 .google-drive-vault > header button {
   min-height: 38px;
   display: inline-flex;
@@ -1844,6 +1845,12 @@ p { margin-block: 0; }
   background: #14231e;
   font-size: 11px;
 }
+.google-drive-vault > header .drive-picker-button {
+  border-color: #355768;
+  color: #d6e8f0;
+  background: #101c22;
+}
+.google-drive-vault > header .drive-picker-button:hover:not(:disabled) { background: #162a33; }
 .google-drive-vault > header button:hover:not(:disabled) { background: #1b3028; }
 .google-drive-vault > header button:disabled { cursor: not-allowed; opacity: 0.5; }
 .drive-connection-state {
@@ -2681,6 +2688,8 @@ mjx-container {
   .physics-file-vault > header { align-items: flex-start; flex-direction: column; }
   .google-drive-vault > header > div:last-child,
   .physics-file-vault > header > div:last-child { width: 100%; justify-content: space-between; }
+  .drive-vault-buttons { width: 100%; flex-wrap: wrap; }
+  .drive-vault-buttons button { flex: 1 1 180px; justify-content: center; }
   .drive-file-list > article { grid-template-columns: 24px minmax(0, 1fr) auto; }
   .drive-file-list a { grid-column: 2 / -1; justify-self: end; }
   .physics-file-list > article { grid-template-columns: 28px minmax(0, 1fr); }
