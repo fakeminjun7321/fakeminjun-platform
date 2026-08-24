@@ -4,9 +4,11 @@ import {
   IngestionError,
   MAX_RSS_BYTES,
   MAX_RSS_ITEMS,
+  MAX_RETAINED_SOURCE_ITEMS_PER_SOURCE,
   canonicalizeSourceUrl,
   fetchTrustedRss,
   parseRssFeed,
+  pruneUnreferencedSourceItems,
 } from "../worker/ingestion.js";
 import { SOURCE_PROVIDERS, sourceProviderByKey } from "../worker/sourceRegistry.js";
 
@@ -75,6 +77,32 @@ test("RSS parser caps feed fan-out", async () => {
   }));
   const parsed = await parseRssFeed(rss(items), provider);
   assert.equal(parsed.length, MAX_RSS_ITEMS);
+});
+
+test("source retention prunes only overflow rows that are not evidence", async () => {
+  let sql = "";
+  let bindings = [];
+  const db = {
+    prepare(statement) {
+      sql = statement;
+      return {
+        bind(...values) {
+          bindings = values;
+          return { run: async () => ({ meta: { changes: 3 } }) };
+        },
+      };
+    },
+  };
+  const result = await pruneUnreferencedSourceItems(db, 7, 25);
+  assert.equal(result.meta.changes, 3);
+  assert.deepEqual(bindings, [7, 7, 25]);
+  assert.match(sql, /LIMIT -1 OFFSET \?/);
+  assert.match(sql, /event_sources/);
+  assert.match(sql, /event_candidate_sources/);
+  assert.match(sql, /event_candidate_evidence_reviews/);
+  assert.match(sql, /evidence_spans/);
+  assert.equal(MAX_RETAINED_SOURCE_ITEMS_PER_SOURCE, 2_000);
+  await assert.rejects(() => pruneUnreferencedSourceItems(db, 7, 0), /positive integer/);
 });
 
 test("RSS parser neutralizes implausible future dates and oversized GUID prefixes", async () => {

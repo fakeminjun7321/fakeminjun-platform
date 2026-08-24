@@ -3,6 +3,7 @@ import { SOURCE_PROVIDERS } from "./sourceRegistry.js";
 export const MAX_RSS_BYTES = 512 * 1024;
 export const MAX_RSS_ITEMS = 50;
 export const DEFAULT_RSS_TIMEOUT_MS = 15_000;
+export const MAX_RETAINED_SOURCE_ITEMS_PER_SOURCE = 2_000;
 
 const XML_CONTENT_TYPES = new Set([
   "application/rss+xml",
@@ -280,6 +281,30 @@ async function finishRun(db, runId, fields) {
   ).run();
 }
 
+export async function pruneUnreferencedSourceItems(
+  db,
+  sourceId,
+  maxRetained = MAX_RETAINED_SOURCE_ITEMS_PER_SOURCE,
+) {
+  if (!Number.isInteger(maxRetained) || maxRetained < 1) {
+    throw new TypeError("maxRetained must be a positive integer");
+  }
+  return db.prepare(`
+    DELETE FROM source_items
+    WHERE source_id = ?
+      AND id IN (
+        SELECT id FROM source_items
+        WHERE source_id = ?
+        ORDER BY COALESCE(last_seen_at, collected_at) DESC, id DESC
+        LIMIT -1 OFFSET ?
+      )
+      AND NOT EXISTS (SELECT 1 FROM event_sources WHERE event_sources.source_item_id = source_items.id)
+      AND NOT EXISTS (SELECT 1 FROM event_candidate_sources WHERE event_candidate_sources.source_item_id = source_items.id)
+      AND NOT EXISTS (SELECT 1 FROM event_candidate_evidence_reviews WHERE event_candidate_evidence_reviews.source_item_id = source_items.id)
+      AND NOT EXISTS (SELECT 1 FROM evidence_spans WHERE evidence_spans.source_item_id = source_items.id)
+  `).bind(sourceId, sourceId, maxRetained).run();
+}
+
 export async function runSourceStream(db, provider, {
   fetchImpl = globalThis.fetch,
   now = new Date(),
@@ -362,6 +387,7 @@ export async function runSourceStream(db, provider, {
       `).bind(stored.id, stream.id, item.collectedAt, item.collectedAt).run();
       acceptedCount += 1;
     }
+    await pruneUnreferencedSourceItems(db, source.id);
     await finishRun(db, runId, {
       status: "succeeded",
       finishedAt: new Date().toISOString(),

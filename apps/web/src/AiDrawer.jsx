@@ -1,0 +1,450 @@
+import React, { useEffect, useId, useRef, useState } from "react";
+import {
+  ArrowRight,
+  CaretDown,
+  ClockCounterClockwise,
+  MagnifyingGlass,
+  PaperPlaneTilt,
+  Quotes,
+  X,
+} from "@phosphor-icons/react";
+import {
+  BackendApiError,
+  backendClient,
+  clearAnalysisAttempt,
+  getAnalysisAttempt,
+  shouldClearAnalysisAttempt,
+} from "./backendClient.js";
+import { physicsEngineForTask, physicsEngineProfile } from "./physicsEngines.js";
+
+const CONFIDENCE_LABELS = { high: "높음", medium: "중간", low: "낮음" };
+const SUPPORT_LABELS = {
+  direct: "직접 뒷받침",
+  context: "맥락 참고",
+  insufficient: "근거 불충분",
+};
+const BASIS_LABELS = {
+  "provided-evidence": "분석 근거 · 제공 맥락",
+  "established-knowledge": "분석 근거 · 확립 지식",
+  inference: "분석 근거 · 추론",
+  uncertain: "분석 근거 · 불확실",
+};
+
+const MANDOS_PROFILES = [
+  { mode: "standard", title: "Mandos 3 Swift", task: "빠른 답변", trait: "요약·개념 확인" },
+  { mode: "auto", title: "Mandos 3 Core", task: "기본 분석", trait: "맥락·인과관계" },
+  { mode: "deep", title: "Mandos 3 Deep", task: "정밀 검토", trait: "교차검토·독립 검산" },
+];
+
+const DOMAIN_LABELS = { international: "국제정세", physics: "물리" };
+
+export function getMandosProfile(mode) {
+  return MANDOS_PROFILES.find((profile) => profile.mode === mode) ?? MANDOS_PROFILES[1];
+}
+
+export function getAnalysisProfile(mode, taskType = null) {
+  return physicsEngineProfile(taskType, mode) ?? getMandosProfile(mode);
+}
+
+function AnalysisVisual({ visual }) {
+  const markerId = `analysis-arrow-${useId().replaceAll(":", "")}`;
+  const items = visual.items ?? [];
+  const diagramType = ["causal-chain", "timeline", "equation-map", "concept-map", "free-body-diagram"].includes(visual.type);
+  return (
+    <section className={`analysis-visual is-${visual.type}`} aria-label={visual.title}>
+      <strong>{visual.title}</strong>
+      {diagramType ? <svg className="analysis-visual-svg" viewBox="0 0 720 220" role="img" aria-label={`${visual.title} SVG 다이어그램`}>
+        <defs><marker id={markerId} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" /></marker></defs>
+        <g className="analysis-svg-grid">{Array.from({ length: 12 }, (_, index) => <path key={`v-${index}`} d={`M ${index * 65} 0 V 220`} />)}{Array.from({ length: 5 }, (_, index) => <path key={`h-${index}`} d={`M 0 ${index * 55} H 720`} />)}</g>
+        {visual.type === "free-body-diagram" ? <>
+          <rect className="analysis-svg-object" x="315" y="82" width="90" height="58" />
+          {items.slice(0, 4).map((item, index) => {
+            const vectors = [
+              { x2: 360, y2: 24, tx: 370, ty: 35 },
+              { x2: 360, y2: 198, tx: 370, ty: 195 },
+              { x2: 515, y2: 111, tx: 480, ty: 96 },
+              { x2: 205, y2: 111, tx: 215, ty: 96 },
+            ];
+            const vector = vectors[index];
+            return <g key={`${item.label}-${index}`}><path className="analysis-svg-vector" d={`M 360 111 L ${vector.x2} ${vector.y2}`} markerEnd={`url(#${markerId})`} /><text x={vector.tx} y={vector.ty}>{item.label.slice(0, 18)}</text></g>;
+          })}
+          <text className="analysis-svg-caption" x="24" y="30">CODE-NATIVE FREE-BODY DIAGRAM</text>
+        </> : items.slice(0, 5).map((item, index) => {
+          const gap = 132;
+          const x = 22 + index * gap;
+          return <g key={`${item.label}-${index}`}>
+            {index ? <path className="analysis-svg-link" d={`M ${x - 30} 110 H ${x - 8}`} markerEnd={`url(#${markerId})`} /> : null}
+            <rect className={index === items.slice(0, 5).length - 1 ? "analysis-svg-node is-accent" : "analysis-svg-node"} x={x} y="68" width="102" height="84" />
+            <text className="analysis-svg-index" x={x + 10} y="87">{String(index + 1).padStart(2, "0")}</text>
+            <text className="analysis-svg-label" x={x + 51} y="113" textAnchor="middle">{item.label.slice(0, 14)}</text>
+          </g>;
+        })}
+      </svg> : null}
+      <ol>{items.map((item, index) => (
+        <li key={`${item.label}-${index}`}><span>{String(index + 1).padStart(2, "0")}</span><div><b>{item.label}</b><small>{item.detail}</small></div></li>
+      ))}</ol>
+    </section>
+  );
+}
+
+function AnalysisResult({ analysis, requestedMode, taskType }) {
+  const result = analysis.result;
+  if (!result) return null;
+  const resolvedTaskType = analysis.plan?.taskType ?? taskType;
+  const profile = getAnalysisProfile(analysis.requestedMode ?? analysis.mode ?? requestedMode, resolvedTaskType);
+  const evidenceById = new Map((analysis.evidence ?? []).map((item) => [item.evidenceId, item]));
+  return (
+    <article className="analysis-result" aria-labelledby="analysis-result-title">
+      <header>
+        <p className="analysis-model-label">{profile.title}</p>
+        <h3 id="analysis-result-title">{result.headline}</h3>
+        <p>{result.summary}</p>
+      </header>
+      {result.visual?.type !== "none" && result.visual?.items?.length > 0 ? <AnalysisVisual visual={result.visual} /> : null}
+      <div className="analysis-sections">
+        {result.sections?.map((section, index) => (
+          <section key={`${section.title}-${index}`}>
+            <div><h4>{section.title}</h4><span>{BASIS_LABELS[section.basis] ?? "분석 근거 · 구분 안 됨"} · 판단 확신도 {CONFIDENCE_LABELS[section.confidence] ?? "미표시"}</span></div>
+            <p>{section.content}</p>
+          </section>
+        ))}
+      </div>
+      <section className="analysis-boundary">
+        <strong>{profile.title}가 밝힌 근거 범위 · 별도 확인 필요</strong><p>{result.sourceBoundary}</p>
+      </section>
+      {result.citations?.length ? (
+        <section className="analysis-citations" aria-label="분석 근거">
+          <strong><Quotes size={16} /> 근거 ID 검증</strong>
+          <ol>{result.citations.map((citation, index) => {
+            const evidence = evidenceById.get(citation.evidenceId);
+            const locator = evidence?.snapshot?.locator;
+            const support = SUPPORT_LABELS[citation.support] ?? "근거 수준 미확인";
+            const content = <><b>{citation.claim}</b><span>{citation.locator} · {support}</span><small>{citation.evidenceId}</small></>;
+            return <li key={`${citation.evidenceId}-${index}`}>{typeof locator === "string" && locator.startsWith("https://")
+              ? <a href={locator} target="_blank" rel="noopener noreferrer" referrerPolicy="no-referrer">{content}</a>
+              : <div>{content}</div>}</li>;
+          })}</ol>
+          <p>표시된 근거가 이번 분석 자료에 포함됐는지 확인했습니다. 내용의 사실 여부는 별도 검토가 필요합니다.</p>
+        </section>
+      ) : null}
+      {result.uncertainties?.length ? (
+        <section className="analysis-list"><strong>불확실성</strong><ul>{result.uncertainties.map((item) => <li key={item}>{item}</li>)}</ul></section>
+      ) : null}
+      {result.nextQuestions?.length ? (
+        <section className="analysis-list"><strong>다음 질문</strong><ul>{result.nextQuestions.map((item) => <li key={item}>{item}</li>)}</ul></section>
+      ) : null}
+      <footer>
+        <span>{profile.title}</span>
+        <span>{profile.task} · {profile.trait}</span>
+      </footer>
+    </article>
+  );
+}
+
+function waitForPoll(delayMs, signal) {
+  return new Promise((resolve, reject) => {
+    const finish = () => {
+      signal.removeEventListener("abort", abort);
+      resolve();
+    };
+    const timeout = window.setTimeout(finish, delayMs);
+    const abort = () => {
+      window.clearTimeout(timeout);
+      signal.removeEventListener("abort", abort);
+      reject(new DOMException("Aborted", "AbortError"));
+    };
+    if (signal.aborted) abort();
+    else signal.addEventListener("abort", abort, { once: true });
+  });
+}
+
+async function resolvePendingAnalysis(initial, signal, onProgress, requestedMode) {
+  let current = initial;
+  onProgress?.(current);
+  const profileMode = current?.requestedMode ?? requestedMode;
+  // Deep can retry a specialist or synthesis once after a token-bound incomplete result.
+  // Keep polling through the Worker's 11-minute Deep recovery window.
+  const maxAttempts = profileMode === "deep" ? 330 : 45;
+  for (let attempt = 0; current?.status === "pending" && attempt < maxAttempts; attempt += 1) {
+    await waitForPoll(2000, signal);
+    current = await backendClient.getAnalysis(current.id, { signal });
+    onProgress?.(current);
+  }
+  return current;
+}
+
+export function analysisErrorNotice(error) {
+  const notices = {
+    ai_incomplete: "답변을 끝까지 만들지 못했습니다. 다시 요청해 주세요.",
+    ai_timeout: "분석 시간이 초과됐습니다. 다시 요청해 주세요.",
+    analysis_poll_timeout: "분석이 계속 진행 중입니다. 잠시 후 기록에서 확인해 주세요.",
+    ai_rate_limited: "현재 분석 요청이 많습니다. 잠시 후 다시 시도해 주세요.",
+    analysis_rate_limited: "분석 사용 한도에 도달했습니다. 잠시 후 다시 확인해 주세요.",
+    ai_refused: "이 요청은 분석할 수 없습니다. 질문을 바꿔 주세요.",
+    ai_unavailable: "분석 서비스를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+    ai_provider_unavailable: "분석 서비스에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+    ai_provider_error: "분석 서비스가 응답하지 않았습니다. 다시 시도해 주세요.",
+    ai_output_missing: "완성된 답변을 받지 못했습니다. 다시 요청해 주세요.",
+    ai_schema_mismatch: "답변 형식을 확인하지 못했습니다. 다시 요청해 주세요.",
+    analysis_evidence_mismatch: "근거 확인을 통과하지 못했습니다. 다시 요청해 주세요.",
+    analysis_citation_required: "근거가 빠진 답변은 표시하지 않았습니다. 다시 요청해 주세요.",
+    analysis_failed: "분석을 완료하지 못했습니다. 새로 요청해 주세요.",
+    analysis_stale: "이전 분석이 만료됐습니다. 새로 요청해 주세요.",
+    analysis_request_consumed: "이전 요청은 종료됐습니다. 새로 요청해 주세요.",
+    physics_file_scan_pending: "파일 안전 검사가 끝난 뒤 다시 요청해 주세요.",
+  };
+  if (notices[error?.code]) return notices[error.code];
+  if (error?.status === 429) return "현재 요청이 많습니다. 잠시 후 다시 시도해 주세요.";
+  if (error?.status >= 500) return "분석 서비스를 잠시 사용할 수 없습니다. 다시 시도해 주세요.";
+  return "분석 요청을 처리하지 못했습니다. 다시 확인해 주세요.";
+}
+
+export function AiDrawer({ analysisContext, onClose, pinned = false }) {
+  const [prompt, setPrompt] = useState(() => analysisContext.initialPrompt ?? "");
+  const [mode, setMode] = useState(() => analysisContext.defaultMode ?? "auto");
+  const [requestState, setRequestState] = useState("idle");
+  const [analysis, setAnalysis] = useState(null);
+  const [notice, setNotice] = useState("");
+  const [historyQuery, setHistoryQuery] = useState("");
+  const [historyState, setHistoryState] = useState({ status: "loading", items: [], message: "분석 기록을 불러오는 중" });
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const drawerRef = useRef(null);
+  const requestRef = useRef(null);
+  const historyRef = useRef(null);
+  const autoSubmitRef = useRef(null);
+  const physicsEngine = physicsEngineForTask(analysisContext.taskType);
+  const profileOptions = physicsEngine ? Object.values(physicsEngine.profiles) : MANDOS_PROFILES;
+  const selectedProfile = getAnalysisProfile(mode, analysisContext.taskType);
+  const drawerTitle = physicsEngine?.engineName ?? "MANDOS";
+  const drawerAriaName = physicsEngine?.engineName ?? "Mandos";
+
+  useEffect(() => { if (!pinned) drawerRef.current?.focus(); }, [pinned]);
+  useEffect(() => () => requestRef.current?.abort(), []);
+  useEffect(() => () => historyRef.current?.abort(), []);
+
+  async function loadHistory(query = "") {
+    const controller = new AbortController();
+    historyRef.current?.abort();
+    historyRef.current = controller;
+    setHistoryState((current) => ({ ...current, status: "loading", message: "분석 기록을 불러오는 중" }));
+    try {
+      const response = await backendClient.listAnalyses({ domain: analysisContext.domain, query, limit: 8, signal: controller.signal });
+      setHistoryState({ status: "ready", items: response.data ?? [], message: "" });
+    } catch (error) {
+      if (error?.name !== "AbortError") setHistoryState((current) => ({ ...current, status: "error", message: "이전 분석을 불러오지 못했습니다." }));
+    } finally {
+      if (historyRef.current === controller) historyRef.current = null;
+    }
+  }
+
+  useEffect(() => { void loadHistory(); }, [analysisContext.domain]);
+
+  async function openHistoryItem(item) {
+    const controller = new AbortController();
+    historyRef.current?.abort();
+    historyRef.current = controller;
+    try {
+      const loaded = await backendClient.getAnalysis(item.id, { signal: controller.signal });
+      setAnalysis(loaded);
+      setMode(loaded.requestedMode ?? loaded.mode ?? "auto");
+      setHistoryOpen(false);
+      setRequestState(loaded.status === "completed" ? "success" : loaded.status === "failed" ? "error" : "submitting");
+      setNotice("저장된 분석 기록을 열었습니다.");
+    } catch (error) {
+      if (error?.name !== "AbortError") setNotice("분석 기록을 열지 못했습니다. 잠시 후 다시 확인해 주세요.");
+    } finally {
+      if (historyRef.current === controller) historyRef.current = null;
+    }
+  }
+
+  function handleKeyDown(eventObject) {
+    if (eventObject.key === "Escape") {
+      if (modelMenuOpen) {
+        eventObject.preventDefault();
+        setModelMenuOpen(false);
+      } else if (historyOpen) {
+        eventObject.preventDefault();
+        setHistoryOpen(false);
+      } else if (!pinned) {
+        eventObject.preventDefault();
+        onClose();
+      }
+      return;
+    }
+    if (pinned) return;
+    if (eventObject.key !== "Tab") return;
+    const focusable = drawerRef.current?.querySelectorAll(
+      'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+    );
+    if (!focusable?.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (eventObject.shiftKey && document.activeElement === first) { eventObject.preventDefault(); last.focus(); }
+    else if (!eventObject.shiftKey && document.activeElement === last) { eventObject.preventDefault(); first.focus(); }
+  }
+
+  function updatePrompt(eventObject) {
+    const input = eventObject.currentTarget;
+    setPrompt(input.value);
+    input.style.height = "auto";
+    input.style.height = `${Math.min(input.scrollHeight, 144)}px`;
+  }
+
+  async function submit(eventObject) {
+    eventObject.preventDefault();
+    const question = prompt.trim();
+    if (!question || requestState === "submitting") {
+      if (!question) setNotice("분석할 질문을 입력하세요.");
+      return;
+    }
+    const controller = new AbortController();
+    requestRef.current?.abort();
+    requestRef.current = controller;
+    setRequestState("submitting");
+    setNotice(`${selectedProfile.title}가 질문을 분석하고 있습니다.`);
+    setAnalysis(null);
+    const payload = {
+      domain: analysisContext.domain,
+      mode,
+      ...(analysisContext.taskType ? { taskType: analysisContext.taskType } : {}),
+      prompt: question,
+      ...(analysisContext.eventId ? { eventId: analysisContext.eventId } : {}),
+      ...(analysisContext.level ? { level: analysisContext.level } : {}),
+      context: {
+        title: analysisContext.title,
+        meta: analysisContext.meta,
+        ...(analysisContext.contextKind ? { kind: analysisContext.contextKind } : {}),
+        ...(analysisContext.contextId ? { refId: analysisContext.contextId } : {}),
+      },
+    };
+    let attempt = null;
+    let clearAttempt = null;
+    let createdAnalysisId = null;
+    try {
+      let created;
+      if (analysisContext.contextKind === "physics-file" && analysisContext.contextId) {
+        attempt = await getAnalysisAttempt(payload);
+        clearAttempt = clearAnalysisAttempt;
+        created = await backendClient.createPhysicsFileAnalysis(analysisContext.contextId, payload, {
+          signal: controller.signal,
+          idempotencyKey: attempt.idempotencyKey,
+        });
+      } else {
+        attempt = await getAnalysisAttempt(payload);
+        clearAttempt = clearAnalysisAttempt;
+        created = await backendClient.createAnalysis(payload, {
+          signal: controller.signal,
+          idempotencyKey: attempt.idempotencyKey,
+        });
+      }
+      createdAnalysisId = created?.id ?? null;
+      setAnalysis(created);
+      const completed = await resolvePendingAnalysis(created, controller.signal, setAnalysis, mode);
+      if (completed?.status === "pending") {
+        throw new BackendApiError(408, "analysis_poll_timeout", "분석이 아직 진행 중입니다.");
+      }
+      if (completed?.status === "failed") {
+        throw new BackendApiError(502, completed.errorCode ?? "analysis_failed", "이전 분석 요청이 완료되지 않았습니다. 다시 시도하세요.");
+      }
+      if (attempt && clearAttempt) clearAttempt(attempt.fingerprint);
+      setAnalysis(completed);
+      setRequestState("success");
+      setNotice(`${selectedProfile.title} 분석이 완료되었습니다.`);
+      void loadHistory(historyQuery.trim());
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+      if (attempt && shouldClearAnalysisAttempt(error, { hasCreatedAnalysis: Boolean(createdAnalysisId) })) {
+        clearAttempt?.(attempt.fingerprint);
+      }
+      setRequestState("error");
+      setNotice(analysisErrorNotice(error));
+    } finally {
+      if (requestRef.current === controller) requestRef.current = null;
+    }
+  }
+
+  useEffect(() => {
+    const submissionKey = analysisContext.contextId ?? analysisContext.initialPrompt;
+    if (!analysisContext.autoSubmit || !submissionKey || autoSubmitRef.current === submissionKey) return;
+    autoSubmitRef.current = submissionKey;
+    void submit({ preventDefault() {} });
+  }, [analysisContext.contextId]);
+
+  return (
+    <div className={`drawer-layer${pinned ? " is-pinned" : ""}`} role="presentation">
+      {!pinned ? <button className="drawer-scrim" type="button" onClick={onClose} tabIndex={-1} aria-hidden="true" /> : null}
+      <aside
+        className="ai-drawer" id="ai-analysis-drawer" ref={drawerRef} role={pinned ? "complementary" : "dialog"} aria-modal={pinned ? undefined : "true"}
+        aria-labelledby="ai-analysis-title" aria-describedby="mandos-context-meta" onKeyDown={handleKeyDown} tabIndex={-1}
+      >
+        <div className="drawer-heading">
+          <h2 id="ai-analysis-title">{drawerTitle}</h2>
+          <div>
+            <button
+              className="icon-button" type="button" onClick={() => { setHistoryOpen((current) => !current); setModelMenuOpen(false); }}
+              aria-label="이전 분석 열기" aria-expanded={historyOpen} aria-controls="mandos-history-panel"
+            ><ClockCounterClockwise size={21} /></button>
+            {!pinned ? <button className="icon-button" type="button" onClick={onClose} aria-label={`${drawerAriaName} 패널 닫기`}><X size={22} /></button> : null}
+          </div>
+        </div>
+        <div className="mandos-conversation">
+          <section className="selected-context">
+            <strong>{analysisContext.title}</strong><small id="mandos-context-meta">{analysisContext.meta}</small>
+          </section>
+          {historyOpen ? <section className="analysis-history" id="mandos-history-panel" aria-label="이전 분석">
+            <header><strong>이전 분석</strong><span>{historyState.items.length}</span></header>
+            <form onSubmit={(eventObject) => { eventObject.preventDefault(); void loadHistory(historyQuery.trim()); }}>
+              <label><MagnifyingGlass size={15} /><span className="sr-only">이전 분석 검색</span><input value={historyQuery} onChange={(eventObject) => setHistoryQuery(eventObject.target.value)} maxLength={160} placeholder="질문·결과 검색" /></label>
+              <button type="submit" disabled={historyState.status === "loading"}>검색</button>
+            </form>
+            {historyState.message ? <p>{historyState.message}</p> : null}
+            <ol>{historyState.items.map((item) => {
+              const itemProfile = getAnalysisProfile(item.requestedMode ?? item.mode, item.plan?.taskType);
+              return (
+                <li key={item.id}><button type="button" onClick={() => void openHistoryItem(item)}>
+                  <span>{DOMAIN_LABELS[item.domain] ?? "분석"} · {itemProfile.title}</span><strong>{item.result?.headline ?? item.prompt}</strong><small>{new Date(item.createdAt).toLocaleString("ko-KR")}</small><ArrowRight size={14} />
+                </button></li>
+              );
+            })}</ol>
+          </section> : null}
+          {notice && <p className={`prototype-notice${requestState === "error" ? " is-error" : ""}`} role="status">{notice}</p>}
+          {analysis && <AnalysisResult analysis={analysis} requestedMode={mode} taskType={analysisContext.taskType} />}
+        </div>
+        <form className="analysis-form" onSubmit={submit} aria-busy={requestState === "submitting"}>
+          <label className="sr-only" htmlFor="analysis-prompt">{drawerAriaName}에게 질문</label>
+          <textarea
+            id="analysis-prompt" value={prompt} onChange={updatePrompt} maxLength={4000}
+            placeholder={analysisContext.placeholder} rows={2}
+          />
+          <div className="composer-toolbar">
+            <div className="mandos-mode-picker">
+              <button
+                className="mandos-mode-trigger" type="button" onClick={() => { setModelMenuOpen((current) => !current); setHistoryOpen(false); }}
+                aria-expanded={modelMenuOpen} aria-haspopup="menu" disabled={requestState === "submitting"}
+              >
+                <span><strong>{selectedProfile.title}</strong><small>{selectedProfile.task} · {selectedProfile.trait}</small></span>
+                <CaretDown size={14} aria-hidden="true" />
+              </button>
+              {modelMenuOpen ? <div className="mandos-mode-menu" role="menu" aria-label={`${drawerAriaName} 실행 모드 선택`}>
+                {profileOptions.map((profile) => (
+                  <button
+                    type="button" role="menuitemradio" aria-checked={mode === profile.mode} key={profile.mode}
+                    className={mode === profile.mode ? "is-selected" : ""}
+                    onClick={() => { setMode(profile.mode); setModelMenuOpen(false); }}
+                  ><strong>{profile.title}</strong><span>{profile.task} · {profile.trait}</span></button>
+                ))}
+              </div> : null}
+            </div>
+            <button
+              type="submit" className="analysis-submit" disabled={requestState === "submitting" || !prompt.trim()}
+              aria-label={requestState === "submitting" ? `${drawerAriaName} 분석 중` : `${drawerAriaName}에 요청`}
+            ><PaperPlaneTilt size={20} /></button>
+          </div>
+        </form>
+      </aside>
+    </div>
+  );
+}
+
+export default AiDrawer;

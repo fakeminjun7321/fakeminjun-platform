@@ -12,13 +12,27 @@ export class BackendApiError extends Error {
 const ANALYSIS_ATTEMPT_TTL_MS = 10 * 60 * 1000;
 const MAX_RETAINED_ANALYSIS_ATTEMPTS = 24;
 const analysisAttempts = new Map();
+const TERMINAL_ANALYSIS_ERROR_CODES = new Set([
+  "analysis_citation_required",
+  "analysis_evidence_mismatch",
+  "analysis_failed",
+  "analysis_request_consumed",
+  "analysis_stale",
+  "internal_error",
+  "physics_file_analysis_failed",
+  "visual_analysis_failed",
+]);
 
-async function analysisFingerprint(analysis) {
-  const canonical = JSON.stringify(analysis);
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(canonical));
+async function sha256Hex(value) {
+  const bytes = typeof value === "string" ? new TextEncoder().encode(value) : value;
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(digest)]
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
+}
+
+async function analysisFingerprint(analysis) {
+  return sha256Hex(JSON.stringify(analysis));
 }
 
 function sweepExpiredAnalysisAttempts(now) {
@@ -47,7 +61,11 @@ export function clearAnalysisAttempt(fingerprint) {
 }
 
 export function shouldClearAnalysisAttempt(error, { hasCreatedAnalysis = false } = {}) {
-  if (hasCreatedAnalysis || !(error instanceof BackendApiError)) return false;
+  if (!(error instanceof BackendApiError)) return false;
+  const terminalAnalysisFailure = TERMINAL_ANALYSIS_ERROR_CODES.has(error.code)
+    || error.code?.startsWith("ai_");
+  if (terminalAnalysisFailure) return true;
+  if (hasCreatedAnalysis) return false;
   return error.status >= 400
     && error.status < 500
     && ![408, 425, 429].includes(error.status);
@@ -76,23 +94,43 @@ function sourceItemsQuery(params = {}) {
   return encoded ? `?${encoded}` : "";
 }
 
+function eventCandidatesQuery(params = {}) {
+  const query = new URLSearchParams();
+  if (params.limit !== undefined) query.set("limit", String(params.limit));
+  if (params.reviewStatus) query.set("reviewStatus", params.reviewStatus);
+  const encoded = query.toString();
+  return encoded ? `?${encoded}` : "";
+}
+
+function analysesQuery(params = {}) {
+  const query = new URLSearchParams();
+  if (params.query?.trim()) query.set("q", params.query.trim());
+  if (params.domain) query.set("domain", params.domain);
+  if (params.status) query.set("status", params.status);
+  if (params.limit !== undefined) query.set("limit", String(params.limit));
+  const encoded = query.toString();
+  return encoded ? `?${encoded}` : "";
+}
+
 export function createBackendClient({ baseUrl = "", fetchImpl = globalThis.fetch } = {}) {
   if (typeof fetchImpl !== "function") throw new TypeError("fetchImpl must be a function");
   const base = normalizeBaseUrl(baseUrl);
 
   async function request(path, options = {}) {
-    const { returnEnvelope = false, ...fetchOptions } = options;
+    const { returnEnvelope = false, responseType = "json", ...fetchOptions } = options;
+    const isFormData = typeof FormData !== "undefined" && fetchOptions.body instanceof FormData;
     const response = await fetchImpl(`${base}${path}`, {
       credentials: "same-origin",
       ...fetchOptions,
       headers: {
-        accept: "application/json",
-        ...(fetchOptions.body === undefined ? {} : { "content-type": "application/json" }),
+        accept: responseType === "blob" ? "text/markdown, application/zip, application/octet-stream" : "application/json",
+        ...(fetchOptions.body === undefined || isFormData ? {} : { "content-type": "application/json" }),
         ...fetchOptions.headers,
       },
     });
 
     if (response.status === 204) return null;
+    if (response.ok && responseType === "blob") return response.blob();
     const body = await response.json();
     if (!response.ok) {
       const error = body?.error ?? {};
@@ -110,12 +148,112 @@ export function createBackendClient({ baseUrl = "", fetchImpl = globalThis.fetch
   return Object.freeze({
     health: () => request("/api/v1/health"),
     listEvents: (params) => request(`/api/v1/events${eventQuery(params)}`),
+    listEventsEnvelope: ({ signal, ...params } = {}) => request(
+      `/api/v1/events${eventQuery(params)}`,
+      { signal, cache: "no-cache", returnEnvelope: true },
+    ),
     listSourceItems: ({ signal, ...params } = {}) => request(
       `/api/v1/source-items${sourceItemsQuery(params)}`,
-      { signal, returnEnvelope: true },
+      { signal, cache: "no-cache", returnEnvelope: true },
+    ),
+    listEventCandidates: ({ signal, ...params } = {}) => request(
+      `/api/v1/event-candidates${eventCandidatesQuery(params)}`,
+      { signal },
+    ),
+    createEventCandidate: ({ sourceItemIds }, { signal, idempotencyKey = crypto.randomUUID() } = {}) => request(
+      "/api/v1/event-candidates",
+      {
+        method: "POST",
+        body: JSON.stringify({ sourceItemIds }),
+        headers: { "idempotency-key": idempotencyKey },
+        signal,
+      },
+    ),
+    reviewEventCandidate: (candidateId, review, { signal, idempotencyKey = crypto.randomUUID() } = {}) => request(
+      `/api/v1/event-candidates/${encodeURIComponent(candidateId)}/reviews`,
+      {
+        method: "POST",
+        body: JSON.stringify(review),
+        headers: { "idempotency-key": idempotencyKey },
+        signal,
+      },
+    ),
+    reviewCandidateEvidence: (candidateId, evidence, { signal, idempotencyKey = crypto.randomUUID() } = {}) => request(
+      `/api/v1/event-candidates/${encodeURIComponent(candidateId)}/evidence-reviews`,
+      {
+        method: "POST",
+        body: JSON.stringify(evidence),
+        headers: { "idempotency-key": idempotencyKey },
+        signal,
+      },
+    ),
+    putCandidateLocation: (candidateId, location, { signal, idempotencyKey = crypto.randomUUID() } = {}) => request(
+      `/api/v1/event-candidates/${encodeURIComponent(candidateId)}/location`,
+      {
+        method: "PUT",
+        body: JSON.stringify(location),
+        headers: { "idempotency-key": idempotencyKey },
+        signal,
+      },
+    ),
+    getCandidateReadiness: (candidateId, { signal } = {}) => request(
+      `/api/v1/event-candidates/${encodeURIComponent(candidateId)}/readiness`,
+      { signal },
+    ),
+    promoteEventCandidate: (candidateId, promotion, { signal, idempotencyKey = crypto.randomUUID() } = {}) => request(
+      `/api/v1/event-candidates/${encodeURIComponent(candidateId)}/promote`,
+      {
+        method: "POST",
+        body: JSON.stringify(promotion),
+        headers: { "idempotency-key": idempotencyKey },
+        signal,
+      },
     ),
     getEvent: (eventId) => request(`/api/v1/events/${encodeURIComponent(eventId)}`),
+    runIngestion: ({ signal } = {}) => request("/api/v1/ingestion/runs", {
+      method: "POST",
+      body: JSON.stringify({}),
+      signal,
+    }),
     session: () => request("/api/v1/session"),
+    getGoogleDriveStatus: ({ signal } = {}) => request(
+      "/api/v1/integrations/google-drive",
+      { signal },
+    ),
+    startGoogleDriveConnection: ({ signal } = {}) => request(
+      "/api/v1/integrations/google-drive/connect",
+      { method: "POST", body: JSON.stringify({}), signal },
+    ),
+    finishGoogleDriveConnection: ({ state, code, error }, { signal } = {}) => request(
+      "/api/v1/integrations/google-drive/callback",
+      {
+        method: "POST",
+        body: JSON.stringify({ state, ...(code ? { code } : {}), ...(error ? { error } : {}) }),
+        keepalive: true,
+        signal,
+      },
+    ),
+    listPhysicsDriveItems: ({ signal } = {}) => request(
+      "/api/v1/physics/drive/items",
+      { signal, returnEnvelope: true },
+    ),
+    startPhysicsDriveUpload: ({ name, byteSize }, { signal, idempotencyKey = crypto.randomUUID() } = {}) => request(
+      "/api/v1/physics/drive/uploads",
+      {
+        method: "POST",
+        body: JSON.stringify({ name, byteSize }),
+        headers: { "idempotency-key": idempotencyKey },
+        signal,
+      },
+    ),
+    completePhysicsDriveUpload: (sessionId, { driveFileId }, { signal } = {}) => request(
+      `/api/v1/physics/drive/uploads/${encodeURIComponent(sessionId)}/complete`,
+      {
+        method: "POST",
+        body: JSON.stringify({ driveFileId }),
+        signal,
+      },
+    ),
     listNotes: ({ subjectType, subjectId }) => request(
       `/api/v1/notes?${new URLSearchParams({ subjectType, subjectId: String(subjectId) })}`,
     ),
@@ -130,6 +268,49 @@ export function createBackendClient({ baseUrl = "", fetchImpl = globalThis.fetch
       method: "PUT",
       body: JSON.stringify(levels),
     }),
+    searchPhysicsResources: ({ signal, idempotencyKey = crypto.randomUUID(), type, ...params } = {}) => request(
+      "/api/v1/physics/resources/search",
+      {
+        method: "POST",
+        body: JSON.stringify({ ...params, ...(type && type !== "전체" ? { type } : {}) }),
+        headers: { "idempotency-key": idempotencyKey },
+        signal,
+        returnEnvelope: true,
+      },
+    ),
+    listPhysicsLibrary: ({ signal } = {}) => request("/api/v1/physics/library", { signal }),
+    savePhysicsResource: (resource, { signal, idempotencyKey = crypto.randomUUID() } = {}) => request(
+      "/api/v1/physics/library",
+      {
+        method: "POST",
+        body: JSON.stringify(resource),
+        headers: { "idempotency-key": idempotencyKey },
+        signal,
+      },
+    ),
+    removePhysicsResource: (resourceId, { signal } = {}) => request(
+      `/api/v1/physics/library/${encodeURIComponent(resourceId)}`,
+      { method: "DELETE", signal },
+    ),
+    exportPhysicsLibraryToObsidian: ({ signal } = {}) => request(
+      "/api/v1/physics/library/export/obsidian",
+      { signal, responseType: "blob" },
+    ),
+    listPhysicsFiles: ({ signal } = {}) => request("/api/v1/physics/files", { signal, returnEnvelope: true }),
+    uploadPhysicsFile: (file, { signal, idempotencyKey = crypto.randomUUID() } = {}) => {
+      const body = new FormData();
+      body.append("file", file);
+      return request("/api/v1/physics/files", {
+        method: "POST",
+        body,
+        headers: { "idempotency-key": idempotencyKey },
+        signal,
+      });
+    },
+    deletePhysicsFile: (fileId, { signal } = {}) => request(
+      `/api/v1/physics/files/${encodeURIComponent(fileId)}`,
+      { method: "DELETE", signal },
+    ),
     createAnalysis: (analysis, { signal, idempotencyKey = crypto.randomUUID() } = {}) => request(
       "/api/v1/analyses",
       {
@@ -138,6 +319,19 @@ export function createBackendClient({ baseUrl = "", fetchImpl = globalThis.fetch
         headers: { "idempotency-key": idempotencyKey },
         signal,
       },
+    ),
+    createPhysicsFileAnalysis: (fileId, analysis, { signal, idempotencyKey = crypto.randomUUID() } = {}) => request(
+      `/api/v1/physics/files/${encodeURIComponent(fileId)}/analyses`,
+      {
+        method: "POST",
+        body: JSON.stringify(analysis),
+        headers: { "idempotency-key": idempotencyKey },
+        signal,
+      },
+    ),
+    listAnalyses: ({ signal, ...params } = {}) => request(
+      `/api/v1/analyses${analysesQuery(params)}`,
+      { signal, returnEnvelope: true },
     ),
     getAnalysis: (analysisId, { signal } = {}) => request(
       `/api/v1/analyses/${encodeURIComponent(analysisId)}`,

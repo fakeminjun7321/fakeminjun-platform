@@ -31,5 +31,21 @@ jobs:
         if: always()
         run: npm run security:signatures
       - run: npm test
+      - run: npm run test:deployment
       - run: npm run test:backend
+      - name: Build pinned ClamAV scanner image
+        run: docker build --platform linux/amd64 --tag studio-7321-clamav:ci scanner
+      - name: Scan ClamAV container for fixed high and critical CVEs
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: studio-7321-clamav:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: 1
+          format: table
+      - name: Bundle production Workers without publishing
+        run: |
+          npx wrangler deploy --dry-run --config wrangler.frontend.production.jsonc
+          npx wrangler deploy --dry-run --config wrangler.api.production.jsonc
+          npx wrangler deploy --dry-run --config wrangler.scan.production.jsonc
       - run: npm run test:sites
