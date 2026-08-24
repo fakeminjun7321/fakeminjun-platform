@@ -24,7 +24,7 @@ const vite = await createServer({
   appType: "custom",
   logLevel: "silent",
 });
-const { App, CandidateReviewDesk } = await vite.ssrLoadModule("/src/App.jsx");
+const { App, CandidateReviewDesk, SourceInbox } = await vite.ssrLoadModule("/src/App.jsx");
 const {
   PhysicsWorkspace,
   googleDriveConnectionErrorMessage,
@@ -223,6 +223,37 @@ test("renders candidate evidence and review controls without claiming verificati
   assert.ok(html.includes('target="_blank"'));
   assert.ok(html.includes('rel="noopener noreferrer"'));
   assert.ok(!html.includes(">VERIFIED<"));
+});
+
+test("official updates expose drag and keyboard paths into Mandos", () => {
+  const html = renderToStaticMarkup(React.createElement(SourceInbox, {
+    state: {
+      status: "ready",
+      items: [{
+        id: 12,
+        title: "공식 발표를 Mandos로 보내기",
+        lane: "korea-core",
+        source: { key: "mofa", name: "대한민국 외교부" },
+        providerItemId: "press-12",
+        publishedAt: "2026-08-24T02:00:00.000Z",
+        originalUrl: "https://www.mofa.go.kr/example",
+      }],
+      checkedAt: "2026-08-24T03:00:00.000Z",
+    },
+    selectedIds: new Set(),
+    createState: { status: "idle", message: "" },
+    ingestionState: { status: "idle", message: "" },
+    onToggle() {},
+    onCreate() {},
+    onCancelCreate() {},
+    onRunIngestion() {},
+    onSendToMandos() {},
+  }));
+
+  assert.ok(html.includes('draggable="true"'));
+  assert.ok(html.includes("Mandos로"));
+  assert.ok(html.includes("Mandos에 추가"));
+  assert.ok(html.includes("업데이트 행을 Mandos 입력창으로 끌거나"));
 });
 
 test("renders promotion readiness without claiming a candidate is verified", () => {

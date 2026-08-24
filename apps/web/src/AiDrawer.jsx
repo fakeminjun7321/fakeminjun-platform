@@ -16,6 +16,7 @@ import {
   shouldClearAnalysisAttempt,
 } from "./backendClient.js";
 import { physicsEngineForTask, physicsEngineProfile } from "./physicsEngines.js";
+import { MANDOS_SOURCE_MIME, parseMandosSourceTransfer } from "./mandosSourceTransfer.js";
 
 const CONFIDENCE_LABELS = { high: "높음", medium: "중간", low: "낮음" };
 const SUPPORT_LABELS = {
@@ -199,7 +200,7 @@ export function analysisErrorNotice(error) {
   return "분석 요청을 처리하지 못했습니다. 다시 확인해 주세요.";
 }
 
-export function AiDrawer({ analysisContext, onClose, pinned = false }) {
+export function AiDrawer({ analysisContext, onClose, onSourceDrop, pinned = false }) {
   const [prompt, setPrompt] = useState(() => analysisContext.initialPrompt ?? "");
   const [mode, setMode] = useState(() => analysisContext.defaultMode ?? "auto");
   const [requestState, setRequestState] = useState("idle");
@@ -209,6 +210,7 @@ export function AiDrawer({ analysisContext, onClose, pinned = false }) {
   const [historyState, setHistoryState] = useState({ status: "loading", items: [], message: "분석 기록을 불러오는 중" });
   const [historyOpen, setHistoryOpen] = useState(false);
   const [modelMenuOpen, setModelMenuOpen] = useState(false);
+  const [sourceDropActive, setSourceDropActive] = useState(false);
   const drawerRef = useRef(null);
   const requestRef = useRef(null);
   const historyRef = useRef(null);
@@ -289,6 +291,30 @@ export function AiDrawer({ analysisContext, onClose, pinned = false }) {
     setPrompt(input.value);
     input.style.height = "auto";
     input.style.height = `${Math.min(input.scrollHeight, 144)}px`;
+  }
+
+  function acceptsSourceDrop(dataTransfer) {
+    return Array.from(dataTransfer?.types ?? []).includes(MANDOS_SOURCE_MIME);
+  }
+
+  function handleSourceDragOver(eventObject) {
+    if (!acceptsSourceDrop(eventObject.dataTransfer)) return;
+    eventObject.preventDefault();
+    eventObject.dataTransfer.dropEffect = "copy";
+    setSourceDropActive(true);
+  }
+
+  function handleSourceDragLeave(eventObject) {
+    if (eventObject.currentTarget.contains(eventObject.relatedTarget)) return;
+    setSourceDropActive(false);
+  }
+
+  function handleSourceDrop(eventObject) {
+    if (!acceptsSourceDrop(eventObject.dataTransfer)) return;
+    eventObject.preventDefault();
+    setSourceDropActive(false);
+    const source = parseMandosSourceTransfer(eventObject.dataTransfer.getData(MANDOS_SOURCE_MIME));
+    if (source) onSourceDrop?.(source);
   }
 
   async function submit(eventObject) {
@@ -411,7 +437,16 @@ export function AiDrawer({ analysisContext, onClose, pinned = false }) {
           {notice && <p className={`prototype-notice${requestState === "error" ? " is-error" : ""}`} role="status">{notice}</p>}
           {analysis && <AnalysisResult analysis={analysis} requestedMode={mode} taskType={analysisContext.taskType} />}
         </div>
-        <form className="analysis-form" onSubmit={submit} aria-busy={requestState === "submitting"}>
+        <form
+          className={`analysis-form${sourceDropActive ? " is-source-drop-target" : ""}`}
+          onSubmit={submit}
+          onDragEnter={handleSourceDragOver}
+          onDragOver={handleSourceDragOver}
+          onDragLeave={handleSourceDragLeave}
+          onDrop={handleSourceDrop}
+          aria-busy={requestState === "submitting"}
+        >
+          {sourceDropActive ? <p className="source-drop-hint" aria-hidden="true">여기에 놓아 Mandos 대화에 추가</p> : null}
           <label className="sr-only" htmlFor="analysis-prompt">{drawerAriaName}에게 질문</label>
           <textarea
             id="analysis-prompt" value={prompt} onChange={updatePrompt} maxLength={4000}
