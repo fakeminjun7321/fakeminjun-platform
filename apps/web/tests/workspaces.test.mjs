@@ -1,27 +1,28 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  IPHO_TOPICS,
   PHYSICS_RESOURCES,
-  PHYSICS_TOOLS,
   filterPhysicsResources,
 } from "../src/physicsData.js";
+import { PHYSICS_AI_ENGINES, physicsEngineForTask, physicsEngineProfile } from "../src/physicsEngines.js";
 import { PHYSICS_SCAN_POLL_INTERVAL_MS, startPhysicsScanPolling } from "../src/physicsScanPolling.js";
 
-test("physics workspace exposes all seven selected exploration modes", () => {
-  assert.equal(PHYSICS_TOOLS.length, 7);
-  assert.deepEqual(PHYSICS_TOOLS.map(({ code }) => code), ["01", "02", "03", "04", "05", "06", "07"]);
-  assert.equal(new Set(PHYSICS_TOOLS.map(({ id }) => id)).size, PHYSICS_TOOLS.length);
-  assert.ok(PHYSICS_TOOLS.every(({ input, output, example }) => input.trim() && output.trim() && example.trim()));
+test("physics workspace exposes dedicated P.S. and T.E. AI contracts", () => {
+  assert.deepEqual(Object.keys(PHYSICS_AI_ENGINES), ["ps", "te"]);
+  assert.equal(PHYSICS_AI_ENGINES.ps.engineName, "AXIOM S1");
+  assert.equal(PHYSICS_AI_ENGINES.te.engineName, "THEORIA T1");
+  assert.equal(PHYSICS_AI_ENGINES.ps.taskType, "physics-problem-solving");
+  assert.equal(PHYSICS_AI_ENGINES.te.taskType, "physics-theory-explanation");
+  assert.equal(physicsEngineForTask("physics-problem-solving"), PHYSICS_AI_ENGINES.ps);
+  assert.equal(physicsEngineProfile("physics-theory-explanation", "deep").title, "THEORIA T1");
+  assert.ok(Object.values(PHYSICS_AI_ENGINES).every(({ example, placeholder, steps }) => example.trim() && placeholder.trim() && steps.length === 5));
 });
 
-test("physics resources use unique HTTPS links and include official KPhO and IPhO sources", () => {
+test("physics resources use unique HTTPS links without olympiad navigation seeds", () => {
   assert.equal(new Set(PHYSICS_RESOURCES.map(({ id }) => id)).size, PHYSICS_RESOURCES.length);
   assert.ok(PHYSICS_RESOURCES.every(({ href }) => href.startsWith("https://")));
-  assert.ok(PHYSICS_RESOURCES.some(({ id }) => id === "kpho-official"));
-  assert.ok(PHYSICS_RESOURCES.some(({ id }) => id === "ipho-problems"));
   assert.ok(PHYSICS_RESOURCES.some(({ provider }) => provider === "MIT OpenCourseWare"));
-  assert.equal(IPHO_TOPICS.length, 6);
+  assert.ok(!PHYSICS_RESOURCES.some(({ id, title }) => /kpho|ipho/i.test(`${id} ${title}`)));
 });
 
 test("physics resource filters combine query, type, and saved state", () => {
@@ -29,10 +30,7 @@ test("physics resource filters combine query, type, and saved state", () => {
     filterPhysicsResources(PHYSICS_RESOURCES, { query: "전자기학" }).map(({ id }) => id),
     ["mit-802"],
   );
-  assert.deepEqual(
-    filterPhysicsResources(PHYSICS_RESOURCES, { type: "기출문제" }).map(({ id }) => id),
-    ["ipho-problems"],
-  );
+  assert.deepEqual(filterPhysicsResources(PHYSICS_RESOURCES, { type: "기출문제" }), []);
   assert.ok(filterPhysicsResources(PHYSICS_RESOURCES, { savedOnly: true }).every(({ saved }) => saved));
 });
 

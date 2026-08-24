@@ -127,7 +127,7 @@ test("frontend guard never serves the SPA shell for a missing API route", async 
   assert.equal((await apiResponse.json()).error.code, "api_route_unavailable");
   assert.equal(assetFetches, 0);
 
-  const appResponse = await frontend.fetch(new Request("https://fakeminjun.vip/physics/learn"), env);
+  const appResponse = await frontend.fetch(new Request("https://fakeminjun.vip/physics/drive"), env);
   assert.equal(appResponse.status, 200);
   assert.equal(await appResponse.text(), "asset");
   assert.equal(assetFetches, 1);

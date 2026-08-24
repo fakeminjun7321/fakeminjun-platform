@@ -30,20 +30,26 @@ const ROUTES = {
   map: "/international/map",
   briefing: "/international/briefing",
   issues: "/international/issues",
-  physics: "/physics/learn",
-  library: "/physics/library",
-  finder: "/physics/find",
-  ipho: "/physics/ipho",
+  drive: "/physics/drive",
+  ps: "/physics/ps",
+  te: "/physics/te",
+};
+
+const LEGACY_PHYSICS_ROUTES = {
+  "/physics/learn": "drive",
+  "/physics/library": "drive",
+  "/physics/find": "drive",
+  "/physics/ipho": "drive",
 };
 
 const DOMAIN_ROUTES = {
   international: ["map", "briefing", "issues"],
-  physics: ["physics", "library", "finder", "ipho"],
+  physics: ["drive", "ps", "te"],
 };
 
 const DOMAIN_META = {
   international: { label: "국제정세", title: "국제정세 분석 워크스페이스", entry: "map" },
-  physics: { label: "물리", title: "물리 학습 워크스페이스", entry: "physics" },
+  physics: { label: "물리", title: "물리 연구 워크스페이스", entry: "drive" },
 };
 
 const SUBNAV_ITEMS = {
@@ -53,10 +59,9 @@ const SUBNAV_ITEMS = {
     { id: "issues", label: "이슈 추적" },
   ],
   physics: [
-    { id: "physics", label: "학습 허브" },
-    { id: "library", label: "자료 보관소" },
-    { id: "finder", label: "자료 찾기" },
-    { id: "ipho", label: "KPhO · IPhO" },
+    { id: "drive", label: "Drive" },
+    { id: "ps", label: "P.S." },
+    { id: "te", label: "T.E." },
   ],
 };
 
@@ -92,7 +97,9 @@ const TRACKED_ISSUES = [
 ];
 
 function routeFromPath(pathname) {
-  return Object.entries(ROUTES).find(([, path]) => pathname === path)?.[0] ?? "map";
+  return Object.entries(ROUTES).find(([, path]) => pathname === path)?.[0]
+    ?? LEGACY_PHYSICS_ROUTES[pathname]
+    ?? "map";
 }
 
 function domainFromRoute(route) {
@@ -923,7 +930,7 @@ export function App() {
 
   useEffect(() => {
     document.title = domain === "physics"
-      ? "물리 학습 워크스페이스 · 데모"
+      ? "물리 연구 워크스페이스 · STUDIO 7321"
       : "국제정세 분석 워크스페이스 · 데모";
   }, [domain]);
 
@@ -941,14 +948,38 @@ export function App() {
 
   const defaultAnalysisContext = useMemo(() => {
     if (domain === "physics") {
+      if (route === "ps") {
+        return {
+          domain: "physics",
+          level: PHYSICS_ANALYSIS_LEVEL,
+          taskType: "physics-problem-solving",
+          contextKind: "physics-problem",
+          contextId: "ps-workbench",
+          title: "P.S. 문제풀이",
+          meta: `AXIOM S1 · ${PHYSICS_PROFILE_SUMMARY}`,
+          placeholder: "문제 조건과 구해야 하는 값을 그대로 입력하세요.",
+        };
+      }
+      if (route === "te") {
+        return {
+          domain: "physics",
+          level: PHYSICS_ANALYSIS_LEVEL,
+          taskType: "physics-theory-explanation",
+          contextKind: "physics-theory",
+          contextId: "te-workbench",
+          title: "T.E. 이론설명",
+          meta: `THEORIA T1 · ${PHYSICS_PROFILE_SUMMARY}`,
+          placeholder: "설명받고 싶은 이론, 개념 또는 수식을 입력하세요.",
+        };
+      }
       return {
         domain: "physics",
         level: PHYSICS_ANALYSIS_LEVEL,
-        contextKind: "physics-workspace",
-        contextId: "current",
-        title: "물리 학습 워크스페이스",
-        meta: `물리 워크스페이스 · ${PHYSICS_PROFILE_SUMMARY}`,
-        placeholder: "개념과 수학적 구조를 분리해서 단계적으로 설명해줘.",
+        contextKind: "physics-drive",
+        contextId: "drive-workspace",
+        title: "Drive 물리 자료",
+        meta: `Drive 자료 워크스페이스 · ${PHYSICS_PROFILE_SUMMARY}`,
+        placeholder: "선택한 자료의 핵심 구조와 읽기 순서를 설명해줘.",
       };
     }
     return {
@@ -970,7 +1001,14 @@ export function App() {
     const syncRouteToPath = () => {
       const nextRoute = routeFromPath(window.location.pathname);
       const canonicalPath = ROUTES[nextRoute];
-      if (window.location.pathname !== canonicalPath) window.history.replaceState({}, "", canonicalPath);
+      const search = window.location.search ?? "";
+      const callback = new URLSearchParams(search);
+      const isGoogleCallback = window.location.pathname === "/physics/library"
+        && callback.has("state")
+        && (callback.has("code") || callback.has("error"));
+      if (!isGoogleCallback && window.location.pathname !== canonicalPath) {
+        window.history.replaceState({}, "", `${canonicalPath}${search}`);
+      }
       setRoute(nextRoute);
     };
     syncRouteToPath();
@@ -1287,7 +1325,7 @@ export function App() {
         {domain === "physics" && (
           <Suspense fallback={<main className="focused-workspace workspace-loading" role="status">물리 작업공간을 불러오는 중입니다.</main>}>
             <PhysicsWorkspace
-              view={{ library: "library", finder: "finder", ipho: "ipho" }[route] ?? "learn"}
+              view={route}
               onOpenAi={openAi}
               onNotice={showNotice}
             />
