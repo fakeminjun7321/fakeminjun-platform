@@ -19,6 +19,7 @@ import {
 } from "./internationalRefresh.js";
 import { buildOfficialIssueTracks } from "./internationalIssues.js";
 import { CATEGORY_META, STATUS_META, getTopSignals } from "./mapLayers.js";
+import { buildOfficialObservations } from "./officialObservations.js";
 import { PHYSICS_ANALYSIS_LEVEL, PHYSICS_PROFILE_SUMMARY } from "./physicsProfile.js";
 
 const AiDrawer = lazy(() => import("./AiDrawer.jsx"));
@@ -922,6 +923,7 @@ export function App() {
   const candidateReviewRef = useRef(null);
   const candidateReviewAttemptRef = useRef(null);
   const topSignals = useMemo(() => getTopSignals(mapEventState.items, 3), [mapEventState.items]);
+  const officialObservations = useMemo(() => buildOfficialObservations(sourceState.items), [sourceState.items]);
   const selectedEvent = mapEventState.items.find((event) => String(event.id) === String(selectedId))
     ?? EVENTS.find((event) => String(event.id) === String(selectedId))
     ?? mapEventState.items[0]
@@ -1044,7 +1046,7 @@ export function App() {
     return () => controller.abort();
   }, [domain, mapRefreshVersion]);
   useEffect(() => {
-    if (!["briefing", "issues"].includes(route)) return undefined;
+    if (!["map", "briefing", "issues"].includes(route)) return undefined;
     const controller = new AbortController();
     setSourceState((current) => ({
       ...current,
@@ -1086,7 +1088,7 @@ export function App() {
     return startVisibleRefresh({
       onRefresh: () => {
         setMapRefreshVersion((version) => version + 1);
-        if (["briefing", "issues"].includes(route)) setSourceRefreshVersion((version) => version + 1);
+        if (["map", "briefing", "issues"].includes(route)) setSourceRefreshVersion((version) => version + 1);
       },
     });
   }, [domain, route]);
@@ -1284,8 +1286,18 @@ export function App() {
         {route === "map" && (
           <main className="situation-map-page">
             <Suspense fallback={<div className="workspace-loading" role="status">상황지도를 불러오는 중입니다.</div>}>
-              <WorldSituationMap events={mapEventState.items} selectedEvent={selectedEvent} selectionActive={selectedId !== null} dataStatus={mapEventState.dataStatus} onSelect={setSelectedId}
-                onOpenIssues={() => openIssues(selectedEvent.id)} onOpenAi={() => openAi()} />
+              <WorldSituationMap
+                events={mapEventState.items}
+                observations={officialObservations}
+                selectedEvent={selectedEvent}
+                selectionActive={selectedId !== null}
+                dataStatus={mapEventState.dataStatus}
+                sourceStatus={sourceState.status}
+                onSelect={setSelectedId}
+                onOpenIssues={() => openIssues(selectedEvent.id)}
+                onOpenOfficialIssues={() => navigate("issues")}
+                onOpenAi={() => openAi()}
+              />
             </Suspense>
             <TodaySignalsPanel events={topSignals} selectedId={selectedId} onSelect={setSelectedId}
               onOpenBriefing={() => navigate("briefing")} />

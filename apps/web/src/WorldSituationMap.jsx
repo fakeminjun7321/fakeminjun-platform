@@ -22,11 +22,20 @@ import {
   getEventRelations,
   relationsToFeatureCollection,
 } from "./mapLayers.js";
+import { observationsToFeatureCollection } from "./officialObservations.js";
 
 const MAP_STYLE_URL = "https://tiles.openfreemap.org/styles/dark";
 const MAP_FONT_STACK = ["Noto Sans Regular"];
 const KOREA_VIEW = Object.freeze({ center: [126.98, 37.56], zoom: 4.8 });
 const MAP_VIEW_STORAGE_KEY = "intel-workspace:international-map-view";
+const OBSERVATION_TIME_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
+  timeZone: "Asia/Seoul",
+  month: "numeric",
+  day: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
 const KOREAN_LABEL_LAYERS = Object.freeze([
   "water_name",
   "highway_name_other",
@@ -43,6 +52,7 @@ const KOREAN_LABEL_LAYERS = Object.freeze([
 ]);
 
 const LAYERS = [
+  { id: "official-observations", label: "공식 관측", icon: GlobeHemisphereWest },
   { id: "korea-core", label: "한국 핵심", icon: Crosshair },
   { id: "us-impact", label: "미국 영향", icon: GlobeHemisphereWest },
   { id: "rapid-change", label: "기타 급변", icon: ChartLineUp },
@@ -58,6 +68,11 @@ function formatCoordinate(value, positive, negative) {
   const minutes = Math.floor(minutesFloat);
   const seconds = Math.floor((minutesFloat - minutes) * 60);
   return `${degrees}° ${String(minutes).padStart(2, "0")}′ ${String(seconds).padStart(2, "0")}″ ${value >= 0 ? positive : negative}`;
+}
+
+function formatObservationTime(value) {
+  const date = new Date(value ?? 0);
+  return Number.isNaN(date.getTime()) ? "시각 미상" : OBSERVATION_TIME_FORMATTER.format(date);
 }
 
 function getVisibleEvents(events, activeLayers) {
@@ -127,7 +142,53 @@ function localizeBasemapLabels(map) {
   });
 }
 
-function addIntelligenceLayers(map, events) {
+function addIntelligenceLayers(map, events, observations) {
+  map.addSource("official-observations", {
+    type: "geojson",
+    data: observationsToFeatureCollection(observations),
+  });
+
+  map.addLayer({
+    id: "official-observation-halos",
+    type: "circle",
+    source: "official-observations",
+    paint: {
+      "circle-radius": ["interpolate", ["linear"], ["get", "count"], 1, 17, 5, 26, 20, 38],
+      "circle-color": "#69c6c2",
+      "circle-opacity": 0.09,
+      "circle-stroke-color": "#69c6c2",
+      "circle-stroke-width": 1,
+      "circle-stroke-opacity": 0.28,
+    },
+  });
+
+  map.addLayer({
+    id: "official-observation-points",
+    type: "circle",
+    source: "official-observations",
+    paint: {
+      "circle-radius": ["interpolate", ["linear"], ["get", "count"], 1, 6, 5, 9, 20, 13],
+      "circle-color": "#163f46",
+      "circle-opacity": 0.9,
+      "circle-stroke-color": "#79cbc7",
+      "circle-stroke-width": 1.5,
+    },
+  });
+
+  map.addLayer({
+    id: "official-observation-counts",
+    type: "symbol",
+    source: "official-observations",
+    layout: {
+      "text-field": ["to-string", ["get", "count"]],
+      "text-font": MAP_FONT_STACK,
+      "text-size": 9,
+      "text-allow-overlap": true,
+      "text-ignore-placement": true,
+    },
+    paint: { "text-color": "#e3f4f2" },
+  });
+
   map.addSource("events", {
     type: "geojson",
     data: eventsToFeatureCollection(events),
@@ -238,10 +299,22 @@ function addIntelligenceLayers(map, events) {
   });
 }
 
-export function WorldSituationMap({ events, selectedEvent, selectionActive, dataStatus = "non-live-demo", onSelect, onOpenIssues, onOpenAi }) {
+export function WorldSituationMap({
+  events,
+  observations = [],
+  selectedEvent,
+  selectionActive,
+  dataStatus = "non-live-demo",
+  sourceStatus = "idle",
+  onSelect,
+  onOpenIssues,
+  onOpenOfficialIssues,
+  onOpenAi,
+}) {
   const mapContainerRef = useRef(null);
   const mapRef = useRef(null);
   const eventsRef = useRef(events);
+  const observationsRef = useRef(observations);
   const onSelectRef = useRef(onSelect);
   const previousEventIdRef = useRef(selectedEvent.id);
   const previousSelectionActiveRef = useRef(selectionActive);
@@ -253,8 +326,10 @@ export function WorldSituationMap({ events, selectedEvent, selectionActive, data
   const [cursorCoordinate, setCursorCoordinate] = useState(selectedEvent.coordinates);
   const [camera, setCamera] = useState({ ...KOREA_VIEW, bearing: 0 });
   const [popoverOpen, setPopoverOpen] = useState(() => !window.matchMedia("(max-width: 600px)").matches);
+  const [selectedObservationId, setSelectedObservationId] = useState(null);
 
   eventsRef.current = events;
+  observationsRef.current = observations;
   useEffect(() => { onSelectRef.current = onSelect; }, [onSelect]);
 
   useEffect(() => {
@@ -311,8 +386,16 @@ export function WorldSituationMap({ events, selectedEvent, selectionActive, data
     const handleEventClick = (event) => {
       const feature = event.features?.[0];
       if (!feature) return;
+      setSelectedObservationId(null);
       onSelectRef.current(Number(feature.properties.id));
       setPopoverOpen(true);
+    };
+    const handleObservationClick = (event) => {
+      const feature = event.features?.[0];
+      if (!feature) return;
+      setSelectedObservationId(String(feature.properties.id));
+      setPopoverOpen(false);
+      setCursorCoordinate(feature.geometry.coordinates);
     };
     const showPointer = () => { map.getCanvas().style.cursor = "pointer"; };
     const restorePointer = () => { map.getCanvas().style.cursor = ""; };
@@ -321,7 +404,7 @@ export function WorldSituationMap({ events, selectedEvent, selectionActive, data
       styleBooted = true;
       window.clearTimeout(styleTimeout);
       localizeBasemapLabels(map);
-      addIntelligenceLayers(map, eventsRef.current);
+      addIntelligenceLayers(map, eventsRef.current, observationsRef.current);
       setMapReady(true);
       setMapStatus("loading");
       resourceTimeout = window.setTimeout(() => {
@@ -346,10 +429,13 @@ export function WorldSituationMap({ events, selectedEvent, selectionActive, data
     map.on("moveend", updateCamera);
     map.on("click", "event-clusters", handleClusterClick);
     map.on("click", "event-points", handleEventClick);
+    map.on("click", "official-observation-points", handleObservationClick);
     map.on("mouseenter", "event-clusters", showPointer);
     map.on("mouseleave", "event-clusters", restorePointer);
     map.on("mouseenter", "event-points", showPointer);
     map.on("mouseleave", "event-points", restorePointer);
+    map.on("mouseenter", "official-observation-points", showPointer);
+    map.on("mouseleave", "official-observation-points", restorePointer);
 
     return () => {
       window.clearTimeout(styleTimeout);
@@ -359,6 +445,17 @@ export function WorldSituationMap({ events, selectedEvent, selectionActive, data
       mapRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    if (!mapReady) return;
+    const map = mapRef.current;
+    map?.getSource("official-observations")?.setData(observationsToFeatureCollection(observations));
+    const visibility = activeLayers.has("official-observations") ? "visible" : "none";
+    ["official-observation-halos", "official-observation-points", "official-observation-counts"].forEach((layerId) => {
+      if (map?.getLayer(layerId)) map.setLayoutProperty(layerId, "visibility", visibility);
+    });
+    if (!observations.some(({ id }) => String(id) === String(selectedObservationId))) setSelectedObservationId(null);
+  }, [activeLayers, mapReady, observations, selectedObservationId]);
 
   useEffect(() => {
     if (!mapReady) return;
@@ -393,8 +490,13 @@ export function WorldSituationMap({ events, selectedEvent, selectionActive, data
   }, [activeLayers, mapReady, selectedEvent, selectionActive]);
 
   const relation = useMemo(() => getEventRelations(selectedEvent)[0], [selectedEvent]);
+  const selectedObservation = useMemo(() => (
+    observations.find(({ id }) => String(id) === String(selectedObservationId)) ?? null
+  ), [observations, selectedObservationId]);
+  const observationRegionCount = observations.length;
 
   function toggleLayer(id) {
+    if (id === "official-observations") setSelectedObservationId(null);
     setActiveLayers((current) => {
       const next = new Set(current);
       if (next.has(id)) next.delete(id);
@@ -440,10 +542,11 @@ export function WorldSituationMap({ events, selectedEvent, selectionActive, data
       <div className="maplibre-map" ref={mapContainerRef} aria-label="확대와 이동이 가능한 오픈소스 지도" />
       <div className="map-data-cluster" aria-label="지도 데이터 상태">
         {mapStatus === "ready" ? "지도 준비됨" : mapStatus === "degraded" ? "일부 지도 지연" : mapStatus === "error" ? "지도 연결 오류" : "지도 불러오는 중"}
-        <span>·</span> 신호 {events.length} <span>·</span> {dataStatus === "non-live-demo" || dataStatus === "fallback-demo" ? "데모 자료" : dataStatus === "mixed" ? "실제·데모 혼합" : "수집 자료"} <span>·</span> OpenStreetMap 기반
+        <span>·</span> 사건 {events.length}건({dataStatus === "non-live-demo" || dataStatus === "fallback-demo" ? "데모" : dataStatus === "mixed" ? "혼합" : "검토"})
+        <span>·</span> 공식 관측 {observationRegionCount}개 지역({sourceStatus === "error" ? "불러오기 실패" : "검증 전"}) <span>·</span> OpenStreetMap 기반
       </div>
       <div className={`map-mobile-status is-${mapStatus}`} role="status">
-        {mapStatus === "ready" ? "지도 준비됨" : mapStatus === "degraded" ? "일부 지연" : mapStatus === "error" ? "연결 오류" : "불러오는 중"}
+        {mapStatus === "ready" ? "지도 준비됨" : mapStatus === "degraded" ? "일부 지연" : mapStatus === "error" ? "연결 오류" : "불러오는 중"} · 관측 {observationRegionCount}개 지역
       </div>
 
       <div className="layer-controls" aria-label="지도 레이어">
@@ -496,6 +599,28 @@ export function WorldSituationMap({ events, selectedEvent, selectionActive, data
             <button type="button" onClick={onOpenIssues}>이슈 분석 보기 <ArrowSquareOut size={16} /></button>
             <button type="button" onClick={onOpenAi}><Brain size={17} /> Mandos에 묻기</button>
           </div>
+        </section>
+      )}
+
+      {selectedObservation && activeLayers.has("official-observations") && (
+        <section className="official-observation-popover" aria-label={`${selectedObservation.label} 공식 관측`}>
+          <button className="popover-close" type="button" onClick={() => setSelectedObservationId(null)} aria-label="공식 관측 닫기"><X size={18} /></button>
+          <div className="observation-popover-heading">
+            <span>공식 관측 · 사건 검증 전</span>
+            <strong>{selectedObservation.label} 관련 발표 {selectedObservation.count}건</strong>
+          </div>
+          <p>공식 발표 제목에서 지역명이 직접 확인된 자료를 묶었습니다. 원의 위치는 지역 중심점이며 사건 발생 위치가 아닙니다.</p>
+          <ol>
+            {selectedObservation.items.map((item) => (
+              <li key={item.id ?? item.originalUrl}>
+                <a href={item.originalUrl} target="_blank" rel="noopener noreferrer">
+                  <span>{item.title}</span><ArrowSquareOut size={14} aria-hidden="true" />
+                </a>
+                <small>{item.source?.name ?? "공식 출처"} · {formatObservationTime(item.publishedAt ?? item.collectedAt)}</small>
+              </li>
+            ))}
+          </ol>
+          <button className="observation-issues-link" type="button" onClick={onOpenOfficialIssues}>이슈 추적에서 함께 보기 <ArrowSquareOut size={15} /></button>
         </section>
       )}
     </section>

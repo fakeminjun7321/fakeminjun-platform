@@ -662,6 +662,97 @@ p { margin-block: 0; }
   box-shadow: 0 18px 56px rgba(0, 0, 0, 0.38);
 }
 
+.official-observation-popover {
+  position: absolute;
+  z-index: 9;
+  right: 156px;
+  bottom: 34px;
+  width: min(470px, calc(100% - 520px));
+  padding: 18px 20px;
+  border: 1px solid rgba(76, 118, 122, 0.9);
+  border-left: 3px solid #69c6c2;
+  border-radius: 12px;
+  color: var(--text);
+  background: rgba(8, 12, 14, 0.985);
+  box-shadow: 0 18px 56px rgba(0, 0, 0, 0.38);
+}
+
+.observation-popover-heading {
+  display: grid;
+  gap: 5px;
+  padding-right: 42px;
+}
+
+.observation-popover-heading span {
+  color: #79cbc7;
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.observation-popover-heading strong {
+  color: #edf2f1;
+  font-family: var(--display);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.official-observation-popover > p {
+  margin: 10px 0 0;
+  color: var(--text-soft);
+  font-size: 11px;
+  line-height: 1.65;
+}
+
+.official-observation-popover ol {
+  max-height: 168px;
+  margin: 13px 0 0;
+  padding: 0;
+  overflow-y: auto;
+  border-top: 1px solid var(--line);
+  list-style: none;
+}
+
+.official-observation-popover li {
+  display: grid;
+  gap: 3px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.official-observation-popover li a {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  color: #dce5e3;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.45;
+  text-decoration: none;
+}
+
+.official-observation-popover li a:hover { color: #aee0dd; }
+.official-observation-popover li a svg { flex: 0 0 auto; margin-top: 2px; color: #69c6c2; }
+.official-observation-popover li small { color: var(--faint); font-family: var(--mono); font-size: 9px; }
+
+.observation-issues-link {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  margin: 8px 0 0 auto;
+  border: 0;
+  color: #add8d5;
+  background: transparent;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.observation-issues-link:hover { color: #fff; }
+
 .popover-close {
   position: absolute;
   top: 10px;
@@ -2375,6 +2466,7 @@ mjx-container {
   .as-of { display: none; }
   .ai-trigger { min-width: 136px; margin-right: 12px; }
   .event-popover { right: 148px; width: min(560px, calc(100% - 500px)); }
+  .official-observation-popover { right: 148px; width: min(470px, calc(100% - 500px)); }
   .physics-hub-layout { grid-template-columns: 220px minmax(0, 1fr); }
   .physics-quick-resources {
     grid-column: 1 / -1;
@@ -2434,7 +2526,8 @@ mjx-container {
   .map-controls button:last-child { border-bottom: 0; }
   .map-camera-readout,
   .coordinate-readout { display: none; }
-  .event-popover { right: 72px; bottom: 18px; width: min(560px, calc(100% - 100px)); }
+  .event-popover,
+  .official-observation-popover { right: 72px; bottom: 18px; width: min(560px, calc(100% - 100px)); }
   .briefing-workspace { padding-inline: 20px; }
   .issues-workspace { grid-template-columns: 250px minmax(0, 1fr); }
   .evidence-grid { grid-template-columns: 1fr; }
@@ -2501,11 +2594,18 @@ mjx-container {
     min-height: 0;
     padding: 17px;
   }
+  .official-observation-popover {
+    right: 12px;
+    bottom: 14px;
+    left: 12px;
+    width: auto;
+    padding: 16px;
+  }
   .event-popover h2 { font-size: 22px; }
   .event-popover > p { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
   .event-popover .relation-label { display: none; }
   .map-controls { bottom: 70px; }
-  .map-frame:has(.event-popover) .map-controls { bottom: 252px; }
+  .map-frame:has(.event-popover, .official-observation-popover) .map-controls { bottom: 252px; }
   .maplibre-map .maplibregl-ctrl-bottom-right { bottom: 2px; }
   .maplibre-map .maplibregl-ctrl-attrib { max-width: calc(100vw - 22px); font-size: 10px; }
   .briefing-workspace { padding: 24px 14px 44px; }
