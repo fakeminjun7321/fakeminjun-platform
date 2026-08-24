@@ -1,9 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowRight,
   ArrowSquareOut,
   BookmarkSimple,
-  Brain,
   DownloadSimple,
   FileArrowUp,
   FileText,
@@ -14,7 +12,7 @@ import {
 } from "@phosphor-icons/react";
 import { backendClient } from "./backendClient.js";
 import { filterPhysicsResources } from "./physicsData.js";
-import { PHYSICS_AI_ENGINES } from "./physicsEngines.js";
+import { PhysicsCanvasWorkspace } from "./PhysicsCanvasWorkspace.jsx";
 import { PHYSICS_ANALYSIS_LEVEL, PHYSICS_PROFILE_SUMMARY } from "./physicsProfile.js";
 import { startPhysicsScanPolling } from "./physicsScanPolling.js";
 import {
@@ -948,106 +946,10 @@ function DrivePage({ onOpenAi, onNotice }) {
   );
 }
 
-function EngineDiagram({ engine }) {
-  const isProblemSolver = engine.id === "ps";
-  return (
-    <svg className="physics-engine-diagram" viewBox="0 0 720 260" role="img" aria-label={`${engine.engineName} 코드 기반 SVG 출력 예시`}>
-      <defs>
-        <marker id={`${engine.id}-arrow`} viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-          <path d="M 0 0 L 10 5 L 0 10 z" />
-        </marker>
-      </defs>
-      <g className="diagram-grid">
-        {Array.from({ length: 12 }, (_, index) => <path key={`v-${index}`} d={`M ${index * 65} 0 V 260`} />)}
-        {Array.from({ length: 6 }, (_, index) => <path key={`h-${index}`} d={`M 0 ${index * 52} H 720`} />)}
-      </g>
-      {isProblemSolver ? <>
-        <path className="diagram-plane" d="M 125 195 L 540 195 L 360 82 Z" />
-        <rect className="diagram-object" x="326" y="111" width="74" height="52" transform="rotate(28 363 137)" />
-        <path className="diagram-vector" d="M 363 137 L 363 48" markerEnd={`url(#${engine.id}-arrow)`} />
-        <path className="diagram-vector" d="M 363 137 L 363 225" markerEnd={`url(#${engine.id}-arrow)`} />
-        <path className="diagram-vector is-accent" d="M 363 137 L 500 201" markerEnd={`url(#${engine.id}-arrow)`} />
-        <text x="374" y="62">N</text><text x="373" y="222">mg</text><text x="488" y="188">ma</text>
-        <text className="diagram-caption" x="36" y="36">FREE-BODY / EQUATION MAP</text>
-      </> : <>
-        {engine.steps.map((step, index) => {
-          const x = 34 + index * 136;
-          return <g key={step}>
-            {index ? <path className="diagram-link" d={`M ${x - 34} 130 H ${x - 8}`} markerEnd={`url(#${engine.id}-arrow)`} /> : null}
-            <rect className={index === 2 ? "diagram-node is-accent" : "diagram-node"} x={x} y="94" width="102" height="72" />
-            <text className="diagram-node-index" x={x + 10} y="112">{String(index + 1).padStart(2, "0")}</text>
-            <text className="diagram-node-label" x={x + 51} y="137" textAnchor="middle">{step}</text>
-          </g>;
-        })}
-        <text className="diagram-caption" x="34" y="36">CONCEPT / EQUATION MAP</text>
-      </>}
-    </svg>
-  );
-}
-
-function PhysicsEngineWorkspace({ engine, onOpenAi }) {
-  const [prompt, setPrompt] = useState("");
-  const [mode, setMode] = useState("auto");
-  const selectedProfile = engine.profiles[mode];
-
-  function submit(event) {
-    event.preventDefault();
-    const question = prompt.trim();
-    if (!question) return;
-    onOpenAi({
-      level: PHYSICS_ANALYSIS_LEVEL,
-      taskType: engine.taskType,
-      contextKind: engine.contextKind,
-      contextId: `${engine.id}-${crypto.randomUUID()}`,
-      title: engine.title,
-      meta: `${engine.engineName} · ${selectedProfile.task} · ${PHYSICS_PROFILE_SUMMARY}`,
-      placeholder: engine.placeholder,
-      initialPrompt: question,
-      defaultMode: mode,
-      autoSubmit: true,
-    });
+export function PhysicsWorkspace({ view, onOpenAi, onNotice, onNavigate, analysisContext }) {
+  if (view === "workspace") {
+    return <PhysicsCanvasWorkspace analysisContext={analysisContext} onNavigate={onNavigate} onNotice={onNotice} />;
   }
-
-  return (
-    <main className={`focused-workspace domain-workspace physics-workspace physics-engine-workspace is-${engine.id}`}>
-      <PhysicsHeading title={engine.title} description={engine.description} countLabel={engine.engineName} />
-      <div className="physics-engine-layout">
-        <form className="physics-engine-composer" onSubmit={submit}>
-          <header><div><span>PHYSICS ENGINE</span><h3>{engine.engineName}</h3></div><strong>{selectedProfile.task}</strong></header>
-          <label htmlFor={`${engine.id}-prompt`}>{engine.id === "ps" ? "문제 입력" : "이론 또는 개념"}</label>
-          <textarea
-            id={`${engine.id}-prompt`}
-            value={prompt}
-            onChange={(event) => setPrompt(event.target.value)}
-            maxLength={4000}
-            rows={12}
-            placeholder={engine.placeholder}
-          />
-          <div className="engine-prompt-meta"><span>{prompt.length.toLocaleString("ko-KR")} / 4,000</span><button type="button" onClick={() => setPrompt(engine.example)}>예시 불러오기</button></div>
-          <fieldset>
-            <legend>실행 방식</legend>
-            {Object.values(engine.profiles).map((profile) => (
-              <button type="button" key={profile.mode} className={mode === profile.mode ? "is-selected" : ""} aria-pressed={mode === profile.mode} onClick={() => setMode(profile.mode)}>
-                <strong>{profile.task}</strong><span>{profile.trait}</span>
-              </button>
-            ))}
-          </fieldset>
-          <button className="engine-run" type="submit" disabled={!prompt.trim()}><Brain size={18} /> {engine.id === "ps" ? "풀이 실행" : "설명 생성"}<ArrowRight size={16} /></button>
-          <p>실행하면 오른쪽 전용 패널에서 결과가 생성됩니다. 수식 지도와 물리 도식은 안전한 구조 데이터로 받아 코드 기반 SVG로 렌더링합니다.</p>
-        </form>
-        <section className="physics-engine-blueprint" aria-labelledby={`${engine.id}-output-title`}>
-          <header><div><span>OUTPUT CONTRACT</span><h3 id={`${engine.id}-output-title`}>{engine.id === "ps" ? "풀이 출력 구조" : "설명 출력 구조"}</h3></div><strong>SVG NATIVE</strong></header>
-          <ol>{engine.steps.map((step, index) => <li key={step}><span>{String(index + 1).padStart(2, "0")}</span><strong>{step}</strong></li>)}</ol>
-          <div className="engine-diagram-frame"><span>CODE-NATIVE VISUAL</span><EngineDiagram engine={engine} /></div>
-        </section>
-      </div>
-    </main>
-  );
-}
-
-export function PhysicsWorkspace({ view, onOpenAi, onNotice }) {
-  if (view === "ps") return <PhysicsEngineWorkspace engine={PHYSICS_AI_ENGINES.ps} onOpenAi={onOpenAi} />;
-  if (view === "te") return <PhysicsEngineWorkspace engine={PHYSICS_AI_ENGINES.te} onOpenAi={onOpenAi} />;
   return <DrivePage onOpenAi={onOpenAi} onNotice={onNotice} />;
 }
 

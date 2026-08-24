@@ -38,12 +38,13 @@ const ROUTES = {
   map: "/international/map",
   briefing: "/international/briefing",
   issues: "/international/issues",
+  workspace: "/physics/workspace",
   drive: "/physics/drive",
-  ps: "/physics/ps",
-  te: "/physics/te",
 };
 
 const LEGACY_PHYSICS_ROUTES = {
+  "/physics/ps": "workspace",
+  "/physics/te": "workspace",
   "/physics/learn": "drive",
   "/physics/library": "drive",
   "/physics/find": "drive",
@@ -52,12 +53,12 @@ const LEGACY_PHYSICS_ROUTES = {
 
 const DOMAIN_ROUTES = {
   international: ["map", "briefing", "issues"],
-  physics: ["drive", "ps", "te"],
+  physics: ["workspace", "drive"],
 };
 
 const DOMAIN_META = {
   international: { label: "국제정세", title: "국제정세 분석 워크스페이스", entry: "map" },
-  physics: { label: "물리", title: "물리 연구 워크스페이스", entry: "drive" },
+  physics: { label: "물리", title: "물리 연구 워크스페이스", entry: "workspace" },
 };
 
 const SUBNAV_ITEMS = {
@@ -66,11 +67,7 @@ const SUBNAV_ITEMS = {
     { id: "briefing", label: "오늘 브리핑" },
     { id: "issues", label: "이슈 추적" },
   ],
-  physics: [
-    { id: "drive", label: "Drive" },
-    { id: "ps", label: "P.S." },
-    { id: "te", label: "T.E." },
-  ],
+  physics: [],
 };
 
 const TRACKED_ISSUES = [
@@ -160,7 +157,7 @@ function Header({ domain, route, sourceState, mapEventState, onOpenAi, onNavigat
           <span className="as-of">{sourceWorkspace ? "마지막 확인" : "기준 시각"} <strong>{headerTimestamp ? `${eventTimeLabel(headerTimestamp)} KST` : "--:--"}</strong></span>
         ) : null}
         <span className={`demo-stamp${sourceWorkspace ? " is-live-source" : ""}`}>{statusLabel}</span>
-        <button
+        {domain !== "physics" ? <button
           className="ai-trigger"
           type="button"
           onClick={onOpenAi}
@@ -171,7 +168,7 @@ function Header({ domain, route, sourceState, mapEventState, onOpenAi, onNavigat
         >
           <Brain size={19} weight="duotone" aria-hidden="true" />
           {aiPinned ? "Mandos 사용 중" : "Mandos 열기"}
-        </button>
+        </button> : null}
       </div>
     </header>
   );
@@ -988,38 +985,15 @@ export function App() {
 
   const defaultAnalysisContext = useMemo(() => {
     if (domain === "physics") {
-      if (route === "ps") {
-        return {
-          domain: "physics",
-          level: PHYSICS_ANALYSIS_LEVEL,
-          taskType: "physics-problem-solving",
-          contextKind: "physics-problem",
-          contextId: "ps-workbench",
-          title: "P.S. 문제풀이",
-          meta: `PLSO · ${PHYSICS_PROFILE_SUMMARY}`,
-          placeholder: "문제 조건과 구해야 하는 값을 그대로 입력하세요.",
-        };
-      }
-      if (route === "te") {
-        return {
-          domain: "physics",
-          level: PHYSICS_ANALYSIS_LEVEL,
-          taskType: "physics-theory-explanation",
-          contextKind: "physics-theory",
-          contextId: "te-workbench",
-          title: "T.E. 이론설명",
-          meta: `THEx · ${PHYSICS_PROFILE_SUMMARY}`,
-          placeholder: "설명받고 싶은 이론, 개념 또는 수식을 입력하세요.",
-        };
-      }
       return {
         domain: "physics",
         level: PHYSICS_ANALYSIS_LEVEL,
-        contextKind: "physics-drive",
-        contextId: "drive-workspace",
-        title: "Drive 물리 자료",
-        meta: `Drive 자료 워크스페이스 · ${PHYSICS_PROFILE_SUMMARY}`,
-        placeholder: "선택한 자료의 핵심 구조와 읽기 순서를 설명해줘.",
+        taskType: "physics-problem-solving",
+        contextKind: "physics-problem",
+        contextId: "physics-canvas",
+        title: "물리 대화 캔버스",
+        meta: `PLSO · THEx · ${PHYSICS_PROFILE_SUMMARY}`,
+        placeholder: "문제나 개념을 입력하고, 이어서 계속 질문하세요.",
       };
     }
     return {
@@ -1035,7 +1009,9 @@ export function App() {
     };
   }, [domain, route, selectedEvent]);
 
-  useEffect(() => { setAnalysisContext(null); }, [route]);
+  useEffect(() => {
+    if (domain === "international" || route === "drive") setAnalysisContext(null);
+  }, [domain, route]);
 
   useEffect(() => {
     const syncRouteToPath = () => {
@@ -1288,6 +1264,12 @@ export function App() {
   function openAi(context = defaultAnalysisContext) {
     aiOpenerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : aiTriggerRef.current;
     setAnalysisContext({ domain, ...context });
+    if (domain === "physics") {
+      if (route !== "workspace") navigate("workspace");
+      setAiOpen(false);
+      window.requestAnimationFrame(() => document.getElementById("physics-canvas-prompt")?.focus());
+      return;
+    }
     setAiOpen(!desktopMandos);
     if (desktopMandos) window.requestAnimationFrame(() => document.getElementById("analysis-prompt")?.focus());
   }
@@ -1307,7 +1289,7 @@ export function App() {
     window.requestAnimationFrame(() => (aiOpenerRef.current ?? aiTriggerRef.current)?.focus());
   }
 
-  const mandosVisible = desktopMandos || aiOpen;
+  const mandosVisible = domain !== "physics" && (desktopMandos || aiOpen);
   const activeAnalysisContext = analysisContext?.domain === domain ? analysisContext : defaultAnalysisContext;
   const mandosContextKey = [
     activeAnalysisContext.domain,
@@ -1318,8 +1300,8 @@ export function App() {
   ].join(":");
 
   return (
-    <div className={`application-shell${desktopMandos ? " has-pinned-mandos" : ""}`}>
-      <div className="app-surface" inert={!desktopMandos && aiOpen ? true : undefined}>
+    <div className={`application-shell${desktopMandos && domain !== "physics" ? " has-pinned-mandos" : ""}`}>
+      <div className={`app-surface${domain === "physics" ? " is-physics" : ""}`} inert={domain !== "physics" && !desktopMandos && aiOpen ? true : undefined}>
         <Header
           domain={domain}
           route={route}
@@ -1331,7 +1313,7 @@ export function App() {
           aiPinned={desktopMandos}
           aiTriggerRef={aiTriggerRef}
         />
-        <WorkspaceSubnav domain={domain} route={route} onNavigate={navigate} />
+        {domain === "international" ? <WorkspaceSubnav domain={domain} route={route} onNavigate={navigate} /> : null}
 
         {route === "map" && (
           <main className="situation-map-page">
@@ -1389,6 +1371,8 @@ export function App() {
               view={route}
               onOpenAi={openAi}
               onNotice={showNotice}
+              onNavigate={navigate}
+              analysisContext={activeAnalysisContext}
             />
           </Suspense>
         )}
