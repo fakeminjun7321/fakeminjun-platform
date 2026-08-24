@@ -47,8 +47,8 @@ const ROUTE_EXPECTATIONS = [
   ["/international/briefing", "사건 후보 검토대"],
   ["/international/issues", "이슈 추적"],
   ["/physics/drive", "통합 자료 워크스페이스"],
-  ["/physics/ps", "AXIOM S1"],
-  ["/physics/te", "THEORIA T1"],
+  ["/physics/ps", "PLSO"],
+  ["/physics/te", "THEx"],
   ["/physics/library", "통합 자료 워크스페이스"],
 ];
 
@@ -245,17 +245,17 @@ test("physics engine drawer uses dedicated branding and execution profiles", () 
       level: "P4",
       taskType: "physics-problem-solving",
       title: "P.S. 문제풀이",
-      meta: "AXIOM S1 · 개인 맞춤 P4",
+      meta: "PLSO · 개인 맞춤 P4",
       placeholder: "문제를 입력하세요.",
       initialPrompt: "경사면 문제를 풀어줘.",
       defaultMode: "deep",
     },
     onClose() {},
   }));
-  assert.ok(html.includes("AXIOM S1"));
+  assert.ok(html.includes("PLSO"));
   assert.ok(html.includes("정밀 검산"));
   assert.ok(html.includes("경사면 문제를 풀어줘."));
-  assert.equal(getAnalysisProfile("auto", "physics-theory-explanation").title, "THEORIA T1");
+  assert.equal(getAnalysisProfile("auto", "physics-theory-explanation").title, "THEx");
   assert.equal(getAnalysisProfile("standard", "physics-problem-solving").task, "빠른 풀이");
 });
 

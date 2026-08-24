@@ -9,12 +9,12 @@ import { PHYSICS_SCAN_POLL_INTERVAL_MS, startPhysicsScanPolling } from "../src/p
 
 test("physics workspace exposes dedicated P.S. and T.E. AI contracts", () => {
   assert.deepEqual(Object.keys(PHYSICS_AI_ENGINES), ["ps", "te"]);
-  assert.equal(PHYSICS_AI_ENGINES.ps.engineName, "AXIOM S1");
-  assert.equal(PHYSICS_AI_ENGINES.te.engineName, "THEORIA T1");
+  assert.equal(PHYSICS_AI_ENGINES.ps.engineName, "PLSO");
+  assert.equal(PHYSICS_AI_ENGINES.te.engineName, "THEx");
   assert.equal(PHYSICS_AI_ENGINES.ps.taskType, "physics-problem-solving");
   assert.equal(PHYSICS_AI_ENGINES.te.taskType, "physics-theory-explanation");
   assert.equal(physicsEngineForTask("physics-problem-solving"), PHYSICS_AI_ENGINES.ps);
-  assert.equal(physicsEngineProfile("physics-theory-explanation", "deep").title, "THEORIA T1");
+  assert.equal(physicsEngineProfile("physics-theory-explanation", "deep").title, "THEx");
   assert.ok(Object.values(PHYSICS_AI_ENGINES).every(({ example, placeholder, steps }) => example.trim() && placeholder.trim() && steps.length === 5));
 });
 

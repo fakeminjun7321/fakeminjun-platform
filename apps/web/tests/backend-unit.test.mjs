@@ -718,7 +718,7 @@ test("Mandos request contracts preserve profile, task, domain, and input kind", 
       taskType: "physics-problem-solving",
       inputKind: "text",
       profile: "core",
-      promptPattern: /AXIOM S1|독립 검산|free-body-diagram/,
+      promptPattern: /PLSO 문제풀이 계약/,
     },
     {
       mode: "deep",
@@ -726,7 +726,7 @@ test("Mandos request contracts preserve profile, task, domain, and input kind", 
       taskType: "physics-theory-explanation",
       inputKind: "text",
       profile: "deep",
-      promptPattern: /THEORIA T1|정확한 정의|concept-map/,
+      promptPattern: /THEx 이론설명 계약/,
     },
   ];
 

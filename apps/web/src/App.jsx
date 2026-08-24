@@ -954,7 +954,7 @@ export function App() {
           contextKind: "physics-problem",
           contextId: "ps-workbench",
           title: "P.S. 문제풀이",
-          meta: `AXIOM S1 · ${PHYSICS_PROFILE_SUMMARY}`,
+          meta: `PLSO · ${PHYSICS_PROFILE_SUMMARY}`,
           placeholder: "문제 조건과 구해야 하는 값을 그대로 입력하세요.",
         };
       }
@@ -966,7 +966,7 @@ export function App() {
           contextKind: "physics-theory",
           contextId: "te-workbench",
           title: "T.E. 이론설명",
-          meta: `THEORIA T1 · ${PHYSICS_PROFILE_SUMMARY}`,
+          meta: `THEx · ${PHYSICS_PROFILE_SUMMARY}`,
           placeholder: "설명받고 싶은 이론, 개념 또는 수식을 입력하세요.",
         };
       }
