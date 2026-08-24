@@ -37,6 +37,10 @@ const aiDrawerSource = await readFile(new URL("../src/AiDrawer.jsx", import.meta
 const appSource = await readFile(new URL("../src/App.jsx", import.meta.url), "utf8");
 const physicsWorkspaceSource = await readFile(new URL("../src/PhysicsWorkspace.jsx", import.meta.url), "utf8");
 const indexSource = await readFile(new URL("../index.html", import.meta.url), "utf8");
+const faviconSource = await readFile(new URL("../public/favicon.svg", import.meta.url), "utf8");
+const siteManifest = JSON.parse(await readFile(new URL("../public/site.webmanifest", import.meta.url), "utf8"));
+const faviconIco = await readFile(new URL("../public/favicon.ico", import.meta.url));
+const appleTouchIcon = await readFile(new URL("../public/apple-touch-icon.png", import.meta.url));
 
 after(async () => {
   await vite.close();
@@ -120,7 +124,27 @@ test("physics uses one personal P4 analysis profile without a level selector", (
 test("browser identity stays STUDIO 7321 on every route", () => {
   assert.ok(indexSource.includes("<title>STUDIO 7321</title>"));
   assert.ok(indexSource.includes('content="STUDIO 7321"'));
+  assert.ok(indexSource.includes('rel="icon" href="/favicon.svg"'));
+  assert.ok(indexSource.includes('rel="apple-touch-icon" href="/apple-touch-icon.png"'));
+  assert.ok(indexSource.includes('rel="manifest" href="/site.webmanifest"'));
   assert.ok(appSource.includes('document.title = "STUDIO 7321"'));
+});
+
+test("browser identity ships the selected stacked FAKE icon set", () => {
+  assert.ok(faviconSource.includes("STUDIO 7321 FAKE mark"));
+  assert.ok(faviconSource.includes('stroke="#c1c6cb"'));
+  assert.ok(faviconSource.includes("M15 229L226 23"));
+  assert.equal(siteManifest.name, "STUDIO 7321");
+  assert.deepEqual(
+    siteManifest.icons.map(({ src, sizes, type }) => ({ src, sizes, type })),
+    [
+      { src: "/favicon.svg", sizes: "any", type: "image/svg+xml" },
+      { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { src: "/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+  );
+  assert.ok(faviconIco.byteLength > 1_000);
+  assert.deepEqual([...appleTouchIcon.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
 });
 
 test("Drive callback relay keeps only one bounded Google result", () => {

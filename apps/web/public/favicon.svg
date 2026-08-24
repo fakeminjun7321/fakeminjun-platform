@@ -1,0 +1,22 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 256 256"
+  role="img"
+  aria-labelledby="title"
+>
+  <title id="title">STUDIO 7321 FAKE mark</title>
+  <rect width="256" height="256" rx="24" fill="#030506" />
+
+  <g fill="#c1c6cb">
+    <path d="M24 28H112V51H51V67H103V89H51V119H24Z" />
+    <path
+      fill-rule="evenodd"
+      d="M125 119L160 28H195L232 119H204L197 99H159L152 119ZM167 76H189L178 44Z"
+    />
+    <path d="M24 137H51V171L87 137H121L76 180L123 228H87L51 191V228H24Z" />
+    <path d="M132 137H232V160H159V171H223V193H159V205H232V228H132Z" />
+  </g>
+
+  <path d="M15 229L226 23" stroke="#030506" stroke-width="16" stroke-linecap="square" />
+  <path d="M15 229L226 23" stroke="#c1c6cb" stroke-width="6" stroke-linecap="square" />
+</svg>
