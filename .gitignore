@@ -5,4 +5,6 @@ outputs/
 .DS_Store
 *.log
 .wrangler/
+.vite/
 .dev.vars
+apps/web/design-qa-assets/*-wide.png

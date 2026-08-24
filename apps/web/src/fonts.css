@@ -1,0 +1,42 @@
+/* Self-hosted, WOFF2-only Latin/math faces. Noto Sans KR Variable is imported
+   from Fontsource in main.jsx so its Korean unicode-range subsets stay intact. */
+
+@font-face {
+  font-family: "IBM Plex Sans Condensed";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 500;
+  src: url("@fontsource/ibm-plex-sans-condensed/files/ibm-plex-sans-condensed-latin-500-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "IBM Plex Sans Condensed";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 600;
+  src: url("@fontsource/ibm-plex-sans-condensed/files/ibm-plex-sans-condensed-latin-600-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "IBM Plex Sans Condensed";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url("@fontsource/ibm-plex-sans-condensed/files/ibm-plex-sans-condensed-latin-700-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "JetBrains Mono Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 800;
+  src: url("@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2") format("woff2-variations");
+}
+
+@font-face {
+  font-family: "STIX Two Math";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("@fontsource/stix-two-math/files/stix-two-math-latin-400-normal.woff2") format("woff2");
+}

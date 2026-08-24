@@ -12,10 +12,18 @@
       "migrations_dir": "migrations"
     }
   ],
+  "r2_buckets": [
+    {
+      "binding": "PHYSICS_FILES",
+      "bucket_name": "fakeminjun-physics-vault-local"
+    }
+  ],
   "vars": {
     "APP_ENV": "local",
     "APP_ORIGIN": "http://127.0.0.1:5173",
-    "INGESTION_ADMIN_SUBJECT": "local-development-user"
+    "PHYSICS_SCANNER_ENABLED": "true",
+    "INGESTION_ADMIN_SUBJECT": "local-development-user",
+    "EVENT_EDITOR_SUBJECT": "local-development-user"
   },
   "access": {
     "dev": {
