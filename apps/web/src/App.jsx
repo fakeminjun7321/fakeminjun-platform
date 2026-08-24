@@ -929,10 +929,8 @@ export function App() {
   const domain = domainFromRoute(route);
 
   useEffect(() => {
-    document.title = domain === "physics"
-      ? "물리 연구 워크스페이스 · STUDIO 7321"
-      : "국제정세 분석 워크스페이스 · 데모";
-  }, [domain]);
+    document.title = "STUDIO 7321";
+  }, []);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 1279px)");
