@@ -1,4 +1,4 @@
-FROM docker.io/clamav/clamav:1.5.4@sha256:6e348a93ef3be6a52e90819062313a2ef35c260708121d4465e67b949ae4e616
+FROM docker.io/clamav/clamav:1.5.4@sha256:0e85467cb0d6e7d860a45035707741cd5ffc032ffefc6002a3510c75b6d07027
 
 # The upstream entrypoint starts both clamd and freshclam. A resident clamd is
 # wasteful for this personal, queue-driven workload and could not become ready
